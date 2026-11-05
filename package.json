@@ -1,0 +1,18 @@
+{
+  "name": "hmis",
+  "private": true,
+  "packageManager": "pnpm@12.16.1",
+  "scripts": {
+    "postinstall": "pnpm --filter @hmis/db build",
+    "dev": "pnpm --parallel --filter web --filter api dev",
+    "dev:web": "pnpm --filter web dev",
+    "dev:api": "pnpm --filter api start:dev",
+    "build": "pnpm -r build",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:migrate": "pnpm --filter @hmis/db migrate",
+    "db:seed": "pnpm --filter @hmis/db seed",
+    "db:app-role": "pnpm --filter @hmis/db app-role",
+    "db:studio": "pnpm --filter @hmis/db studio"
+  }
+}

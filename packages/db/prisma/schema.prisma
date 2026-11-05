@@ -1,0 +1,529 @@
+// HMIS core schema (MVP). Every tenant-owned table carries tenantId so that
+// PostgreSQL row-level security can be layered on without schema changes.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Tenancy, users, audit ─────────────────────────────
+
+enum FacilityType {
+  CLINIC
+  PHARMACY
+  HOSPITAL
+}
+
+model Tenant {
+  id        String       @id @default(uuid())
+  name      String
+  nameAm    String?
+  type      FacilityType @default(CLINIC)
+  phone     String?
+  address   String?
+  nextMrn   Int          @default(1) // per-facility counter for patient MRNs
+  nextInvoice Int        @default(1) // per-facility counter for invoice numbers
+  // Pay before service: consultation before the doctor sees the patient, lab before the sample,
+  // drugs before dispensing. Charges billed to a credit company or insurer count as settled.
+  requirePrepayment Boolean @default(true)
+  createdAt DateTime     @default(now())
+
+  users        User[]
+  patients     Patient[]
+  appointments Appointment[]
+  visits       Visit[]
+  drugs        Drug[]
+  suppliers    Supplier[]
+  prescriptions Prescription[]
+  labTests     LabTest[]
+  labOrders    LabOrder[]
+  services     ServiceItem[]
+  invoices     Invoice[]
+  payments     Payment[]
+  cashClosings CashClosing[]
+  auditLogs    AuditLog[]
+}
+
+enum Role {
+  ADMIN
+  RECEPTIONIST
+  DOCTOR
+  NURSE
+  CASHIER
+  PHARMACIST
+  LAB_TECH
+}
+
+model User {
+  id           String   @id @default(uuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  fullName     String
+  phone        String
+  email        String?
+  passwordHash String
+  role         Role
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  visitsAsDoctor Visit[]        @relation("VisitDoctor")
+  appointments   Appointment[]  @relation("AppointmentDoctor")
+  prescriptions  Prescription[]
+  labOrders      LabOrder[]
+  payments       Payment[]
+  invoicesCreated Invoice[]   @relation("InvoiceCreatedBy")
+  labCollected   LabOrder[]  @relation("LabCollectedBy")
+  labResulted    LabOrder[]  @relation("LabResultedBy")
+  labVerified    LabOrder[]  @relation("LabVerifiedBy")
+  cashClosings   CashClosing[]
+
+  @@unique([tenantId, phone])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  userId    String?
+  action    String // e.g. "patient.create", "invoice.void"
+  entity    String
+  entityId  String?
+  data      Json?
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, entity, entityId])
+}
+
+// ───────────────────────────── Patients ─────────────────────────────
+
+enum Sex {
+  MALE
+  FEMALE
+}
+
+model Patient {
+  id          String    @id @default(uuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  mrn         String // medical record number, unique per facility
+  firstName   String
+  fatherName  String // Ethiopian naming: given name + father's name + grandfather's name
+  grandfather String?
+  firstNameAm   String?
+  fatherNameAm  String?
+  sex         Sex
+  dateOfBirth DateTime?
+  phone       String?
+  address     String?
+  familyId    String? // links household members
+  allergies   String[]
+  createdAt   DateTime  @default(now())
+
+  appointments Appointment[]
+  visits       Visit[]
+  invoices     Invoice[]
+
+  @@unique([tenantId, mrn])
+  @@index([tenantId, phone])
+  @@index([tenantId, familyId])
+}
+
+// ───────────────────────────── Appointments & queue ─────────────────────────────
+
+enum AppointmentStatus {
+  BOOKED
+  ARRIVED
+  CANCELLED
+  NO_SHOW
+}
+
+model Appointment {
+  id          String            @id @default(uuid())
+  tenantId    String
+  tenant      Tenant            @relation(fields: [tenantId], references: [id])
+  patientId   String
+  patient     Patient           @relation(fields: [patientId], references: [id])
+  doctorId    String?
+  doctor      User?             @relation("AppointmentDoctor", fields: [doctorId], references: [id])
+  scheduledAt DateTime
+  reason      String?
+  status      AppointmentStatus @default(BOOKED)
+  reminderSentAt DateTime?
+  createdAt   DateTime          @default(now())
+
+  visit Visit?
+
+  @@index([tenantId, scheduledAt])
+}
+
+// One row per facility per clinic day; incremented atomically to hand out queue numbers.
+model QueueCounter {
+  tenantId String
+  day      DateTime @db.Date
+  last     Int
+
+  @@id([tenantId, day])
+}
+
+// ───────────────────────────── Visits / EMR (OPD) ─────────────────────────────
+
+enum VisitStatus {
+  WAITING // in the queue
+  IN_CONSULTATION
+  AWAITING_LAB
+  AWAITING_PHARMACY
+  COMPLETED
+  CANCELLED
+}
+
+model Visit {
+  id           String      @id @default(uuid())
+  tenantId     String
+  tenant       Tenant      @relation(fields: [tenantId], references: [id])
+  patientId    String
+  patient      Patient     @relation(fields: [patientId], references: [id])
+  doctorId     String?
+  doctor       User?       @relation("VisitDoctor", fields: [doctorId], references: [id])
+  appointmentId String?    @unique
+  appointment  Appointment? @relation(fields: [appointmentId], references: [id])
+  queueNumber  Int
+  status       VisitStatus @default(WAITING)
+  checkedInAt  DateTime    @default(now())
+  calledAt     DateTime? // when the doctor first called the patient in
+  completedAt  DateTime?
+
+  // vitals
+  temperatureC Decimal?    @db.Decimal(4, 1)
+  pulse        Int?
+  systolicBp   Int?
+  diastolicBp  Int?
+  respRate     Int?
+  spo2         Int?
+  weightKg     Decimal?    @db.Decimal(5, 2)
+  heightCm     Decimal?    @db.Decimal(5, 1)
+
+  chiefComplaint String?
+  history        String?
+  examination    String?
+  plan           String?
+
+  diagnoses     Diagnosis[]
+  prescriptions Prescription[]
+  labOrders     LabOrder[]
+  charges       Charge[]
+  invoices      Invoice[]
+
+  @@index([tenantId, checkedInAt])
+  @@index([tenantId, status])
+}
+
+model Diagnosis {
+  id        String  @id @default(uuid())
+  visitId   String
+  visit     Visit   @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  icd11Code String
+  label     String
+  isPrimary Boolean @default(false)
+}
+
+// ───────────────────────────── Prescriptions & pharmacy ─────────────────────────────
+
+enum PrescriptionStatus {
+  PENDING
+  PARTIALLY_DISPENSED
+  DISPENSED
+  CANCELLED
+}
+
+model Prescription {
+  id         String             @id @default(uuid())
+  visitId    String
+  visit      Visit              @relation(fields: [visitId], references: [id])
+  tenantId   String
+  tenant     Tenant             @relation(fields: [tenantId], references: [id])
+  prescriberId String
+  prescriber User               @relation(fields: [prescriberId], references: [id])
+  status     PrescriptionStatus @default(PENDING)
+  alerts         Json? // allergy / interaction alerts the prescriber saw and accepted
+  overrideReason String? // required when an allergy alert was overridden
+  createdAt  DateTime           @default(now())
+  dispensedAt DateTime?
+  items      PrescriptionItem[]
+
+  @@index([tenantId, status])
+}
+
+model PrescriptionItem {
+  id             String       @id @default(uuid())
+  prescriptionId String
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  drugId         String
+  drug           Drug         @relation(fields: [drugId], references: [id])
+  dose           String // "500 mg"
+  frequency      String // "TID"
+  durationDays   Int?
+  quantity       Int
+  instructions   String?
+  billedQty      Int          @default(0) // units already charged (sent to the cashier)
+  dispensedQty   Int          @default(0)
+}
+
+model Drug {
+  id           String   @id @default(uuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  genericName  String
+  brandName    String?
+  drugClass    String? // e.g. "penicillin", "nsaid"; used to match allergies and interactions
+  form         String // tablet, syrup, injection…
+  strength     String?
+  unit         String // unit of dispensing
+  sellPrice    Decimal  @db.Decimal(12, 2)
+  reorderLevel Int      @default(0)
+  active       Boolean  @default(true)
+
+  batches           StockBatch[]
+  prescriptionItems PrescriptionItem[]
+
+  @@index([tenantId, genericName])
+}
+
+model Supplier {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String
+  phone     String?
+  contactPerson String?
+  tin       String? // Ethiopian taxpayer identification number
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  batches StockBatch[]
+
+  @@unique([tenantId, name])
+}
+
+model StockBatch {
+  id         String   @id @default(uuid())
+  drugId     String
+  drug       Drug     @relation(fields: [drugId], references: [id])
+  batchNo    String
+  expiryDate DateTime
+  quantity   Int
+  costPrice  Decimal  @db.Decimal(12, 2)
+  supplier   String? // free-text supplier name (seed / legacy); new receipts use supplierId
+  supplierId String?
+  supplierRef Supplier? @relation(fields: [supplierId], references: [id])
+  receiptRef String? // supplier invoice or delivery note number
+  receivedById String?
+  receivedAt DateTime @default(now())
+
+  movements StockMovement[]
+
+  @@index([drugId, expiryDate]) // first-expiry-first-out lookups
+}
+
+enum StockMovementType {
+  RECEIPT
+  DISPENSE
+  ADJUSTMENT
+  EXPIRED
+  TRANSFER_OUT
+  TRANSFER_IN
+}
+
+model StockMovement {
+  id        String            @id @default(uuid())
+  batchId   String
+  batch     StockBatch        @relation(fields: [batchId], references: [id])
+  type      StockMovementType
+  quantity  Int // positive in, negative out
+  reference String? // prescription item id, PO number…
+  reason    String? // for adjustments: DAMAGED, LOST, COUNT_CORRECTION, RETURNED_TO_SUPPLIER, OTHER (+ note)
+  userId    String?
+  createdAt DateTime          @default(now())
+}
+
+// ───────────────────────────── Lab ─────────────────────────────
+
+model LabTest {
+  id         String   @id @default(uuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  name       String
+  loincCode  String?
+  unit       String?
+  refLow     Decimal? @db.Decimal(12, 3)
+  refHigh    Decimal? @db.Decimal(12, 3)
+  price      Decimal  @db.Decimal(12, 2)
+  // For qualitative tests (e.g. malaria film): the allowed answers. Empty = numeric or free text.
+  resultOptions String[]
+  active     Boolean  @default(true)
+
+  orders LabOrder[]
+}
+
+enum LabOrderStatus {
+  ORDERED
+  SAMPLE_COLLECTED
+  RESULTED
+  VERIFIED
+  CANCELLED
+}
+
+model LabOrder {
+  id          String         @id @default(uuid())
+  tenantId    String
+  tenant      Tenant         @relation(fields: [tenantId], references: [id])
+  visitId     String
+  visit       Visit          @relation(fields: [visitId], references: [id])
+  labTestId   String
+  labTest     LabTest        @relation(fields: [labTestId], references: [id])
+  orderedById String
+  orderedBy   User           @relation(fields: [orderedById], references: [id])
+  status      LabOrderStatus @default(ORDERED)
+  sampleId    String?
+  sampleCollectedAt DateTime?
+  collectedById String?
+  collectedBy   User?        @relation("LabCollectedBy", fields: [collectedById], references: [id])
+  resultValue String?
+  resultFlag  String? // H, L, N (numeric tests only)
+  resultNote  String?
+  orderedAt   DateTime       @default(now())
+  resultedAt  DateTime?
+  resultedById String?
+  resultedBy   User?         @relation("LabResultedBy", fields: [resultedById], references: [id])
+  verifiedAt   DateTime?
+  verifiedById String?
+  verifiedBy   User?         @relation("LabVerifiedBy", fields: [verifiedById], references: [id])
+
+  @@index([tenantId, status])
+}
+
+// ───────────────────────────── Billing ─────────────────────────────
+
+model ServiceItem {
+  id       String  @id @default(uuid())
+  tenantId String
+  tenant   Tenant  @relation(fields: [tenantId], references: [id])
+  code     String
+  name     String
+  price    Decimal @db.Decimal(12, 2)
+  active   Boolean @default(true)
+
+  @@unique([tenantId, code])
+}
+
+enum ChargeSource {
+  CONSULTATION
+  LAB
+  PHARMACY
+  PROCEDURE
+  OTHER
+}
+
+// Every billable action creates a Charge automatically; charges are later grouped into an invoice.
+model Charge {
+  id          String       @id @default(uuid())
+  visitId     String
+  visit       Visit        @relation(fields: [visitId], references: [id])
+  invoiceId   String?
+  invoice     Invoice?     @relation(fields: [invoiceId], references: [id])
+  source      ChargeSource
+  sourceId    String? // lab order id, prescription item id…
+  description String
+  quantity    Int          @default(1)
+  unitPrice   Decimal      @db.Decimal(12, 2)
+  createdAt   DateTime     @default(now())
+}
+
+enum InvoiceStatus {
+  OPEN
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+enum PayerType {
+  SELF
+  CREDIT
+  INSURANCE
+}
+
+model Invoice {
+  id        String        @id @default(uuid())
+  tenantId  String
+  tenant    Tenant        @relation(fields: [tenantId], references: [id])
+  patientId String
+  patient   Patient       @relation(fields: [patientId], references: [id])
+  visitId   String?
+  visit     Visit?        @relation(fields: [visitId], references: [id])
+  number    String
+  payerType PayerType     @default(SELF)
+  payerName String? // insurer or credit company
+  status    InvoiceStatus @default(OPEN)
+  subtotal  Decimal       @db.Decimal(12, 2)
+  discount  Decimal       @default(0) @db.Decimal(12, 2)
+  discountReason String?
+  total     Decimal       @db.Decimal(12, 2) // subtotal - discount
+  paid      Decimal       @default(0) @db.Decimal(12, 2)
+  createdById String
+  createdBy   User        @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  createdAt DateTime      @default(now())
+  voidedAt   DateTime?
+  voidReason String?
+
+  charges  Charge[]
+  payments Payment[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
+}
+
+// A cashier's end-of-day count: what the system expected in the drawer versus what was counted.
+model CashClosing {
+  id           String   @id @default(uuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  cashierId    String
+  cashier      User     @relation(fields: [cashierId], references: [id])
+  day          DateTime @db.Date
+  expectedCash Decimal  @db.Decimal(12, 2)
+  countedCash  Decimal  @db.Decimal(12, 2)
+  totals       Json // per payment method, for the record
+  note         String?
+  createdAt    DateTime @default(now())
+
+  @@unique([tenantId, cashierId, day])
+}
+
+enum PaymentMethod {
+  CASH
+  TELEBIRR
+  CHAPA
+  BANK_TRANSFER
+}
+
+model Payment {
+  id         String        @id @default(uuid())
+  tenantId   String
+  tenant     Tenant        @relation(fields: [tenantId], references: [id])
+  invoiceId  String
+  invoice    Invoice       @relation(fields: [invoiceId], references: [id])
+  cashierId  String
+  cashier    User          @relation(fields: [cashierId], references: [id])
+  method     PaymentMethod
+  amount     Decimal       @db.Decimal(12, 2)
+  reference  String? // Telebirr / Chapa transaction id
+  receivedAt DateTime      @default(now())
+
+  @@index([tenantId, receivedAt])
+}

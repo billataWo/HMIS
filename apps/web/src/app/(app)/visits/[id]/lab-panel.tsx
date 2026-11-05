@@ -1,0 +1,91 @@
+"use client";
+
+import Link from "next/link";
+import { useState, useTransition } from "react";
+import { cancelLabOrder, orderLabTests } from "@/app/actions";
+import { LAB_STATUS, LabValue, rangeText } from "@/components/lab-result";
+import { Alert, buttonClass } from "@/components/ui";
+import type { LabOrder, LabTest } from "@/lib/api";
+
+export function LabPanel({ visitId, orders, tests, editable }: { visitId: string; orders: LabOrder[]; tests: LabTest[]; editable: boolean }) {
+  const [picked, setPicked] = useState<string[]>([]);
+  const [error, setError] = useState<string>();
+  const [pending, start] = useTransition();
+  const open = new Set(orders.filter((o) => o.status !== "CANCELLED" && o.status !== "VERIFIED").map((o) => o.labTest.id));
+  const available = tests.filter((t) => !open.has(t.id));
+  const total = tests.filter((t) => picked.includes(t.id)).reduce((s, t) => s + Number(t.price), 0);
+  const anyVerified = orders.some((o) => o.status === "VERIFIED");
+
+  const submit = () =>
+    start(async () => {
+      setError(undefined);
+      const res = await orderLabTests(visitId, picked);
+      if (res.error) setError(res.error);
+      else setPicked([]);
+    });
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="font-medium">Lab tests</h2>
+        {anyVerified && (
+          <Link href={`/lab-report/${visitId}`} target="_blank" className="text-xs text-teal-700 hover:underline dark:text-teal-400">
+            Print results ↗
+          </Link>
+        )}
+      </div>
+
+      {orders.length === 0 && <p className="text-sm text-zinc-500">No tests ordered.</p>}
+      {orders.length > 0 && (
+        <ul className="divide-y divide-zinc-100 rounded-md border border-zinc-200 text-sm dark:divide-zinc-800 dark:border-zinc-800">
+          {orders.map((o) => (
+            <li key={o.id} className={`flex flex-wrap items-baseline justify-between gap-2 px-3 py-2 ${o.status === "CANCELLED" ? "opacity-50" : ""}`}>
+              <span>
+                <span className={`font-medium ${o.status === "CANCELLED" ? "line-through" : ""}`}>{o.labTest.name}</span>
+                {o.status === "VERIFIED" ? (
+                  <>
+                    {": "}
+                    <LabValue o={o} />
+                    {rangeText(o.labTest) && <span className="text-xs text-zinc-500"> (ref {rangeText(o.labTest)})</span>}
+                    {o.resultNote && <span className="block text-xs text-zinc-500">{o.resultNote}</span>}
+                  </>
+                ) : (
+                  <span className="text-xs text-zinc-500"> · {LAB_STATUS[o.status]}</span>
+                )}
+              </span>
+              {editable && o.status === "ORDERED" && (
+                <button type="button" disabled={pending} onClick={() => start(() => cancelLabOrder(o.id))} className="text-xs text-red-700 hover:underline dark:text-red-400">
+                  Cancel
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {editable && available.length > 0 && (
+        <div className="space-y-2 rounded-md border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
+          <div className="grid gap-1 sm:grid-cols-2">
+            {available.map((t) => (
+              <label key={t.id} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={picked.includes(t.id)}
+                  onChange={(e) => setPicked((p) => (e.target.checked ? [...p, t.id] : p.filter((x) => x !== t.id)))}
+                />
+                {t.name}
+                <span className="text-xs text-zinc-500">{Number(t.price).toFixed(0)} ETB</span>
+              </label>
+            ))}
+          </div>
+          {error && <Alert>{error}</Alert>}
+          {picked.length > 0 && (
+            <button type="button" disabled={pending} onClick={submit} className={buttonClass}>
+              {pending ? "Ordering…" : `Order ${picked.length} ${picked.length === 1 ? "test" : "tests"} · ${total.toFixed(2)} ETB`}
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
