@@ -24,6 +24,9 @@ import { ReportsController } from './reports/reports.controller.js';
 import { ProceduresController } from './procedures/procedures.controller.js';
 import { AuditController } from './audit/audit.controller.js';
 import { BackupsController } from './backups/backups.controller.js';
+import { CloudCopyGuard } from './sync/read-only.guard.js';
+import { SyncAgent } from './sync/sync.agent.js';
+import { SyncController } from './sync/sync.controller.js';
 import { DocumentsController } from './documents/documents.controller.js';
 import { WalkInController } from './pharmacy/walk-in.controller.js';
 import { PayersController } from './payers/payers.controller.js';
@@ -56,6 +59,7 @@ if (!jwtSecret || (process.env.NODE_ENV === 'production' && jwtSecret === 'chang
     ProceduresController,
     AuditController,
     BackupsController,
+    SyncController,
     DocumentsController,
     WalkInController,
     PayersController,
@@ -64,6 +68,9 @@ if (!jwtSecret || (process.env.NODE_ENV === 'production' && jwtSecret === 'chang
   providers: [
     AuditService,
     { provide: APP_GUARD, useClass: AuthGuard },
+    // After AuthGuard (needs the signed-in user): cloud copies of clinic-server clinics are read-only.
+    { provide: APP_GUARD, useClass: CloudCopyGuard },
+    SyncAgent,
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
   ],
 })

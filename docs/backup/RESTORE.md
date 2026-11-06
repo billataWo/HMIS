@@ -86,6 +86,10 @@ docker compose exec backup hmis-backup now full    # a fresh full backup of the 
 - Once everyone is satisfied, delete `/backup/pre-restore/<time>` (it is an unencrypted copy of
   the database) and any `pgbackrest.before-restore-*` folder.
 - If you restored to an earlier time, re-apply any erasure requests made after that time.
+- On a **clinic server that syncs to the cloud** (docs/sync), run
+  `node apps/api/dist/sync/cli.js enable --snapshot` once it is running, so the cloud copy gets
+  the restored state of every record. Records created after the restore point stay in the cloud
+  copy for now; tell the clinic and the support team.
 
 ## If the restore fails
 

@@ -115,3 +115,19 @@ export const ROLE_LABELS: Record<string, string> = {
   PHARMACIST: "Pharmacist",
   LAB_TECH: "Lab technician",
 };
+
+/** "just now", "12 min ago", "3 h ago", "2 days ago". */
+export function formatAgo(iso: string | null) {
+  if (!iso) return "never";
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 90) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 36) return `${hours} h ago`;
+  return `${Math.round(hours / 24)} days ago`;
+}
+
+/** Minutes since an instant (Infinity for none). */
+export function minutesAgo(iso: string | null | undefined) {
+  return iso ? (Date.now() - new Date(iso).getTime()) / 60_000 : Infinity;
+}

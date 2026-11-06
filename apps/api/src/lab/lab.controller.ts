@@ -107,7 +107,7 @@ export class LabController {
     if (!z.uuid().safeParse(id).success) throw new NotFoundException('Visit not found');
     const orders = await this.prisma.client.labOrder.findMany({
       where: { visitId: id, tenantId: me.tenantId },
-      orderBy: { orderedAt: 'asc' },
+      orderBy: [{ orderedAt: 'asc' }, { id: 'asc' }],
       include: orderInclude,
     });
     return orders.map((o) => forViewer(o, me.role));
@@ -132,9 +132,16 @@ export class LabController {
       });
       if (dup) throw new ConflictException(`${dup.labTest.name} is already ordered for this visit`);
 
-      const created = [];
-      for (const t of tests) {
-        const order = await tx.labOrder.create({ data: { tenantId: me.tenantId, visitId: id, labTestId: t.id, orderedById: me.sub } });
+      // In the order the doctor picked them (findMany returns rows in no particular order). Each
+      // order gets its own millisecond, so every list sorted by orderedAt keeps that order.
+      const byId = new Map(tests.map((t) => [t.id, t]));
+      const now = Date.now();
+      const created: string[] = [];
+      for (const [i, testId] of labTestIds.entries()) {
+        const t = byId.get(testId)!;
+        const order = await tx.labOrder.create({
+          data: { tenantId: me.tenantId, visitId: id, labTestId: t.id, orderedById: me.sub, orderedAt: new Date(now + i) },
+        });
         // Free tests (e.g. programme-funded HIV testing) create no charge, so nobody is sent to the cashier.
         if (Number(t.price) > 0) {
           await tx.charge.create({ data: { visitId: id, source: 'LAB', sourceId: order.id, description: t.name, unitPrice: t.price } });
@@ -142,7 +149,8 @@ export class LabController {
         created.push(order.id);
       }
       await this.audit.log(me, 'lab.order', 'Visit', id, { tests: tests.map((t) => t.name) }, tx);
-      return tx.labOrder.findMany({ where: { id: { in: created } }, include: orderInclude });
+      const orders = await tx.labOrder.findMany({ where: { id: { in: created } }, include: orderInclude });
+      return created.map((oid) => orders.find((o) => o.id === oid)!);
     });
   }
 
@@ -168,7 +176,7 @@ export class LabController {
     const db = this.prisma.client;
     const include = { ...orderInclude, visit: { select: { id: true, queueNumber: true, patient: { select: queuePatientSelect } } } };
     const [open, verifiedToday, prepayment] = await Promise.all([
-      db.labOrder.findMany({ where: { tenantId: me.tenantId, status: { in: OPEN } }, orderBy: { orderedAt: 'asc' }, include }),
+      db.labOrder.findMany({ where: { tenantId: me.tenantId, status: { in: OPEN } }, orderBy: [{ orderedAt: 'asc' }, { id: 'asc' }], include }),
       db.labOrder.findMany({
         where: { tenantId: me.tenantId, status: 'VERIFIED', verifiedAt: { gte: dayRange(clinicDay()).start } },
         orderBy: { verifiedAt: 'desc' },
@@ -293,7 +301,7 @@ export class LabController {
         patient: { select: queuePatientSelect },
         doctor: { select: { fullName: true } },
         tenant: { select: { name: true, nameAm: true, phone: true, address: true } },
-        labOrders: { where: { status: 'VERIFIED' }, orderBy: { orderedAt: 'asc' }, include: orderInclude },
+        labOrders: { where: { status: 'VERIFIED' }, orderBy: [{ orderedAt: 'asc' }, { id: 'asc' }], include: orderInclude },
       },
     });
     if (!visit) throw new NotFoundException('Visit not found');

@@ -598,3 +598,18 @@ export interface BackupStatus {
   checks: { key: string; label: string; status: BackupCheckStatus; detail: string; at: string | null }[];
   recent: BackupEventRow[];
 }
+
+/** GET /sync/status: how this clinic's data moves between its clinic server and the cloud. */
+export interface SyncStatus {
+  mode: "clinic-server" | "cloud-copy" | "off";
+  lastSyncAt: string | null;
+  // admins only
+  clients?: { name: string; lastSeenAt: string | null; appliedRows: number; lastError: string | null; edgeVersion: string | null }[];
+  cloudUrl?: string | null;
+  enabledAt?: string | null;
+  pushedRows?: number;
+  lastError?: string | null;
+  lastErrorAt?: string | null;
+  waiting?: number;
+  oldestWaitingAt?: string | null;
+}

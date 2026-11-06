@@ -702,3 +702,47 @@ model BackupEvent {
   @@index([kind, finishedAt])
   @@index([finishedAt])
 }
+
+/// Clinic server → cloud sync (apps/api/src/sync). While capture is on (SyncState.enabled, only on
+/// a clinic server), a trigger on every clinic table writes each change here; the sync agent sends
+/// the changes to the cloud and deletes them once the cloud has applied them.
+model SyncOutbox {
+  seq       BigInt              @id @default(autoincrement())
+  /// The writing transaction: a change is sent only once every older transaction has finished.
+  xid       Unsupported("xid8") @default(dbgenerated("pg_current_xact_id()"))
+  tableName String
+  /// U = inserted or updated (row holds it), D = deleted (only key)
+  op        String
+  key       Json
+  row       Json?
+  at        DateTime            @default(now())
+}
+
+/// One row (id 1). On a clinic server: whether changes are captured, and how sending them is going.
+model SyncState {
+  id          Int       @id @default(1)
+  enabled     Boolean   @default(false)
+  enabledAt   DateTime?
+  lastPushAt  DateTime?
+  lastError   String?
+  lastErrorAt DateTime?
+  pushedRows  BigInt    @default(0)
+}
+
+/// On the cloud: one per clinic server allowed to send a clinic's data. While a clinic has an
+/// active one, its cloud copy is read-only (the clinic server is where its data is entered).
+model SyncClient {
+  id          String    @id @default(uuid())
+  tenantId    String
+  name        String
+  tokenHash   String    @unique
+  createdAt   DateTime  @default(now())
+  revokedAt   DateTime?
+  lastSeenAt  DateTime?
+  lastSeq     BigInt?
+  appliedRows BigInt    @default(0)
+  lastError   String?
+  edgeVersion String?
+
+  @@index([tenantId])
+}

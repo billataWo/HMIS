@@ -62,6 +62,20 @@ describe('lab orders and results', () => {
     await api.patch(`/visits/${visitId}/status`).set(bearer(doctor.token)).send({ status: 'AWAITING_LAB' }).expect(200);
   });
 
+  it('keeps tests in the order the doctor picked them, everywhere they are listed', async () => {
+    // Not alphabetical, and repeated: the database returns IN (...) lookups in no fixed order.
+    const picked = ['Urinalysis', 'Hemoglobin', 'Malaria blood film'];
+    for (let round = 0; round < 5; round++) {
+      const visitId = await openVisit();
+      const created = (await order(visitId, picked).expect(201)).body;
+      const names = (list: { labTest: { name: string } }[]) => list.map((o) => o.labTest.name);
+      expect(names(created)).toEqual(picked);
+      expect(names((await api.get(`/visits/${visitId}/lab-orders`).set(bearer(doctor.token)).expect(200)).body)).toEqual(picked);
+      const bench = (await api.get('/lab/worklist').set(bearer(tech.token)).expect(200)).body.open.filter((o: { visitId: string }) => o.visitId === visitId);
+      expect(names(bench)).toEqual(picked);
+    }
+  });
+
   it('walks a sample from collection to verified result, flagging abnormal values', async () => {
     const visitId = await openVisit();
     const [hb, film] = (await order(visitId, ['Hemoglobin', 'Malaria blood film']).expect(201)).body;

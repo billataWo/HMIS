@@ -165,6 +165,21 @@ Production runs the database from [`deploy/compose.yml`](deploy/compose.yml), wi
 - **In the app:** admins see **Settings → Backups** (`GET /backups/status`), and a banner when something is failing. The worker writes `BackupEvent` rows, which the app's database role can only read. Restores run on the server, never from the app.
 - **Commands:** `pnpm backup:status`, `pnpm backup:now` and `pnpm backup:test`; they run `hmis-backup` in the backup container.
 
+## Clinic servers and cloud sync
+
+A clinic can work on its own server at the clinic (the **clinic server**), which keeps working without internet, while the cloud keeps a read-only copy that is updated within seconds whenever there is a connection. The operator guide is [docs/sync/README.md](docs/sync/README.md); the design is in [apps/api/src/sync/README.md](apps/api/src/sync/README.md).
+
+- **Capture:** a trigger on every clinic table writes each change to `SyncOutbox`. This only happens on a clinic server with capture enabled.
+- **Sending:** the API's sync agent (`SYNC_CLOUD_URL`, `SYNC_TOKEN`) sends changes in commit-safe order to the cloud's `/sync/push`. They stay queued while offline.
+- **Applying:** the cloud applies changes as `hmis_app` under the clinic's row-level security, so a clinic server can only ever write its own clinic.
+- **Read-only cloud copy:** while a clinic has a clinic server, its cloud copy refuses changes (`CLOUD_COPY_READ_ONLY`), but staff can still sign in there to look things up. Every page shows how fresh the copy is.
+- **Setup and status:**
+  - `node apps/api/dist/sync/cli.js` handles tokens (on the cloud), and bootstrap, enable and status (on the clinic server).
+  - Settings → Cloud sync shows the status in the app.
+- **Rules for developers:**
+  - A migration that adds a clinic table must call `SELECT hmis_sync_attach('Table')`; `test/sync.e2e-spec.ts` checks this.
+  - Upgrade the cloud before the clinic servers.
+
 ## Clinic isolation (row-level security)
 
 Two independent walls keep each clinic's data private:

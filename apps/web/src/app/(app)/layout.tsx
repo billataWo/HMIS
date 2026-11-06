@@ -2,7 +2,8 @@ import { Suspense, type ReactNode } from "react";
 import { AppNav, AppNavSkeleton } from "@/components/app-nav";
 import Link from "next/link";
 import { Notice } from "@/components/ui";
-import { api, type BackupStatus, type Me } from "@/lib/api";
+import { api, type BackupStatus, type Me, type SyncStatus } from "@/lib/api";
+import { formatAgo, minutesAgo } from "@/lib/format";
 import { getLang } from "@/lib/lang";
 
 async function Navigation() {
@@ -26,6 +27,38 @@ async function BackupBanner() {
   );
 }
 
+/**
+ * Clinic server ↔ cloud: everyone on a read-only cloud copy is told so (and how fresh it is);
+ * admins on a clinic server are told when changes have been waiting for the internet a while.
+ */
+async function SyncBanner() {
+  const [me, sync] = await Promise.all([api<Me>("/auth/me"), api<SyncStatus>("/sync/status").catch(() => null)]);
+  if (!sync) return null;
+  if (sync.mode === "cloud-copy") {
+    const stale = minutesAgo(sync.lastSyncAt) > 15;
+    return (
+      <Notice tone={stale ? "warning" : "info"} className="mb-6 print:hidden">
+        Cloud copy for looking things up: records are entered on the clinic&apos;s own server. Last update from it{" "}
+        {formatAgo(sync.lastSyncAt)}
+        {stale ? ", so the newest work may not be here yet." : "."}
+      </Notice>
+    );
+  }
+  if (sync.mode === "clinic-server" && me.role === "ADMIN" && sync.waiting && sync.oldestWaitingAt) {
+    if (minutesAgo(sync.oldestWaitingAt) < 60) return null;
+    return (
+      <Notice tone="warning" className="mb-6 print:hidden">
+        No connection to the cloud since {formatAgo(sync.oldestWaitingAt).replace(" ago", "")}: {sync.waiting} changes are kept safely on this server and
+        will be sent when the internet is back. Keep working as normal.{" "}
+        <Link href="/settings/sync" className="font-medium underline underline-offset-4">
+          Sync status
+        </Link>
+      </Notice>
+    );
+  }
+  return null;
+}
+
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex flex-1 flex-col md:flex-row">
@@ -35,6 +68,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       <main className="mx-auto w-full max-w-6xl min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8 print:max-w-none print:p-0">
         <Suspense fallback={null}>
           <BackupBanner />
+        </Suspense>
+        <Suspense fallback={null}>
+          <SyncBanner />
         </Suspense>
         {children}
       </main>
