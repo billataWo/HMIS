@@ -10,9 +10,9 @@ async function Booking({ searchParams }: { searchParams: Promise<{ patientId?: s
   const { patientId } = await searchParams;
   if (!patientId) {
     return (
-      <p className="text-sm text-zinc-500">
+      <p className="text-sm text-slate-500">
         Choose the patient first:{" "}
-        <Link href="/patients" className="text-teal-700 underline dark:text-teal-400">
+        <Link href="/patients" className="text-brand-700 underline dark:text-brand-400">
           find a patient
         </Link>{" "}
         and click “Book appointment”.
@@ -32,7 +32,7 @@ async function Booking({ searchParams }: { searchParams: Promise<{ patientId?: s
   return (
     <>
       <p className="mb-4 text-sm">
-        For <strong>{fullName(patient)}</strong> <span className="text-zinc-500">· {patient.mrn}</span>
+        For <strong>{fullName(patient)}</strong> <span className="text-slate-500">· {patient.mrn}</span>
       </p>
       <BookForm patientId={patient.id} doctors={doctors} today={clinicToday()} />
     </>

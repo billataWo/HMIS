@@ -5,7 +5,7 @@ import { api, ApiError, type InvoiceDetail } from "@/lib/api";
 import { etb, formatDualDate, formatTime, fullName, PAYMENT_METHODS } from "@/lib/format";
 import { PrintButton } from "@/components/print-button";
 
-export const metadata: Metadata = { title: "Receipt · HMIS" };
+export const metadata: Metadata = { title: "Receipt" };
 
 // Sized for 80 mm thermal receipt printers; also prints fine on A4.
 async function Receipt({ params }: { params: Promise<{ id: string }> }) {
@@ -43,10 +43,11 @@ async function Receipt({ params }: { params: Promise<{ id: string }> }) {
           {inv.charges.map((c) => (
             <tr key={c.id} className="align-top">
               <td className="pr-2">
-                {c.description}
+                {c.voidedAt ? <s>{c.description}</s> : c.description}
                 {c.quantity > 1 && ` ×${c.quantity}`}
+                {c.voidedAt && " (refunded)"}
               </td>
-              <td className="text-right whitespace-nowrap">{(Number(c.unitPrice) * c.quantity).toFixed(2)}</td>
+              <td className="text-right whitespace-nowrap">{c.voidedAt ? <s>{(Number(c.unitPrice) * c.quantity).toFixed(2)}</s> : (Number(c.unitPrice) * c.quantity).toFixed(2)}</td>
             </tr>
           ))}
         </tbody>
@@ -71,6 +72,7 @@ async function Receipt({ params }: { params: Promise<{ id: string }> }) {
         {inv.payments.map((p) => (
           <p key={p.id} className="flex justify-between">
             <span>
+              {Number(p.amount) < 0 ? "Refund · " : ""}
               {PAYMENT_METHODS[p.method]}
               {p.reference && ` ${p.reference}`}
             </span>

@@ -2,25 +2,23 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { addDiagnosis, removeDiagnosis, searchIcd } from "@/app/actions";
-import { Alert, inputClass, secondaryButtonClass } from "@/components/ui";
+import { Alert, Badge, inputClass, secondaryButtonClass } from "@/components/ui";
 import type { Diagnosis, IcdEntry } from "@/lib/api";
 
 export function DiagnosisPanel({ visitId, diagnoses, editable }: { visitId: string; diagnoses: Diagnosis[]; editable: boolean }) {
   const [q, setQ] = useState("");
-  const [results, setResults] = useState<IcdEntry[]>([]);
+  const [found, setFound] = useState<IcdEntry[]>([]);
+  const results = q.trim().length < 2 ? [] : found;
   const [error, setError] = useState<string>();
   const [manual, setManual] = useState(false);
   const [pending, start] = useTransition();
 
   useEffect(() => {
-    if (q.trim().length < 2) {
-      setResults([]);
-      return;
-    }
+    if (q.trim().length < 2) return;
     let cancelled = false;
     const t = setTimeout(async () => {
       const r = await searchIcd(q);
-      if (!cancelled) setResults(r);
+      if (!cancelled) setFound(r);
     }, 250);
     return () => {
       cancelled = true;
@@ -35,23 +33,27 @@ export function DiagnosisPanel({ visitId, diagnoses, editable }: { visitId: stri
       if (res.error) setError(res.error);
       else {
         setQ("");
-        setResults([]);
+        setFound([]);
         setManual(false);
       }
     });
 
   return (
-    <section className="space-y-3">
-      <h2 className="font-medium">Diagnoses</h2>
+    <section id="diagnoses" className="surface scroll-mt-6 space-y-4 p-5">
+      <h2 className="font-semibold text-slate-900 dark:text-white">Diagnoses</h2>
       {diagnoses.length === 0 ? (
-        <p className="text-sm text-zinc-500">No diagnosis recorded yet.</p>
+        <p className="text-sm text-slate-500">No diagnosis recorded yet.</p>
       ) : (
         <ul className="space-y-1 text-sm">
           {diagnoses.map((d) => (
-            <li key={d.id} className="flex items-center justify-between gap-2 rounded-md bg-zinc-50 px-3 py-2 dark:bg-zinc-900">
+            <li key={d.id} className="flex items-center justify-between gap-2 rounded-md bg-slate-50 px-3 py-2 dark:bg-slate-900">
               <span>
-                <span className="font-mono text-xs text-zinc-500">{d.icd11Code}</span> {d.label}
-                {d.isPrimary && <span className="ml-2 rounded-full bg-teal-100 px-2 py-0.5 text-xs text-teal-900 dark:bg-teal-950 dark:text-teal-100">primary</span>}
+                <span className="font-mono text-xs text-slate-500">{d.icd11Code}</span> {d.label}
+                {d.isPrimary && (
+                  <span className="ml-2">
+                    <Badge tone="brand">Primary</Badge>
+                  </span>
+                )}
               </span>
               {editable && (
                 <button
@@ -80,26 +82,26 @@ export function DiagnosisPanel({ visitId, diagnoses, editable }: { visitId: stri
             aria-label="Search ICD-11 diagnoses"
           />
           {results.length > 0 && (
-            <ul className="max-h-64 overflow-y-auto rounded-md border border-zinc-200 text-sm dark:border-zinc-800">
+            <ul className="max-h-64 overflow-y-auto rounded-md border border-slate-200 text-sm dark:border-slate-800">
               {results.map((r) => (
                 <li key={r.code}>
                   <button
                     type="button"
                     disabled={pending}
                     onClick={() => add(r.code, r.label)}
-                    className="flex w-full gap-2 px-3 py-2 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    className="flex w-full gap-2 px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
                   >
-                    <span className="w-14 shrink-0 font-mono text-xs leading-5 text-zinc-500">{r.code}</span>
+                    <span className="w-14 shrink-0 font-mono text-xs leading-5 text-slate-500">{r.code}</span>
                     <span>
                       {r.label}
-                      {r.labelAm && <span className="text-zinc-500"> · {r.labelAm}</span>}
+                      {r.labelAm && <span className="text-slate-500"> · {r.labelAm}</span>}
                     </span>
                   </button>
                 </li>
               ))}
             </ul>
           )}
-          {q.trim().length >= 2 && results.length === 0 && <p className="text-xs text-zinc-500">Not in the common list.</p>}
+          {q.trim().length >= 2 && results.length === 0 && <p className="text-xs text-slate-500">Not in the common list.</p>}
           {manual ? (
             <form
               className="flex flex-wrap gap-2"
@@ -116,7 +118,7 @@ export function DiagnosisPanel({ visitId, diagnoses, editable }: { visitId: stri
               </button>
             </form>
           ) : (
-            <button type="button" onClick={() => setManual(true)} className="text-xs text-teal-700 hover:underline dark:text-teal-400">
+            <button type="button" onClick={() => setManual(true)} className="text-xs text-brand-700 hover:underline dark:text-brand-400">
               Enter an ICD-11 code by hand
             </button>
           )}

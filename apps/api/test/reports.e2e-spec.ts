@@ -46,7 +46,7 @@ describe('dashboard and MoH report', () => {
   let admin: Staff, desk: Staff, doctor: Staff, cashier: Staff, tech: Staff, pharmacist: Staff;
   const today = clinicDay();
 
-  const register = async (body: object) => (await api.post('/patients').set(bearer(desk.token)).send(body).expect(201)).body.id as string;
+  const register = async (body: object) => (await api.post('/patients').set(bearer(desk.token)).send({ confirmDuplicate: true, ...body }).expect(201)).body.id as string;
   const visit = async (patientId: string, fee: string) => (await api.post('/visits').set(bearer(desk.token)).send({ patientId, serviceId: fee }).expect(201)).body.id as string;
   const call = (id: string, status: string) => api.patch(`/visits/${id}/status`).set(bearer(doctor.token)).send({ status }).expect(200);
 

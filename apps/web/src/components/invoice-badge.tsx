@@ -1,6 +1,11 @@
 import { INVOICE_STATUS } from "@/lib/format";
+import { Badge } from "./ui";
 
 export function InvoiceBadge({ status }: { status: string }) {
-  const s = INVOICE_STATUS[status] ?? { label: status, className: "bg-zinc-100" };
-  return <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${s.className}`}>{s.label}</span>;
+  const s = INVOICE_STATUS[status] ?? { label: status, tone: "neutral" as const };
+  return (
+    <Badge tone={s.tone} dot>
+      {status === "VOID" ? <s>{s.label}</s> : s.label}
+    </Badge>
+  );
 }

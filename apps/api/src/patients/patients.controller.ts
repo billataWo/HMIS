@@ -1,4 +1,4 @@
-import { Body, Controller, Get, NotFoundException, Param, Post, Query } from '@nestjs/common';
+import { Body, ConflictException, Controller, ForbiddenException, Get, NotFoundException, Param, Patch, Post, Query } from '@nestjs/common';
 import type { Prisma } from '@hmis/db';
 import { z } from 'zod';
 import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
@@ -27,11 +27,45 @@ const CreatePatientSchema = z
     address: optionalText,
     relativeId: z.uuid().optional(), // existing patient in the same household
     allergies: z.array(z.string().trim().min(1)).default([]),
+    confirmDuplicate: z.boolean().default(false), // registering although a similar record exists
   })
   .refine((p) => !(p.dateOfBirth && p.ageYears !== undefined), {
     message: 'Give either a date of birth or an age, not both',
     path: ['ageYears'],
   });
+
+/** MRN of the one shared record per clinic for pharmacy customers who don't give a name. */
+export const WALK_IN_MRN = 'WALK-IN';
+
+/** Empty string clears the field. */
+const clearableText = z
+  .string()
+  .trim()
+  .max(300)
+  .transform((s) => s || null)
+  .optional();
+
+const UpdatePatientSchema = z
+  .object({
+    firstName: z.string().trim().min(1, 'First name is required').optional(),
+    fatherName: z.string().trim().min(1, "Father's name is required").optional(),
+    grandfather: clearableText,
+    firstNameAm: clearableText,
+    fatherNameAm: clearableText,
+    sex: z.enum(['MALE', 'FEMALE']).optional(),
+    dateOfBirth: z.iso.date().nullable().optional(),
+    ageYears: z.coerce.number().int().min(0).max(130).optional(),
+    phone: clearableText.transform((p) => (p ? normalizePhone(p) : p)),
+    address: clearableText,
+    allergies: z.array(z.string().trim().min(1).max(100)).max(30).optional(),
+  })
+  .refine((p) => !(p.dateOfBirth && p.ageYears !== undefined), {
+    message: 'Give either a date of birth or an age, not both',
+    path: ['ageYears'],
+  })
+  .refine((p) => Object.values(p).some((v) => v !== undefined), { message: 'Nothing to change' });
+
+const FRONT_DESK = ['ADMIN', 'RECEPTIONIST', 'NURSE'];
 
 const SearchSchema = z.object({
   q: z.string().trim().default(''),
@@ -55,6 +89,7 @@ export class PatientsController {
     const words = q.split(/\s+/).filter(Boolean);
     const where: Prisma.PatientWhereInput = {
       tenantId: me.tenantId,
+      mrn: { not: WALK_IN_MRN }, // the shared record for unnamed pharmacy customers
       AND: words.map((w) => {
         const ci = { contains: w, mode: 'insensitive' as const };
         return {
@@ -89,6 +124,7 @@ export class PatientsController {
             checkedInAt: true,
             status: true,
             queueNumber: true,
+            kind: true, // pharmacy counter sales are listed but are not consultations
             doctor: { select: { fullName: true } },
             ...(clinical && { chiefComplaint: true, diagnoses: true }),
           },
@@ -106,13 +142,52 @@ export class PatientsController {
     return { ...patient, family };
   }
 
+  /**
+   * Registration is a front-desk job, done together with check-in and the consultation fee:
+   * receptionists, nurses (who cover the desk in small clinics) and admins. Doctors may too when
+   * the admin turns on "doctors can register patients" (a clinic with no receptionist). Cashiers,
+   * the lab and the pharmacy search and view patients but never create records, which keeps one
+   * card per patient instead of duplicates made from other desks.
+   */
   @Post()
   @Roles('ADMIN', 'RECEPTIONIST', 'NURSE', 'DOCTOR')
   async create(
     @CurrentUser() me: AuthUser,
     @Body(new ZodPipe(CreatePatientSchema)) body: z.infer<typeof CreatePatientSchema>,
   ) {
-    const { ageYears, dateOfBirth, relativeId, ...rest } = body;
+    if (me.role === 'DOCTOR') {
+      const { doctorsCanRegister } = await this.prisma.client.tenant.findUniqueOrThrow({
+        where: { id: me.tenantId },
+        select: { doctorsCanRegister: true },
+      });
+      if (!doctorsCanRegister) {
+        throw new ForbiddenException('Patients are registered at reception. An admin can let doctors register them in Settings.');
+      }
+    }
+    const { ageYears, dateOfBirth, relativeId, confirmDuplicate, ...rest } = body;
+
+    // One card per patient: offer the existing record before creating a second one. Same phone,
+    // or same first and father's name; family members often share a parent's phone, so for them
+    // only the name counts.
+    if (!confirmDuplicate) {
+      const same = { equals: undefined as string | undefined, mode: 'insensitive' as const };
+      const duplicates = await this.prisma.client.patient.findMany({
+        where: {
+          tenantId: me.tenantId,
+          mrn: { not: WALK_IN_MRN },
+          OR: [
+            ...(rest.phone && !relativeId ? [{ phone: rest.phone }] : []),
+            { firstName: { ...same, equals: rest.firstName }, fatherName: { ...same, equals: rest.fatherName } },
+          ],
+        },
+        take: 5,
+        select: { id: true, mrn: true, firstName: true, fatherName: true, grandfather: true, sex: true, dateOfBirth: true, phone: true },
+      });
+      if (duplicates.length) {
+        throw new ConflictException({ message: 'This patient may already be registered', duplicates });
+      }
+    }
+
     const dob = dateOfBirth
       ? new Date(dateOfBirth)
       : ageYears !== undefined
@@ -147,6 +222,43 @@ export class PatientsController {
       });
 
       await this.audit.log(me, 'patient.create', 'Patient', patient.id, { mrn: patient.mrn }, tx);
+      return patient;
+    });
+  }
+
+  /**
+   * Corrects a patient's details. Whoever may register patients may change everything. Doctors
+   * may always update allergies, because an allergy found during a consultation must reach the
+   * prescribing checks straight away.
+   */
+  @Patch(':id')
+  @Roles('ADMIN', 'RECEPTIONIST', 'NURSE', 'DOCTOR')
+  async update(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(UpdatePatientSchema)) body: z.infer<typeof UpdatePatientSchema>) {
+    if (!z.uuid().safeParse(id).success) throw new NotFoundException('Patient not found');
+    const changed = Object.keys(body).filter((k) => body[k as keyof typeof body] !== undefined);
+
+    if (!FRONT_DESK.includes(me.role)) {
+      const { doctorsCanRegister } = await this.prisma.client.tenant.findUniqueOrThrow({
+        where: { id: me.tenantId },
+        select: { doctorsCanRegister: true },
+      });
+      if (!doctorsCanRegister && changed.some((k) => k !== 'allergies')) {
+        throw new ForbiddenException('Doctors can update allergies; other details are corrected at reception');
+      }
+    }
+
+    const { ageYears, dateOfBirth, ...rest } = body;
+    const data: Prisma.PatientUpdateInput = { ...rest };
+    if (dateOfBirth !== undefined) data.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
+    if (ageYears !== undefined) data.dateOfBirth = new Date(Date.UTC(new Date().getUTCFullYear() - ageYears, 0, 1));
+    if (body.allergies) data.allergies = [...new Set(body.allergies)];
+
+    return this.prisma.client.$transaction(async (tx) => {
+      const existing = await tx.patient.findFirst({ where: { id, tenantId: me.tenantId } });
+      if (!existing) throw new NotFoundException('Patient not found');
+      const patient = await tx.patient.update({ where: { id }, data });
+      // Which fields changed, never their content.
+      await this.audit.log(me, 'patient.update', 'Patient', id, { mrn: patient.mrn, fields: changed }, tx);
       return patient;
     });
   }

@@ -1,4 +1,4 @@
-import { api, bearer, db, makeClinic, makeStaff, startApp, stopApp } from './helpers.js';
+import { api, bearer, db, makeClinic, makeStaff, startApp, stopApp, recordDiagnosis } from './helpers.js';
 
 beforeAll(startApp);
 afterAll(stopApp);
@@ -15,10 +15,11 @@ describe('prescriptions and dispensing', () => {
 
   async function openVisit(allergies: string[] = []) {
     const p = (
-      await api.post('/patients').set(bearer(desk.token)).send({ firstName: 'Rx', fatherName: 'Patient', sex: 'MALE', allergies }).expect(201)
+      await api.post('/patients').set(bearer(desk.token)).send({ confirmDuplicate: true, firstName: 'Rx', fatherName: 'Patient', sex: 'MALE', allergies }).expect(201)
     ).body;
     const v = (await api.post('/visits').set(bearer(desk.token)).send({ patientId: p.id }).expect(201)).body;
     await api.patch(`/visits/${v.id}/status`).set(bearer(doctor.token)).send({ status: 'IN_CONSULTATION' }).expect(200);
+    await recordDiagnosis(v.id);
     return v.id as string;
   }
 

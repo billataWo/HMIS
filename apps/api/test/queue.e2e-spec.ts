@@ -1,5 +1,5 @@
 import { clinicDay, dayRange } from '../src/common/clinic-day.js';
-import { api, bearer, db, makeClinic, makeStaff, startApp, stopApp } from './helpers.js';
+import { api, bearer, db, makeClinic, makeStaff, startApp, stopApp, recordDiagnosis } from './helpers.js';
 
 beforeAll(startApp);
 afterAll(stopApp);
@@ -20,7 +20,7 @@ describe('queue and appointments', () => {
   let consultationId: string;
 
   const newPatient = async (firstName: string) =>
-    (await api.post('/patients').set(bearer(reception.token)).send({ firstName, fatherName: 'Test', sex: 'MALE' }).expect(201)).body;
+    (await api.post('/patients').set(bearer(reception.token)).send({ confirmDuplicate: true, firstName, fatherName: 'Test', sex: 'MALE' }).expect(201)).body;
 
   const checkIn = (body: object, token = reception.token) => api.post('/visits').set(bearer(token)).send(body);
   const move = (visitId: string, status: string, token: string) =>
@@ -83,6 +83,8 @@ describe('queue and appointments', () => {
     expect(called.doctor.id).toBe(doctor.id);
     expect(called.calledAt).toBeTruthy();
 
+    await move(v.id, 'COMPLETED', doctor.token).expect(409); // no diagnosis yet
+    await recordDiagnosis(v.id);
     const done = (await move(v.id, 'COMPLETED', doctor.token).expect(200)).body;
     expect(done.completedAt).toBeTruthy();
     await move(v.id, 'WAITING', doctor.token).expect(409);
@@ -149,7 +151,7 @@ describe('queue and appointments', () => {
     const v = (await checkIn({ patientId: mine.id }).expect(201)).body;
     await move(v.id, 'CANCELLED', otherDesk.token).expect(404);
 
-    const theirs = (await api.post('/patients').set(bearer(otherDesk.token)).send({ firstName: 'T', fatherName: 'O', sex: 'MALE' })).body;
+    const theirs = (await api.post('/patients').set(bearer(otherDesk.token)).send({ confirmDuplicate: true, firstName: 'T', fatherName: 'O', sex: 'MALE' })).body;
     expect((await checkIn({ patientId: theirs.id }, otherDesk.token).expect(201)).body.queueNumber).toBe(1);
   });
 

@@ -10,6 +10,10 @@ export interface AuthUser {
 
 export const IS_PUBLIC = 'isPublic';
 export const ROLES = 'roles';
+export const ALLOW_PENDING_PASSWORD = 'allowPendingPassword';
+
+/** Reachable while the user still has to replace a temporary password (who am I, change password). */
+export const AllowPendingPassword = () => SetMetadata(ALLOW_PENDING_PASSWORD, true);
 
 /** Skip authentication for this route. */
 export const Public = () => SetMetadata(IS_PUBLIC, true);

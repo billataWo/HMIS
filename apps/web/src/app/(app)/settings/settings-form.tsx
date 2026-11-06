@@ -16,7 +16,7 @@ export function SettingsForm({ settings }: { settings: ClinicSettings }) {
 
       <fieldset className="space-y-4">
         <legend className="mb-2 font-medium">Clinic details</legend>
-        <p className="text-sm text-zinc-500">Shown on receipts, lab reports and the waiting-room screen.</p>
+        <p className="text-sm text-slate-500">Shown on receipts, lab reports and the waiting-room screen.</p>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Name" error={err.name}>
             <Input name="name" required defaultValue={settings.name} />
@@ -39,9 +39,23 @@ export function SettingsForm({ settings }: { settings: ClinicSettings }) {
           <input type="checkbox" name="requirePrepayment" defaultChecked={settings.requirePrepayment} className="mt-1" />
           <span>
             <span className="font-medium">Patients pay before each service</span>
-            <span className="block text-zinc-500">
+            <span className="block text-slate-500">
               The doctor can&apos;t call a patient in until the consultation fee is paid, the lab can&apos;t take a sample until the test is paid, and the
               pharmacy sends drugs to the cashier before dispensing. Credit and insurance patients are not held up. Untick to bill everything at the end of the visit.
+            </span>
+          </span>
+        </label>
+      </fieldset>
+
+      <fieldset className="space-y-2">
+        <legend className="mb-2 font-medium">Patient registration</legend>
+        <label className="flex items-start gap-3 text-sm">
+          <input type="checkbox" name="doctorsCanRegister" defaultChecked={settings.doctorsCanRegister} className="mt-1" />
+          <span>
+            <span className="font-medium">Doctors can register new patients</span>
+            <span className="block text-slate-500">
+              Receptionists, nurses and admins always can. Turn this on if your clinic has no receptionist, so a doctor can create the patient&apos;s card. Check-in
+              (and the consultation fee) still happens at the front desk. Cashiers, the lab and the pharmacy never register patients.
             </span>
           </span>
         </label>

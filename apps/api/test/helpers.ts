@@ -7,6 +7,18 @@ import { createPrismaClient, type Role } from '@hmis/db';
 import { AppModule } from './../src/app.module.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 
+// A failed `.expect(status)` reports only the two status codes; add the API's reply so an
+// unexpected 409 or 500 says why (this is how intermittent failures get diagnosed).
+type StatusCheck = { _assertStatus(status: number, res: request.Response): Error | undefined };
+const proto = (request as unknown as { Test: { prototype: StatusCheck } }).Test.prototype;
+const assertStatus = proto._assertStatus;
+proto._assertStatus = function (status, res) {
+  const error = assertStatus.call(this, status, res);
+  const req = (res as unknown as { req?: { method?: string; path?: string } }).req;
+  if (error) error.message += ` | ${req?.method ?? ''} ${req?.path ?? ''} replied: ${JSON.stringify(res.body).slice(0, 600)}`;
+  return error;
+};
+
 export const db = createPrismaClient();
 let app: INestApplication<App>;
 
@@ -62,3 +74,8 @@ export async function makeStaff(tenantId: string, role: Role) {
 }
 
 export const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
+
+/** Records a diagnosis directly, for tests about other steps (completing a visit requires one). */
+export function recordDiagnosis(visitId: string) {
+  return db.diagnosis.create({ data: { visitId, icd11Code: 'CA40', label: 'Pneumonia', isPrimary: true } });
+}

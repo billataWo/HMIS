@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Suspense } from "react";
+import { Fragment, Suspense } from "react";
 import { rangeText } from "@/components/lab-result";
 import { api, ApiError, type LabReport } from "@/lib/api";
 import { ageFrom, formatDualDate, formatTime, fullName } from "@/lib/format";
 import { PrintButton } from "@/components/print-button";
 
-export const metadata: Metadata = { title: "Lab results · HMIS" };
+export const metadata: Metadata = { title: "Lab results" };
 
 async function Report({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -31,21 +31,21 @@ async function Report({ params }: { params: Promise<{ id: string }> }) {
 
       <div className="grid grid-cols-2 gap-x-6 gap-y-1">
         <p>
-          <span className="text-zinc-600">Patient:</span> {fullName(r.patient)}
+          <span className="text-slate-600">Patient:</span> {fullName(r.patient)}
         </p>
         <p>
-          <span className="text-zinc-600">MRN:</span> {r.patient.mrn}
+          <span className="text-slate-600">MRN:</span> {r.patient.mrn}
         </p>
         <p>
-          <span className="text-zinc-600">Sex / age:</span> {r.patient.sex === "MALE" ? "Male" : "Female"}
+          <span className="text-slate-600">Sex / age:</span> {r.patient.sex === "MALE" ? "Male" : "Female"}
           {age !== null && ` · ${age} years`}
         </p>
         <p>
-          <span className="text-zinc-600">Visit:</span> {formatDualDate(r.checkedInAt)}
+          <span className="text-slate-600">Visit:</span> {formatDualDate(r.checkedInAt)}
         </p>
         {r.doctor && (
           <p>
-            <span className="text-zinc-600">Requested by:</span> Dr. {r.doctor.fullName}
+            <span className="text-slate-600">Requested by:</span> Dr. {r.doctor.fullName}
           </p>
         )}
       </div>
@@ -64,8 +64,40 @@ async function Report({ params }: { params: Promise<{ id: string }> }) {
             </tr>
           </thead>
           <tbody>
-            {r.labOrders.map((o) => (
-              <tr key={o.id} className="border-b border-zinc-300 align-top">
+            {r.labOrders.map((o) =>
+              o.labTest.components?.length ? (
+                // A panel: the test name, then one row per component with its own range and flag.
+                <Fragment key={o.id}>
+                  <tr className="align-top">
+                    <td colSpan={4} className="pt-2 font-semibold">
+                      {o.labTest.name}
+                      {o.resultNote && <span className="block text-xs font-normal">{o.resultNote}</span>}
+                    </td>
+                    <td className="pt-2 font-mono text-xs">
+                      {o.sampleId}
+                      {o.sampleCollectedAt && <span className="block">{formatTime(o.sampleCollectedAt)}</span>}
+                    </td>
+                  </tr>
+                  {o.labTest.components.map((c) => {
+                    const v = o.values?.find((x) => x.componentId === c.id);
+                    if (!v) return null;
+                    const abnormal = v.flag === "H" || v.flag === "L";
+                    return (
+                      <tr key={c.id} className="border-b border-slate-200 align-top">
+                        <td className="py-1 pr-2 pl-4">{c.name}</td>
+                        <td className={`py-1 pr-2 ${abnormal ? "font-bold" : ""}`}>
+                          {v.value}
+                          {c.unit && ` ${c.unit}`}
+                        </td>
+                        <td className="py-1 pr-2 font-bold">{v.flag === "H" ? "HIGH" : v.flag === "L" ? "LOW" : ""}</td>
+                        <td className="py-1 pr-2">{rangeText(c) ?? ""}</td>
+                        <td />
+                      </tr>
+                    );
+                  })}
+                </Fragment>
+              ) : (
+              <tr key={o.id} className="border-b border-slate-300 align-top">
                 <td className="py-1.5 pr-2">{o.labTest.name}</td>
                 <td className={`py-1.5 pr-2 ${o.resultFlag === "H" || o.resultFlag === "L" ? "font-bold" : ""}`}>
                   {o.resultValue}
@@ -79,7 +111,8 @@ async function Report({ params }: { params: Promise<{ id: string }> }) {
                   {o.sampleCollectedAt && <span className="block">{formatTime(o.sampleCollectedAt)}</span>}
                 </td>
               </tr>
-            ))}
+              ),
+            )}
           </tbody>
         </table>
       )}

@@ -1,8 +1,10 @@
+import { FileText } from "lucide-react";
 import Form from "next/form";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 import { BarList, ColumnChart } from "@/components/charts";
-import { inputClass, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
+import { StaggerCell, StaggerGrid } from "@/components/enter";
+import { inputClass, PageHeader, pillClass, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { api, ApiError, type Dashboard } from "@/lib/api";
 import { clinicToday, etb, formatDualDate, PAYMENT_METHODS, shiftDay } from "@/lib/format";
 
@@ -20,21 +22,23 @@ function presets(today: string): [string, string, string][] {
 }
 
 function Tile({ label, value, note, tone }: { label: string; value: string; note?: string; tone?: "warn" | "bad" }) {
-  const color = tone === "bad" ? "text-red-700 dark:text-red-400" : tone === "warn" ? "text-amber-700 dark:text-amber-400" : "";
+  const color =
+    tone === "bad" ? "text-red-700 dark:text-red-400" : tone === "warn" ? "text-amber-700 dark:text-amber-400" : "text-slate-900 dark:text-white";
   return (
-    <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-      <p className="text-xs text-zinc-500">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold tabular-nums ${color}`}>{value}</p>
-      {note && <p className="mt-0.5 text-xs text-zinc-500">{note}</p>}
-    </div>
+    <StaggerCell className="surface relative overflow-hidden p-4">
+      {tone && <span aria-hidden className={`absolute inset-y-0 left-0 w-1 ${tone === "bad" ? "bg-red-500" : "bg-amber-500"}`} />}
+      <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</p>
+      <p className={`mt-2 text-2xl font-semibold tracking-tight tabular-nums ${color}`}>{value}</p>
+      {note && <p className="mt-1 text-xs text-slate-500">{note}</p>}
+    </StaggerCell>
   );
 }
 
 function Panel({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
   return (
-    <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-      <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h2 className="font-medium">{title}</h2>
+    <section className="surface p-5">
+      <div className="mb-4 flex items-baseline justify-between gap-2">
+        <h2 className="font-semibold text-slate-900 dark:text-white">{title}</h2>
         {action}
       </div>
       {children}
@@ -42,7 +46,7 @@ function Panel({ title, children, action }: { title: string; children: ReactNode
   );
 }
 
-const empty = <p className="text-sm text-zinc-500">Nothing in this period.</p>;
+const empty = <p className="text-sm text-slate-500">Nothing in this period.</p>;
 
 async function Report({ searchParams }: { searchParams: Promise<Search> }) {
   const params = await searchParams;
@@ -54,7 +58,7 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
   try {
     d = await api<Dashboard>(`/reports/dashboard?from=${from}&to=${to}`);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-zinc-500">Only clinic admins can see reports.</p>;
+    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">Only clinic admins can see reports.</p>;
     if (e instanceof ApiError && e.status === 400) return <p className="text-sm text-red-700">{e.message}</p>;
     throw e;
   }
@@ -69,23 +73,24 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
           <Link
             key={label}
             href={`/reports?from=${f}&to=${t}`}
-            className={`rounded-full px-3 py-1 text-sm ${from === f && to === t ? "bg-teal-700 text-white" : "border border-zinc-300 dark:border-zinc-700"}`}
+            aria-current={from === f && to === t ? "page" : undefined}
+            className={pillClass(from === f && to === t)}
           >
             {label}
           </Link>
         ))}
         <Form action="/reports" className="ml-auto flex flex-wrap items-center gap-2 text-sm">
           <input type="date" name="from" defaultValue={from} max={today} aria-label="From" className={`${inputClass} w-40`} />
-          <span className="text-zinc-500">to</span>
+          <span className="text-slate-500">to</span>
           <input type="date" name="to" defaultValue={to} max={today} aria-label="To" className={`${inputClass} w-40`} />
           <button className={secondaryButtonClass}>Show</button>
         </Form>
       </div>
-      <p className="text-sm text-zinc-500">
+      <p className="text-sm text-slate-500">
         {from === to ? formatDualDate(`${from}T12:00:00+03:00`) : `${formatDualDate(`${from}T12:00:00+03:00`)} – ${formatDualDate(`${to}T12:00:00+03:00`)}`}
       </p>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <StaggerGrid className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Tile label="Patient visits" value={String(d.patients.visits)} note={`${d.patients.newPatients} new patients registered`} />
         <Tile label="Average wait to see a doctor" value={d.patients.avgWaitMinutes === null ? "—" : `${d.patients.avgWaitMinutes} min`} />
         <Tile label="Cash collected" value={etb(r.collected)} note={`Billed ${etb(r.billed)} · discounts ${etb(r.discounts)}`} />
@@ -95,7 +100,7 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
           note={`${r.unbilledCount} charges with no invoice`}
           tone={Number(r.unbilled) > 0 ? "warn" : undefined}
         />
-      </div>
+      </StaggerGrid>
 
       {multiDay && (
         <div className="grid gap-6 lg:grid-cols-2">
@@ -106,9 +111,9 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
             <ColumnChart title="Collected" unit="ETB" points={d.daily.map((x) => ({ label: x.day, value: Number(x.collected), display: Number(x.collected).toFixed(2) }))} />
           </Panel>
           <details className="text-sm lg:col-span-2">
-            <summary className="cursor-pointer text-zinc-500">Show the daily numbers as a table</summary>
+            <summary className="cursor-pointer text-slate-500">Show the daily numbers as a table</summary>
             <table className="mt-2 w-full max-w-md text-left">
-              <thead className="text-xs text-zinc-500">
+              <thead className="text-xs text-slate-500">
                 <tr>
                   <th className="py-1 font-medium">Day</th>
                   <th className="py-1 text-right font-medium">Visits</th>
@@ -117,7 +122,7 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
               </thead>
               <tbody>
                 {d.daily.map((x) => (
-                  <tr key={x.day} className="border-t border-zinc-100 dark:border-zinc-800">
+                  <tr key={x.day} className="border-t border-slate-100 dark:border-slate-800">
                     <td className="py-1">{x.day}</td>
                     <td className="py-1 text-right tabular-nums">{x.visits}</td>
                     <td className="py-1 text-right tabular-nums">{etb(x.collected)}</td>
@@ -132,7 +137,7 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
       <div className="grid gap-6 lg:grid-cols-2">
         <Panel title="Top diagnoses">
           {d.topDiagnoses.length
-            ? <BarList items={d.topDiagnoses.map((x) => ({ key: x.code, label: <><span className="font-mono text-xs text-zinc-500">{x.code}</span> {x.label}</>, value: x.count, display: String(x.count) }))} />
+            ? <BarList items={d.topDiagnoses.map((x) => ({ key: x.code, label: <><span className="font-mono text-xs text-slate-500">{x.code}</span> {x.label}</>, value: x.count, display: String(x.count) }))} />
             : empty}
         </Panel>
 
@@ -144,13 +149,13 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
                 <dd className="tabular-nums">{etb(v!)}</dd>
               </div>
             ))}
-            {Object.keys(r.byMethod).length === 0 && <p className="text-zinc-500">No payments in this period.</p>}
-            <div className="flex justify-between border-t border-zinc-200 pt-2 font-medium dark:border-zinc-700">
+            {Object.keys(r.byMethod).length === 0 && <p className="text-slate-500">No payments in this period.</p>}
+            <div className="flex justify-between border-t border-slate-200 pt-2 font-medium dark:border-slate-700">
               <dt>Patients still owe (all time)</dt>
               <dd className="tabular-nums">{etb(r.patientsOwe)}</dd>
             </div>
             {r.receivables.map((x) => (
-              <div key={x.payer} className="flex justify-between text-zinc-600 dark:text-zinc-400">
+              <div key={x.payer} className="flex justify-between text-slate-600 dark:text-slate-400">
                 <dt>{x.payer}</dt>
                 <dd className="tabular-nums">{etb(x.due)}</dd>
               </div>
@@ -158,19 +163,19 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
           </dl>
         </Panel>
 
-        <Panel title="Lab" action={<span className="text-xs text-zinc-500">{d.lab.abnormal} abnormal results</span>}>
+        <Panel title="Lab" action={<span className="text-xs text-slate-500">{d.lab.abnormal} abnormal results</span>}>
           <p className="mb-3 text-sm">
             {d.lab.ordered} tests ordered · {d.lab.verified} verified
           </p>
           {d.lab.topTests.length ? <BarList items={d.lab.topTests.map((x) => ({ key: x.name, label: x.name, value: x.count, display: String(x.count) }))} /> : empty}
         </Panel>
 
-        <Panel title="Pharmacy" action={<span className="text-xs text-zinc-500">sales {etb(d.pharmacy.sales)}</span>}>
+        <Panel title="Pharmacy" action={<span className="text-xs text-slate-500">sales {etb(d.pharmacy.sales)}</span>}>
           <p className="mb-3 text-sm">{d.pharmacy.unitsDispensed} units dispensed</p>
           {d.pharmacy.topDrugs.length ? <BarList items={d.pharmacy.topDrugs.map((x) => ({ key: x.name, label: x.name, value: x.units, display: String(x.units) }))} /> : empty}
         </Panel>
 
-        <Panel title="Stock" action={<Link href="/inventory" className="text-xs text-teal-700 hover:underline dark:text-teal-400">Inventory →</Link>}>
+        <Panel title="Stock" action={<Link href="/inventory" className="text-xs text-brand-700 hover:underline dark:text-brand-400">Inventory</Link>}>
           <dl className="grid grid-cols-2 gap-y-1 text-sm">
             <dt>Value on shelf (cost)</dt>
             <dd className="text-right tabular-nums">{etb(d.stock.value)}</dd>
@@ -186,7 +191,7 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
             </dd>
           </dl>
           {losses > 0 && (
-            <p className="mt-2 text-xs text-zinc-500">
+            <p className="mt-2 text-xs text-slate-500">
               Expired {etb(d.stock.expiredLoss)} · damaged, lost or corrected {etb(d.stock.adjustmentLoss)}
             </p>
           )}
@@ -208,6 +213,7 @@ export default function ReportsPage({ searchParams }: PageProps<"/reports">) {
         subtitle="ሪፖርቶች · how the clinic is doing"
         actions={
           <Link href="/reports/moh" className={secondaryButtonClass}>
+            <FileText aria-hidden />
             Monthly MoH report
           </Link>
         }

@@ -21,7 +21,9 @@ export function CheckInForm({
   returnTo: string;
 }) {
   const [state, action, pending] = useActionState<FormState, FormData>(checkIn, {});
-  const defaultService = services.find((s) => s.code === "CONS-GEN") ?? services[0];
+  // Only fees are taken at check-in; procedures are recorded during the visit.
+  const fees = services.filter((s) => s.kind !== "PROCEDURE");
+  const defaultService = fees.find((s) => s.code === "CONS-GEN") ?? fees[0];
 
   return (
     <form action={action} className="space-y-2">
@@ -40,7 +42,7 @@ export function CheckInForm({
         </select>
         <select name="serviceId" defaultValue={defaultService?.id ?? ""} className={`${inputClass} w-auto min-w-40 flex-1`} aria-label="Fee">
           <option value="">No fee</option>
-          {services.map((s) => (
+          {fees.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name} · {Number(s.price).toFixed(2)} ETB
             </option>

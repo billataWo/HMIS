@@ -1,9 +1,10 @@
+import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
 import { setAppointmentStatus } from "@/app/actions";
 import { CheckInForm } from "@/components/check-in-form";
 import { Flash } from "@/components/flash";
-import { PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
+import { Badge, type BadgeTone, EmptyState, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { api, type Appointment, type Doctor, type Me, type Role, type Service } from "@/lib/api";
 import { clinicToday, formatDualDate, formatTime, fullName, shiftDay } from "@/lib/format";
 
@@ -12,11 +13,11 @@ type Search = { day?: string; error?: string; booked?: string };
 const FRONT_DESK: Role[] = ["ADMIN", "RECEPTIONIST", "NURSE"];
 const CAN_BOOK: Role[] = ["ADMIN", "RECEPTIONIST", "NURSE", "DOCTOR"];
 
-const APPT_STATUS: Record<Appointment["status"], { label: string; className: string }> = {
-  BOOKED: { label: "Booked", className: "bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-100" },
-  ARRIVED: { label: "Arrived", className: "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100" },
-  CANCELLED: { label: "Cancelled", className: "bg-zinc-100 text-zinc-500 line-through dark:bg-zinc-800" },
-  NO_SHOW: { label: "No-show", className: "bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-100" },
+const APPT_STATUS: Record<Appointment["status"], { label: string; tone: BadgeTone }> = {
+  BOOKED: { label: "Booked", tone: "info" },
+  ARRIVED: { label: "Arrived", tone: "success" },
+  CANCELLED: { label: "Cancelled", tone: "neutral" },
+  NO_SHOW: { label: "No-show", tone: "danger" },
 };
 
 async function Day({ searchParams }: { searchParams: Promise<Search> }) {
@@ -30,8 +31,8 @@ async function Day({ searchParams }: { searchParams: Promise<Search> }) {
     api<Service[]>("/lookups/services"),
   ]);
   const returnTo = `/appointments?day=${day}`;
-  const dayLink = (d: string, label: string) => (
-    <Link href={`/appointments?day=${d}`} className={secondaryButtonClass}>
+  const dayLink = (d: string, label: ReactNode, aria?: string) => (
+    <Link href={`/appointments?day=${d}`} aria-label={aria} className={`${secondaryButtonClass} ${aria ? "px-2.5" : ""}`}>
       {label}
     </Link>
   );
@@ -40,37 +41,38 @@ async function Day({ searchParams }: { searchParams: Promise<Search> }) {
     <>
       <Flash params={params} />
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {dayLink(shiftDay(day, -1), "←")}
+        {dayLink(shiftDay(day, -1), <ChevronLeft aria-hidden />, "Previous day")}
         <span className="px-2 font-medium">
           {formatDualDate(`${day}T12:00:00+03:00`)}
-          {day === today && <span className="text-zinc-500"> · today</span>}
+          {day === today && <span className="text-slate-500"> · today</span>}
         </span>
-        {dayLink(shiftDay(day, 1), "→")}
+        {dayLink(shiftDay(day, 1), <ChevronRight aria-hidden />, "Next day")}
         {day !== today && dayLink(today, "Today")}
       </div>
 
       {appts.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
-          No appointments on this day.
-          {CAN_BOOK.includes(me.role) && " To book one, open a patient and choose “Book appointment”."}
-        </div>
+        <EmptyState icon={CalendarDays} title="No appointments on this day">
+          {CAN_BOOK.includes(me.role) && "To book one, open a patient and choose “Book appointment”."}
+        </EmptyState>
       ) : (
-        <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+        <ul className="divide-y divide-slate-200 surface dark:divide-slate-800 dark:border-slate-800">
           {appts.map((a) => {
             const s = APPT_STATUS[a.status];
             return (
               <li key={a.id} className="flex flex-wrap items-start gap-4 p-4">
-                <span className="w-14 pt-0.5 font-semibold tabular-nums">{formatTime(a.scheduledAt)}</span>
+                <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-sm font-semibold tabular-nums text-slate-800 dark:bg-slate-800 dark:text-slate-100">{formatTime(a.scheduledAt)}</span>
                 <div className="min-w-48 flex-1">
                   <Link href={`/patients/${a.patient.id}`} className="font-medium hover:underline">
                     {fullName(a.patient)}
                   </Link>
-                  <span className="text-sm text-zinc-500">
+                  <span className="text-sm text-slate-500">
                     {" "}· {a.patient.mrn}
                     {a.patient.phone && ` · ${a.patient.phone}`}
                   </span>
-                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-                    <span className={`rounded-full px-2 py-0.5 font-medium ${s.className}`}>{s.label}</span>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                    <Badge tone={s.tone} dot>
+                      {a.status === "CANCELLED" ? <s>{s.label}</s> : s.label}
+                    </Badge>
                     {a.doctor && <span>Dr. {a.doctor.fullName}</span>}
                     {a.reason && <span>{a.reason}</span>}
                     {a.visit && <span>Queue number {a.visit.queueNumber}</span>}

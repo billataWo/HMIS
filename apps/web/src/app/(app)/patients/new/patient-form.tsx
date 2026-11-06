@@ -2,33 +2,62 @@
 
 import Link from "next/link";
 import { useActionState, useState } from "react";
-import { createPatient, type FormState } from "../../../actions";
-import { Alert, buttonClass, Field, Input, secondaryButtonClass } from "@/components/ui";
+import { createPatient, updatePatient, type FormState } from "../../../actions";
+import { Alert, buttonClass, Field, Input, Notice, secondaryButtonClass } from "@/components/ui";
+import { ageFrom, fullName } from "@/lib/format";
 
+/** Registers a patient, or with patientId corrects an existing one (empty fields are cleared). */
 export function PatientForm({
   relative,
   defaults,
+  patientId,
 }: {
   relative?: { id: string; label: string };
   defaults: Record<string, string>;
+  patientId?: string;
 }) {
-  const [state, action, pending] = useActionState<FormState, FormData>(createPatient, {});
+  const [state, action, pending] = useActionState<FormState, FormData>(patientId ? updatePatient : createPatient, {});
   const v = { ...defaults, ...state.values };
   const err = state.fieldErrors ?? {};
   const [dobMode, setDobMode] = useState<"age" | "date">(v.dateOfBirth ? "date" : "age");
 
   return (
     <form action={action} className="max-w-2xl space-y-6">
-      {state.error && <Alert>{state.error}</Alert>}
+      {state.duplicates?.length ? (
+        <Notice tone="warning">
+          <p className="font-medium">This patient may already have a card. Check before registering again:</p>
+          <ul className="mt-2 space-y-1">
+            {state.duplicates.map((d) => {
+              const age = ageFrom(d.dateOfBirth);
+              return (
+                <li key={d.id}>
+                  <Link href={`/patients/${d.id}`} className="font-medium underline">
+                    {fullName(d)}
+                  </Link>{" "}
+                  · {d.mrn} · {d.sex === "MALE" ? "M" : "F"}
+                  {age !== null && ` · ${age}y`}
+                  {d.phone && ` · ${d.phone}`}
+                </li>
+              );
+            })}
+          </ul>
+          <label className="mt-3 flex items-center gap-2 font-medium">
+            <input type="checkbox" name="confirmDuplicate" /> This is a different person: register anyway
+          </label>
+        </Notice>
+      ) : (
+        state.error && <Alert>{state.error}</Alert>
+      )}
+      {patientId && <input type="hidden" name="patientId" value={patientId} />}
       {relative && (
-        <div className="rounded-md bg-teal-50 px-3 py-2 text-sm text-teal-900 dark:bg-teal-950 dark:text-teal-100">
+        <div className="rounded-md bg-brand-50 px-3 py-2 text-sm text-brand-900 dark:bg-brand-950 dark:text-brand-100">
           Family member of {relative.label}
           <input type="hidden" name="relativeId" value={relative.id} />
         </div>
       )}
 
       <fieldset className="grid gap-4 sm:grid-cols-3">
-        <legend className="mb-2 text-sm font-semibold text-zinc-500">Name (English)</legend>
+        <legend className="mb-2 text-sm font-semibold text-slate-500">Name (English)</legend>
         <Field label="First name *" error={err.firstName}>
           <Input name="firstName" required defaultValue={v.firstName} autoFocus />
         </Field>
@@ -41,7 +70,7 @@ export function PatientForm({
       </fieldset>
 
       <fieldset className="grid gap-4 sm:grid-cols-3">
-        <legend className="mb-2 text-sm font-semibold text-zinc-500">ስም (አማርኛ)</legend>
+        <legend className="mb-2 text-sm font-semibold text-slate-500">ስም (አማርኛ)</legend>
         <Field label="ስም" error={err.firstNameAm}>
           <Input name="firstNameAm" lang="am" defaultValue={v.firstNameAm} />
         </Field>
@@ -51,7 +80,7 @@ export function PatientForm({
       </fieldset>
 
       <fieldset className="grid gap-4 sm:grid-cols-3">
-        <legend className="mb-2 text-sm font-semibold text-zinc-500">Details</legend>
+        <legend className="mb-2 text-sm font-semibold text-slate-500">Details</legend>
         <Field label="Sex *" error={err.sex}>
           <div className="flex gap-4 py-2 text-sm">
             {(["MALE", "FEMALE"] as const).map((s) => (
@@ -64,10 +93,10 @@ export function PatientForm({
         </Field>
         <div className="space-y-1 sm:col-span-2">
           <div className="flex gap-3 text-sm">
-            <button type="button" onClick={() => setDobMode("age")} className={dobMode === "age" ? "font-semibold" : "text-zinc-500 underline"}>
+            <button type="button" onClick={() => setDobMode("age")} className={dobMode === "age" ? "font-semibold" : "text-slate-500 underline"}>
               Age
             </button>
-            <button type="button" onClick={() => setDobMode("date")} className={dobMode === "date" ? "font-semibold" : "text-zinc-500 underline"}>
+            <button type="button" onClick={() => setDobMode("date")} className={dobMode === "date" ? "font-semibold" : "text-slate-500 underline"}>
               Exact date of birth
             </button>
           </div>
@@ -94,9 +123,9 @@ export function PatientForm({
 
       <div className="flex gap-3">
         <button type="submit" disabled={pending} className={buttonClass}>
-          {pending ? "Saving…" : "Register patient"}
+          {pending ? "Saving…" : patientId ? "Save changes" : "Register patient"}
         </button>
-        <Link href="/patients" className={secondaryButtonClass}>
+        <Link href={patientId ? `/patients/${patientId}` : "/patients"} className={secondaryButtonClass}>
           Cancel
         </Link>
       </div>

@@ -14,7 +14,7 @@ describe('billing and cashier', () => {
 
   /** A checked-in visit with a 150.00 consultation fee and 2 × 5.00 of drugs: 160.00 to bill. */
   async function billableVisit() {
-    const p = (await api.post('/patients').set(bearer(desk.token)).send({ firstName: 'Bill', fatherName: 'Able', sex: 'MALE' }).expect(201)).body;
+    const p = (await api.post('/patients').set(bearer(desk.token)).send({ confirmDuplicate: true, firstName: 'Bill', fatherName: 'Able', sex: 'MALE' }).expect(201)).body;
     const v = (await api.post('/visits').set(bearer(desk.token)).send({ patientId: p.id, serviceId: consultationId }).expect(201)).body;
     await db.charge.create({ data: { visitId: v.id, source: 'PHARMACY', description: 'Amoxicillin 500 mg', quantity: 2, unitPrice: '5.00' } });
     return v.id as string;
@@ -138,7 +138,7 @@ describe('billing and cashier', () => {
     const front = await makeStaff(clinic.id, 'RECEPTIONIST');
     const fee = (await db.serviceItem.create({ data: { tenantId: clinic.id, code: 'CONS', name: 'Consultation', price: '150.00' } })).id;
     const bill = async () => {
-      const p = (await api.post('/patients').set(bearer(front.token)).send({ firstName: 'Day', fatherName: 'End', sex: 'FEMALE' }).expect(201)).body;
+      const p = (await api.post('/patients').set(bearer(front.token)).send({ confirmDuplicate: true, firstName: 'Day', fatherName: 'End', sex: 'FEMALE' }).expect(201)).body;
       const v = (await api.post('/visits').set(bearer(front.token)).send({ patientId: p.id, serviceId: fee }).expect(201)).body;
       return (await invoice({ visitId: v.id }, c1.token).expect(201)).body.id as string;
     };

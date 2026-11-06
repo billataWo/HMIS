@@ -1,0 +1,38 @@
+# Off-site WORM storage for HMIS backups, for when you run it yourselves (a server at a second
+# site in Ethiopia). If you use a storage provider instead, you don't need this file.
+# In production, put MinIO behind TLS (https) and keep the console port private.
+#   docker compose up -d minio
+#   docker compose run --rm admin bucket
+#   docker compose run --rm admin site <clinic-prefix>
+name: hmis-offsite
+
+x-minio-env: &minio-env
+  MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
+  MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+
+services:
+  minio:
+    image: ${MINIO_IMAGE:-bitnamilegacy/minio:2025.4.22}
+    restart: unless-stopped
+    environment: *minio-env
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/bitnami/minio/data
+
+  admin:
+    image: ${MINIO_IMAGE:-bitnamilegacy/minio:2025.4.22}
+    profiles: [tools]
+    entrypoint: [sh, /opt/hmis/minio.sh]
+    environment:
+      <<: *minio-env
+      BUCKET: ${BUCKET:-hmis-backups}
+      LOCK_DAYS: ${LOCK_DAYS:-30}
+      KEEP_VERSIONS_DAYS: ${KEEP_VERSIONS_DAYS:-90}
+      ARCHIVE_YEARS: ${ARCHIVE_YEARS:-10}
+    volumes:
+      - ./minio.sh:/opt/hmis/minio.sh:ro
+
+volumes:
+  minio-data:

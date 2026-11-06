@@ -21,6 +21,13 @@ import { SettingsController } from './settings/settings.controller.js';
 import { InventoryController } from './inventory/inventory.controller.js';
 import { CatalogController } from './catalog/catalog.controller.js';
 import { ReportsController } from './reports/reports.controller.js';
+import { ProceduresController } from './procedures/procedures.controller.js';
+import { AuditController } from './audit/audit.controller.js';
+import { BackupsController } from './backups/backups.controller.js';
+import { DocumentsController } from './documents/documents.controller.js';
+import { WalkInController } from './pharmacy/walk-in.controller.js';
+import { PayersController } from './payers/payers.controller.js';
+import { PurchaseOrdersController } from './inventory/purchase-orders.controller.js';
 
 const jwtSecret = process.env.JWT_SECRET;
 if (!jwtSecret || (process.env.NODE_ENV === 'production' && jwtSecret === 'change-me')) {
@@ -46,6 +53,13 @@ if (!jwtSecret || (process.env.NODE_ENV === 'production' && jwtSecret === 'chang
     InventoryController,
     CatalogController,
     ReportsController,
+    ProceduresController,
+    AuditController,
+    BackupsController,
+    DocumentsController,
+    WalkInController,
+    PayersController,
+    PurchaseOrdersController,
   ],
   providers: [
     AuditService,

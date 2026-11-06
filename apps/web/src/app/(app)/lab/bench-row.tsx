@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { labStep, type FormState } from "@/app/actions";
 import { LAB_STATUS, LabValue, rangeText } from "@/components/lab-result";
-import { Alert, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
+import { Alert, Badge, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
 import type { LabWorkOrder } from "@/lib/api";
 
 const small = "px-3 py-1 text-xs";
@@ -20,19 +20,21 @@ export function BenchRow({ o, prepayment }: { o: LabWorkOrder; prepayment: boole
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <span>
           <span className="font-medium">{t.name}</span>
-          {t.loincCode && <span className="ml-1 font-mono text-xs text-zinc-500">LOINC {t.loincCode}</span>}
+          {t.loincCode && <span className="ml-1 font-mono text-xs text-slate-500">LOINC {t.loincCode}</span>}
           {o.sampleId && <span className="ml-2 font-mono text-xs">· {o.sampleId}</span>}
         </span>
-        <span className="flex items-center gap-2 text-xs text-zinc-500">
-          {unpaid && <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-900 dark:bg-red-950 dark:text-red-100">Not paid</span>}
-          {LAB_STATUS[o.status]}
+        <span className="flex items-center gap-2 text-xs text-slate-500">
+          {unpaid && <Badge tone="danger">Not paid</Badge>}
+          <Badge tone={o.status === "VERIFIED" ? "success" : o.status === "RESULTED" ? "info" : o.status === "SAMPLE_COLLECTED" ? "brand" : "neutral"} dot>
+            {LAB_STATUS[o.status]}
+          </Badge>
         </span>
       </div>
       {state.error && <Alert>{state.error}</Alert>}
 
       {o.status === "ORDERED" &&
         (unpaid ? (
-          <p className="text-sm text-zinc-500">Send the patient to the cashier before taking the sample.</p>
+          <p className="text-sm text-slate-500">Send the patient to the cashier before taking the sample.</p>
         ) : (
           <form action={action} className="flex flex-wrap gap-2">
             <input type="hidden" name="orderId" value={o.id} />
@@ -48,7 +50,33 @@ export function BenchRow({ o, prepayment }: { o: LabWorkOrder; prepayment: boole
         <form action={action} className="flex flex-wrap items-start gap-2">
           <input type="hidden" name="orderId" value={o.id} />
           <input type="hidden" name="step" value="result" />
-          {t.resultOptions.length ? (
+          {t.components?.length ? (
+            // A panel: one input per component; blank ones are treated as not run.
+            <div className="grid w-full gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {t.components.map((c) => {
+                const current = o.values?.find((v) => v.componentId === c.id)?.value ?? "";
+                const ref = rangeText(c);
+                return (
+                  <label key={c.id} className="block text-sm">
+                    <span className="flex items-baseline justify-between gap-2">
+                      <span className="font-medium">{c.name}</span>
+                      {ref && <span className="text-xs text-slate-500">{ref}</span>}
+                    </span>
+                    {c.resultOptions.length ? (
+                      <select name={`c_${c.id}`} defaultValue={current} className={`${inputClass} mt-1`}>
+                        <option value="">—</option>
+                        {c.resultOptions.map((opt) => (
+                          <option key={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input name={`c_${c.id}`} inputMode={ref ? "decimal" : "text"} defaultValue={current} className={`${inputClass} mt-1`} />
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+          ) : t.resultOptions.length ? (
             <select name="value" required defaultValue={o.resultValue ?? ""} aria-label="Result" className={`${inputClass} w-48`}>
               <option value="" disabled>
                 Choose result
@@ -60,7 +88,7 @@ export function BenchRow({ o, prepayment }: { o: LabWorkOrder; prepayment: boole
           ) : numeric ? (
             <label className="flex items-center gap-1 text-sm">
               <input name="value" required inputMode="decimal" defaultValue={o.resultValue ?? ""} aria-label="Result" className={`${inputClass} w-28`} />
-              <span className="text-xs text-zinc-500">
+              <span className="text-xs text-slate-500">
                 {t.unit} (ref {range})
               </span>
             </label>
@@ -75,11 +103,11 @@ export function BenchRow({ o, prepayment }: { o: LabWorkOrder; prepayment: boole
       )}
 
       {o.status === "RESULTED" && (
-        <form action={action} className="flex flex-wrap items-center gap-3 rounded-md bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900">
+        <form action={action} className="flex flex-wrap items-center gap-3 rounded-md bg-slate-50 px-3 py-2 text-sm dark:bg-slate-900">
           <input type="hidden" name="orderId" value={o.id} />
           <input type="hidden" name="step" value="verify" />
           <span>
-            Entered: <LabValue o={o} /> {o.resultedBy && <span className="text-xs text-zinc-500">by {o.resultedBy.fullName}</span>}
+            Entered: <LabValue o={o} /> {o.resultedBy && <span className="text-xs text-slate-500">by {o.resultedBy.fullName}</span>}
           </span>
           <button disabled={pending} className={`${buttonClass} ${small}`}>
             Verify and release

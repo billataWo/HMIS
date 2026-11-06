@@ -25,19 +25,19 @@ export function LabPanel({ visitId, orders, tests, editable }: { visitId: string
     });
 
   return (
-    <section className="space-y-3">
+    <section id="lab-tests" className="surface scroll-mt-6 space-y-4 p-5">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="font-medium">Lab tests</h2>
+        <h2 className="font-semibold text-slate-900 dark:text-white">Lab tests</h2>
         {anyVerified && (
-          <Link href={`/lab-report/${visitId}`} target="_blank" className="text-xs text-teal-700 hover:underline dark:text-teal-400">
-            Print results ↗
+          <Link href={`/lab-report/${visitId}`} target="_blank" className="text-xs text-brand-700 hover:underline dark:text-brand-400">
+            Print results
           </Link>
         )}
       </div>
 
-      {orders.length === 0 && <p className="text-sm text-zinc-500">No tests ordered.</p>}
+      {orders.length === 0 && <p className="text-sm text-slate-500">No tests ordered.</p>}
       {orders.length > 0 && (
-        <ul className="divide-y divide-zinc-100 rounded-md border border-zinc-200 text-sm dark:divide-zinc-800 dark:border-zinc-800">
+        <ul className="divide-y divide-slate-100 rounded-md border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-800">
           {orders.map((o) => (
             <li key={o.id} className={`flex flex-wrap items-baseline justify-between gap-2 px-3 py-2 ${o.status === "CANCELLED" ? "opacity-50" : ""}`}>
               <span>
@@ -46,11 +46,11 @@ export function LabPanel({ visitId, orders, tests, editable }: { visitId: string
                   <>
                     {": "}
                     <LabValue o={o} />
-                    {rangeText(o.labTest) && <span className="text-xs text-zinc-500"> (ref {rangeText(o.labTest)})</span>}
-                    {o.resultNote && <span className="block text-xs text-zinc-500">{o.resultNote}</span>}
+                    {rangeText(o.labTest) && <span className="text-xs text-slate-500"> (ref {rangeText(o.labTest)})</span>}
+                    {o.resultNote && <span className="block text-xs text-slate-500">{o.resultNote}</span>}
                   </>
                 ) : (
-                  <span className="text-xs text-zinc-500"> · {LAB_STATUS[o.status]}</span>
+                  <span className="text-xs text-slate-500"> · {LAB_STATUS[o.status]}</span>
                 )}
               </span>
               {editable && o.status === "ORDERED" && (
@@ -64,7 +64,7 @@ export function LabPanel({ visitId, orders, tests, editable }: { visitId: string
       )}
 
       {editable && available.length > 0 && (
-        <div className="space-y-2 rounded-md border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
+        <div className="space-y-2 rounded-md border border-dashed border-slate-300 p-3 dark:border-slate-700">
           <div className="grid gap-1 sm:grid-cols-2">
             {available.map((t) => (
               <label key={t.id} className="flex items-center gap-2 text-sm">
@@ -74,7 +74,7 @@ export function LabPanel({ visitId, orders, tests, editable }: { visitId: string
                   onChange={(e) => setPicked((p) => (e.target.checked ? [...p, t.id] : p.filter((x) => x !== t.id)))}
                 />
                 {t.name}
-                <span className="text-xs text-zinc-500">{Number(t.price).toFixed(0)} ETB</span>
+                <span className="text-xs text-slate-500">{Number(t.price).toFixed(0)} ETB</span>
               </label>
             ))}
           </div>

@@ -21,7 +21,7 @@ describe('lab orders and results', () => {
   const test: Record<string, string> = {};
 
   async function openVisit() {
-    const p = (await api.post('/patients').set(bearer(desk.token)).send({ firstName: 'Lab', fatherName: 'Patient', sex: 'FEMALE' }).expect(201)).body;
+    const p = (await api.post('/patients').set(bearer(desk.token)).send({ confirmDuplicate: true, firstName: 'Lab', fatherName: 'Patient', sex: 'FEMALE' }).expect(201)).body;
     const v = (await api.post('/visits').set(bearer(desk.token)).send({ patientId: p.id }).expect(201)).body;
     await api.patch(`/visits/${v.id}/status`).set(bearer(doctor.token)).send({ status: 'IN_CONSULTATION' }).expect(200);
     return v.id as string;

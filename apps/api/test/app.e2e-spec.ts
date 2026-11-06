@@ -124,8 +124,43 @@ describe('patients', () => {
     );
   });
 
-  it('only lets clinical and front-desk roles register patients', async () => {
-    await register(cashier, { firstName: 'No', fatherName: 'Access', sex: 'MALE' }).expect(403);
+  it('only lets the front desk (receptionist, nurse, admin) register patients', async () => {
+    const clinic = await makeClinic('Registration Roles Clinic');
+    const allowed = ['ADMIN', 'RECEPTIONIST', 'NURSE'] as const;
+    const refused = ['DOCTOR', 'CASHIER', 'PHARMACIST', 'LAB_TECH'] as const;
+    for (const role of allowed) {
+      const token = await login(await makeUser(clinic.id, role));
+      await register(token, { firstName: 'By', fatherName: role, sex: 'MALE' }).expect(201);
+    }
+    for (const role of refused) {
+      const token = await login(await makeUser(clinic.id, role));
+      await register(token, { firstName: 'No', fatherName: role, sex: 'MALE' }).expect(403);
+      await api.get('/patients').set(bearer(token)).expect(200); // can still search
+    }
+  });
+
+  it('lets doctors register only when the admin turns it on in Settings', async () => {
+    const clinic = await makeClinic('Doctor Registers Clinic');
+    const admin = await login(await makeUser(clinic.id, 'ADMIN'));
+    const doctor = await login(await makeUser(clinic.id, 'DOCTOR'));
+    const cashierHere = await login(await makeUser(clinic.id, 'CASHIER'));
+    const body = { firstName: 'Seen', fatherName: 'Alone', sex: 'FEMALE' };
+
+    expect((await api.get('/auth/me').set(bearer(doctor)).expect(200)).body.tenant.doctorsCanRegister).toBe(false);
+    const refused = await register(doctor, body).expect(403);
+    expect(refused.body.message).toContain('Settings');
+
+    await api.patch('/settings').set(bearer(doctor)).send({ doctorsCanRegister: true }).expect(403); // admin only
+    expect((await api.patch('/settings').set(bearer(admin)).send({ doctorsCanRegister: true }).expect(200)).body.doctorsCanRegister).toBe(true);
+    expect((await api.get('/auth/me').set(bearer(doctor)).expect(200)).body.tenant.doctorsCanRegister).toBe(true);
+    await register(doctor, body).expect(201);
+    await register(cashierHere, body).expect(403);
+    const again = await register(doctor, body).expect(409); // same name: probably the same person
+    expect(again.body.duplicates).toHaveLength(1);
+    await register(doctor, { ...body, confirmDuplicate: true }).expect(201); // the setting is for doctors only
+
+    await api.patch('/settings').set(bearer(admin)).send({ doctorsCanRegister: false }).expect(200);
+    await register(doctor, { ...body, confirmDuplicate: true }).expect(403);
   });
 
   it('searches by name words, MRN and phone', async () => {

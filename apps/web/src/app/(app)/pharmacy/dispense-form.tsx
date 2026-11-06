@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
-import { dispensePrescription, type FormState } from "@/app/actions";
-import { Alert, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
+import { useActionState, useState } from "react";
+import { closePrescription, dispensePrescription, type FormState } from "@/app/actions";
+import { Alert, buttonClass, Input, inputClass, secondaryButtonClass } from "@/components/ui";
 import type { PrescriptionItem } from "@/lib/api";
 
 /**
@@ -32,7 +32,7 @@ export function DispenseForm({ prescriptionId, items, prepayment }: { prescripti
       )}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead className="text-xs text-zinc-500">
+          <thead className="text-xs text-slate-500">
             <tr>
               <th className="py-1 pr-3 font-medium">Drug</th>
               <th className="py-1 pr-3 font-medium">Directions</th>
@@ -46,17 +46,17 @@ export function DispenseForm({ prescriptionId, items, prepayment }: { prescripti
           </thead>
           <tbody>
             {rows.map(({ i, stock, paid, toBill, toGive }) => (
-              <tr key={i.id} className="border-t border-zinc-100 align-top dark:border-zinc-800">
+              <tr key={i.id} className="border-t border-slate-100 align-top dark:border-slate-800">
                 <td className="py-2 pr-3">
                   <span className="font-medium">{i.drug.genericName}</span> {i.drug.strength} {i.drug.form}
-                  <span className="block text-xs text-zinc-500">
+                  <span className="block text-xs text-slate-500">
                     {Number(i.drug.sellPrice).toFixed(2)} ETB / {i.drug.unit}
                   </span>
                 </td>
                 <td className="py-2 pr-3">
                   {i.dose} {i.frequency}
                   {i.durationDays && ` × ${i.durationDays} d`}
-                  {i.instructions && <span className="block text-xs text-zinc-500">{i.instructions}</span>}
+                  {i.instructions && <span className="block text-xs text-slate-500">{i.instructions}</span>}
                 </td>
                 <td className="py-2 pr-3 text-right tabular-nums">{i.quantity}</td>
                 {prepayment && (
@@ -69,7 +69,7 @@ export function DispenseForm({ prescriptionId, items, prepayment }: { prescripti
                 {canBill && (
                   <td className="py-2 pr-3">
                     {!priced(i) ? (
-                      <span className="text-xs text-zinc-500">free</span>
+                      <span className="text-xs text-slate-500">free</span>
                     ) : i.billedQty < i.quantity ? (
                       <input
                         name={`bill_${i.id}`}
@@ -81,7 +81,7 @@ export function DispenseForm({ prescriptionId, items, prepayment }: { prescripti
                         className={`${inputClass} w-20`}
                       />
                     ) : (
-                      <span className="text-xs text-zinc-500">sent</span>
+                      <span className="text-xs text-slate-500">sent</span>
                     )}
                   </td>
                 )}
@@ -97,7 +97,7 @@ export function DispenseForm({ prescriptionId, items, prepayment }: { prescripti
                       className={`${inputClass} w-20`}
                     />
                   ) : (
-                    <span className="text-xs text-zinc-500">done</span>
+                    <span className="text-xs text-slate-500">done</span>
                   )}
                 </td>
               </tr>
@@ -114,6 +114,37 @@ export function DispenseForm({ prescriptionId, items, prepayment }: { prescripti
         )}
         <button type="submit" name="step" value="dispense" disabled={pending || (prepayment && !canGive)} className={canGive || !prepayment ? buttonClass : secondaryButtonClass}>
           {pending ? "Saving…" : prepayment ? "Dispense paid" : "Dispense"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * When the patient won't collect the rest (bought it elsewhere, left): closes the prescription and
+ * drops unpaid drug charges. Paid but undelivered drugs must be refunded by an admin first.
+ */
+export function ClosePrescriptionForm({ prescriptionId }: { prescriptionId: string }) {
+  const [state, action, pending] = useActionState<FormState, FormData>(closePrescription, {});
+  const [open, setOpen] = useState(false);
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="text-xs text-slate-500 hover:text-red-700 hover:underline">
+        Patient won&apos;t collect the rest? Close it
+      </button>
+    );
+  }
+  return (
+    <form action={action} className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
+      <input type="hidden" name="prescriptionId" value={prescriptionId} />
+      {state.error && <Alert>{state.error}</Alert>}
+      <Input name="reason" required minLength={3} placeholder="Why? e.g. bought outside, out of stock, patient left" aria-label="Reason" defaultValue={state.values?.reason} />
+      <div className="flex gap-2">
+        <button type="submit" disabled={pending} className={`${buttonClass} px-3 py-1.5 text-xs`}>
+          {pending ? "Closing…" : "Close prescription"}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className={`${secondaryButtonClass} px-3 py-1.5 text-xs`}>
+          Keep it open
         </button>
       </div>
     </form>

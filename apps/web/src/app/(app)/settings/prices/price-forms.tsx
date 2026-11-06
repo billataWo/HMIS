@@ -16,7 +16,7 @@ function Status({ state, pending }: { state: FormState; pending: boolean }) {
 export function ServiceRow({ s }: { s?: CatalogService }) {
   const [state, action, pending] = useActionState<FormState, FormData>(saveService, {});
   return (
-    <form action={action} className="grid grid-cols-[6rem_1fr_7rem_auto_auto] items-center gap-2 py-2 text-sm">
+    <form action={action} className="grid grid-cols-[6rem_1fr_7rem_9rem_auto_auto] items-center gap-2 py-2 text-sm">
       {s ? (
         <>
           <input type="hidden" name="id" value={s.id} />
@@ -27,6 +27,10 @@ export function ServiceRow({ s }: { s?: CatalogService }) {
       )}
       <input name="name" required defaultValue={s?.name} placeholder="Service name" aria-label="Name" className={inputClass} />
       <input name="price" type="number" min={0} step="0.01" required defaultValue={s ? Number(s.price).toFixed(2) : ""} placeholder="ETB" aria-label="Price" className={inputClass} />
+      <select name="kind" defaultValue={s?.kind ?? "CONSULTATION"} aria-label="Kind" className={inputClass} title="Fees are taken at check-in; procedures are recorded during the visit">
+        <option value="CONSULTATION">Fee at check-in</option>
+        <option value="PROCEDURE">Procedure</option>
+      </select>
       {s ? (
         <label className="flex items-center gap-1 text-xs">
           <input type="checkbox" name="active" defaultChecked={s.active} /> active
@@ -66,6 +70,7 @@ export function LabTestRow({ t }: { t?: CatalogLabTest }) {
           className={`${inputClass} min-w-64 flex-1`}
         />
         <input name="loincCode" defaultValue={t?.loincCode ?? ""} placeholder="LOINC" aria-label="LOINC code" className={`${inputClass} w-28`} />
+        <PanelComponents t={t} />
         {t && (
           <label className="flex items-center gap-1 text-xs">
             <input type="checkbox" name="active" defaultChecked={t.active} /> active
@@ -77,5 +82,30 @@ export function LabTestRow({ t }: { t?: CatalogLabTest }) {
         <Status state={state} pending={pending} />
       </div>
     </form>
+  );
+}
+
+/** A panel's components as editable lines; hidden behind a toggle so simple tests stay simple. */
+function PanelComponents({ t }: { t?: CatalogLabTest }) {
+  const original = (t?.components ?? [])
+    .map((c) =>
+      [c.name, c.unit ?? "", c.refLow !== null || c.refHigh !== null ? `${c.refLow === null ? "" : Number(c.refLow)}-${c.refHigh === null ? "" : Number(c.refHigh)}` : "", c.resultOptions.join("/")]
+        .join(" | ")
+        .replace(/( \| )+$/, ""),
+    )
+    .join("\n");
+  return (
+    <details className="w-full text-xs" open={!!original}>
+      <summary className="text-brand-700 dark:text-brand-400">{original ? `Panel: ${t?.components?.length} components` : "Make this a panel (CBC, urinalysis…)"}</summary>
+      <input type="hidden" name="componentsOriginal" value={original} />
+      <textarea
+        name="components"
+        defaultValue={original}
+        rows={Math.max(3, (t?.components?.length ?? 0) + 1)}
+        placeholder={"One per line: name | unit | low-high | answers\nWBC | ×10³/µL | 4-11\nNitrite | | | Negative/Positive"}
+        className={`${inputClass} mt-1 font-mono text-xs`}
+      />
+      <span className="mt-1 block text-slate-500">Each component has its own unit and range, or its own answers. They can&apos;t be changed after results are entered.</span>
+    </details>
   );
 }

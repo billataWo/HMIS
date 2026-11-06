@@ -34,6 +34,7 @@ const DrugUpdateSchema = DrugSchema.partial().extend({ active: z.boolean().optio
 
 const ReceiptSchema = z.object({
   supplierId: z.uuid().optional(),
+  purchaseOrderId: z.uuid().optional(), // the order this delivery fills (its received quantities go up)
   receiptRef: optionalText(100),
   items: z
     .array(
@@ -47,6 +48,12 @@ const ReceiptSchema = z.object({
     )
     .min(1, 'Add at least one item')
     .max(50),
+});
+
+/** A physical stock count: what is actually on the shelf, per batch. */
+const CountSchema = z.object({
+  lines: z.array(z.object({ batchId: z.uuid(), counted: z.number().int().min(0).max(10_000_000) })).min(1).max(500),
+  note: optionalText(300),
 });
 
 const ADJUST_REASONS = ['DAMAGED', 'LOST', 'COUNT_CORRECTION', 'RETURNED_TO_SUPPLIER', 'OTHER'] as const;
@@ -236,7 +243,20 @@ export class InventoryController {
         await tx.stockMovement.create({ data: { batchId, type: 'RECEIPT', quantity: item.quantity, reference: body.receiptRef, userId: me.sub } });
         received.push({ drug: drug.genericName, batchNo: item.batchNo, quantity: item.quantity });
       }
-      await this.audit.log(me, 'stock.receive', 'Supplier', supplier?.id, { receiptRef: body.receiptRef, items: received }, tx);
+      if (body.purchaseOrderId) {
+        const po = await tx.purchaseOrder.findFirst({ where: { id: body.purchaseOrderId, tenantId: me.tenantId }, include: { lines: true } });
+        if (!po) throw new NotFoundException('Purchase order not found');
+        if (po.status !== 'ORDERED' && po.status !== 'PARTLY_RECEIVED') throw new ConflictException(`Purchase order ${po.number} is ${po.status.toLowerCase().replace('_', ' ')}`);
+        if (supplier && po.supplierId !== supplier.id) throw new ConflictException('This delivery is from a different supplier than the purchase order');
+        for (const line of po.lines) {
+          const qty = body.items.filter((i) => i.drugId === line.drugId).reduce((s, i) => s + i.quantity, 0);
+          if (qty) await tx.purchaseOrderLine.update({ where: { id: line.id }, data: { receivedQty: { increment: qty } } });
+        }
+        const lines = await tx.purchaseOrderLine.findMany({ where: { purchaseOrderId: po.id } });
+        const done = lines.every((l) => l.receivedQty >= l.quantity);
+        await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: done ? 'RECEIVED' : 'PARTLY_RECEIVED', ...(done && { closedAt: new Date() }) } });
+      }
+      await this.audit.log(me, 'stock.receive', 'Supplier', supplier?.id, { receiptRef: body.receiptRef, purchaseOrderId: body.purchaseOrderId, items: received }, tx);
       return { received, warnings };
     });
   }
@@ -262,6 +282,59 @@ export class InventoryController {
       });
       await this.audit.log(me, 'stock.adjust', 'StockBatch', batch.id, { drug: batch.drug.genericName, quantity: body.quantity, reason: body.reason }, tx);
       return tx.stockBatch.findUniqueOrThrow({ where: { id: batch.id } });
+    });
+  }
+
+  /** Every batch with stock on the shelf (expired ones too: a count should find them), for a stock count sheet. */
+  @Get('inventory/batches')
+  async batches(@CurrentUser() me: AuthUser) {
+    return this.prisma.client.stockBatch.findMany({
+      where: { drug: { tenantId: me.tenantId, active: true }, quantity: { gt: 0 } },
+      orderBy: [{ drug: { genericName: 'asc' } }, { expiryDate: 'asc' }],
+      select: {
+        id: true,
+        batchNo: true,
+        expiryDate: true,
+        quantity: true,
+        costPrice: true,
+        drug: { select: { id: true, genericName: true, strength: true, form: true, unit: true } },
+      },
+    });
+  }
+
+  /**
+   * Records a stock count: each counted batch is set to what is on the shelf, and every difference
+   * is kept as a count-correction movement (with its value at cost) for the loss report.
+   */
+  @Post('inventory/counts')
+  async count(@CurrentUser() me: AuthUser, @Body(new ZodPipe(CountSchema)) body: z.infer<typeof CountSchema>) {
+    if (new Set(body.lines.map((l) => l.batchId)).size !== body.lines.length) throw new ConflictException('Each batch may be counted only once');
+    return this.prisma.client.$transaction(async (tx) => {
+      const differences: { drug: string; batchNo: string; system: number; counted: number; difference: number; value: string }[] = [];
+      for (const line of body.lines) {
+        // Lock the batch so dispensing during the count can't be lost or double-counted.
+        const [row] = await tx.$queryRaw<{ id: string }[]>`
+          SELECT b."id" FROM "StockBatch" b JOIN "Drug" d ON d."id" = b."drugId"
+          WHERE b."id" = ${line.batchId} AND d."tenantId" = ${me.tenantId} FOR UPDATE OF b`;
+        if (!row) throw new NotFoundException('Batch not found');
+        const batch = await tx.stockBatch.findUniqueOrThrow({ where: { id: line.batchId }, include: { drug: true } });
+        const diff = line.counted - batch.quantity;
+        if (diff === 0) continue;
+        await tx.stockBatch.update({ where: { id: batch.id }, data: { quantity: line.counted } });
+        await tx.stockMovement.create({
+          data: { batchId: batch.id, type: 'ADJUSTMENT', quantity: diff, reason: body.note ? `COUNT_CORRECTION: ${body.note}` : 'COUNT_CORRECTION: stock count', userId: me.sub },
+        });
+        differences.push({
+          drug: batch.drug.genericName,
+          batchNo: batch.batchNo,
+          system: batch.quantity,
+          counted: line.counted,
+          difference: diff,
+          value: fromCents(toCents(batch.costPrice) * diff),
+        });
+      }
+      await this.audit.log(me, 'stock.count', 'Tenant', me.tenantId, { batches: body.lines.length, differences: differences.length }, tx);
+      return { counted: body.lines.length, differences };
     });
   }
 

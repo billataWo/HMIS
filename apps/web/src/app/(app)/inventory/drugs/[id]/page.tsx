@@ -22,7 +22,7 @@ async function Drug({ params }: { params: Promise<{ id: string }> }) {
     s = await api<DrugStock>(`/drugs/${id}/stock`);
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) notFound();
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-zinc-500">Only pharmacists and admins manage stock.</p>;
+    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">Only pharmacists and admins manage stock.</p>;
     throw e;
   }
   const d = s.drug;
@@ -49,32 +49,32 @@ async function Drug({ params }: { params: Promise<{ id: string }> }) {
           <section>
             <h2 className="mb-2 font-medium">Batches</h2>
             {s.batches.length === 0 ? (
-              <p className="text-sm text-zinc-500">No stock received yet.</p>
+              <p className="text-sm text-slate-500">No stock received yet.</p>
             ) : (
-              <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+              <div className="overflow-x-auto surface">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-zinc-50 text-zinc-500 dark:bg-zinc-900">
+                  <thead className="bg-slate-50/80 text-slate-500 dark:bg-slate-800/40">
                     <tr>
-                      <th className="px-3 py-2 font-medium">Batch</th>
-                      <th className="px-3 py-2 font-medium">Expiry</th>
-                      <th className="px-3 py-2 text-right font-medium">Qty</th>
-                      <th className="px-3 py-2 text-right font-medium">Cost</th>
-                      <th className="px-3 py-2 font-medium">Supplier</th>
+                      <th className="px-4 py-3 font-medium">Batch</th>
+                      <th className="px-4 py-3 font-medium">Expiry</th>
+                      <th className="px-4 py-3 text-right font-medium">Qty</th>
+                      <th className="px-4 py-3 text-right font-medium">Cost</th>
+                      <th className="px-4 py-3 font-medium">Supplier</th>
                     </tr>
                   </thead>
                   <tbody>
                     {s.batches.map((b) => (
-                      <tr key={b.id} className={`border-t border-zinc-200 dark:border-zinc-800 ${b.quantity === 0 ? "text-zinc-400" : ""}`}>
-                        <td className="px-3 py-2 font-mono text-xs">{b.batchNo}</td>
+                      <tr key={b.id} className={`border-t border-slate-200 dark:border-slate-800 ${b.quantity === 0 ? "text-slate-400" : ""}`}>
+                        <td className="px-4 py-3 font-mono text-xs">{b.batchNo}</td>
                         <td className={`px-3 py-2 ${b.expired && b.quantity > 0 ? "font-medium text-red-700 dark:text-red-400" : ""}`}>
                           {formatDualDate(b.expiryDate)}
                           {b.expired && " · expired"}
                         </td>
-                        <td className="px-3 py-2 text-right tabular-nums">{b.quantity}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{etb(b.costPrice)}</td>
-                        <td className="px-3 py-2">
+                        <td className="px-4 py-3 text-right tabular-nums">{b.quantity}</td>
+                        <td className="px-4 py-3 text-right tabular-nums">{etb(b.costPrice)}</td>
+                        <td className="px-4 py-3">
                           {b.supplierRef?.name ?? b.supplier ?? "—"}
-                          {b.receiptRef && <span className="block text-xs text-zinc-500">{b.receiptRef}</span>}
+                          {b.receiptRef && <span className="block text-xs text-slate-500">{b.receiptRef}</span>}
                         </td>
                       </tr>
                     ))}
@@ -87,9 +87,9 @@ async function Drug({ params }: { params: Promise<{ id: string }> }) {
           <section>
             <h2 className="mb-2 font-medium">Stock history</h2>
             {s.movements.length === 0 ? (
-              <p className="text-sm text-zinc-500">No movements yet.</p>
+              <p className="text-sm text-slate-500">No movements yet.</p>
             ) : (
-              <ul className="divide-y divide-zinc-100 text-sm dark:divide-zinc-800">
+              <ul className="divide-y divide-slate-100 text-sm dark:divide-slate-800">
                 {s.movements.map((m) => (
                   <li key={m.id} className="flex flex-wrap justify-between gap-2 py-1.5">
                     <span>
@@ -97,10 +97,10 @@ async function Drug({ params }: { params: Promise<{ id: string }> }) {
                         {m.quantity > 0 ? `+${m.quantity}` : m.quantity}
                       </span>{" "}
                       {MOVE_LABEL[m.type]} · batch {m.batch.batchNo}
-                      {m.reason && <span className="text-zinc-500"> · {m.reason}</span>}
-                      {m.type === "RECEIPT" && m.reference && <span className="text-zinc-500"> · {m.reference}</span>}
+                      {m.reason && <span className="text-slate-500"> · {m.reason}</span>}
+                      {m.type === "RECEIPT" && m.reference && <span className="text-slate-500"> · {m.reference}</span>}
                     </span>
-                    <span className="text-xs text-zinc-500">
+                    <span className="text-xs text-slate-500">
                       {formatDualDate(m.createdAt)} {formatTime(m.createdAt)}
                       {m.userName && ` · ${m.userName}`}
                     </span>
@@ -112,11 +112,11 @@ async function Drug({ params }: { params: Promise<{ id: string }> }) {
         </div>
 
         <aside className="space-y-8">
-          <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <section className="surface p-4 dark:border-slate-800">
             <h2 className="mb-3 font-medium">Adjust stock</h2>
             <AdjustForm batches={s.batches} unit={d.unit} />
           </section>
-          <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <section className="surface p-4 dark:border-slate-800">
             <h2 className="mb-3 font-medium">Details</h2>
             <DrugForm drug={d} />
           </section>

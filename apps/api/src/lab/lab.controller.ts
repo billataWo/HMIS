@@ -17,16 +17,31 @@ const OrderSchema = z.object({
     .refine((ids) => new Set(ids).size === ids.length, 'Each test may appear only once'),
 });
 const CollectSchema = z.object({ sampleId: z.string().trim().max(50).optional() });
-const ResultSchema = z.object({
-  value: z.string().trim().min(1, 'Enter the result').max(2000),
-  note: z.string().trim().max(1000).optional(),
-});
+const ResultSchema = z
+  .object({
+    value: z.string().trim().max(2000).optional(), // single-value tests
+    values: z.array(z.object({ componentId: z.uuid(), value: z.string().trim().max(200) })).max(60).optional(), // panels
+    note: z.string().trim().max(1000).optional(),
+  })
+  .refine((b) => (b.value && b.value.length > 0) || b.values?.some((v) => v.value), { message: 'Enter the result', path: ['value'] });
 
 const LAB: Role[] = ['ADMIN', 'LAB_TECH'];
 const OPEN: LabOrderStatus[] = ['ORDERED', 'SAMPLE_COLLECTED', 'RESULTED'];
 
 const orderInclude = {
-  labTest: { select: { id: true, name: true, loincCode: true, unit: true, refLow: true, refHigh: true, resultOptions: true } },
+  labTest: {
+    select: {
+      id: true,
+      name: true,
+      loincCode: true,
+      unit: true,
+      refLow: true,
+      refHigh: true,
+      resultOptions: true,
+      components: { orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, unit: true, refLow: true, refHigh: true, resultOptions: true } },
+    },
+  },
+  values: { select: { componentId: true, value: true, flag: true } },
   orderedBy: { select: { id: true, fullName: true } },
   collectedBy: { select: { fullName: true } },
   resultedBy: { select: { fullName: true } },
@@ -40,13 +55,30 @@ export function flagResult(value: number, low: number | null, high: number | nul
   return 'N';
 }
 
+type Checkable = { name: string; unit: string | null; refLow: { toString(): string } | null; refHigh: { toString(): string } | null; resultOptions: string[] };
+
+/**
+ * Validates one result against its answers or range and returns its flag: H/L/N for numeric
+ * results with a range, null for answers and free text.
+ */
+function checkValue(c: Checkable, value: string): string | null {
+  if (c.resultOptions.length) {
+    if (!c.resultOptions.includes(value)) throw new ConflictException(`${c.name}: choose one of ${c.resultOptions.join(', ')}`);
+    return null;
+  }
+  if (c.refLow === null && c.refHigh === null) return null;
+  const n = Number(value.replace(',', '.'));
+  if (!Number.isFinite(n)) throw new ConflictException(`${c.name} needs a number${c.unit ? ` in ${c.unit}` : ''}`);
+  return flagResult(n, c.refLow === null ? null : Number(c.refLow), c.refHigh === null ? null : Number(c.refHigh));
+}
+
 /** Clinicians only see a value once the lab has verified it. */
-function forViewer<T extends { status: LabOrderStatus; resultValue: string | null; resultFlag: string | null; resultNote: string | null }>(
+function forViewer<T extends { status: LabOrderStatus; resultValue: string | null; resultFlag: string | null; resultNote: string | null; values: unknown[] }>(
   order: T,
   role: Role,
 ) {
   if (LAB.includes(role) || order.status === 'VERIFIED') return order;
-  return { ...order, resultValue: null, resultFlag: null, resultNote: null };
+  return { ...order, resultValue: null, resultFlag: null, resultNote: null, values: [] };
 }
 
 @Controller()
@@ -89,6 +121,8 @@ export class LabController {
       const visit = await tx.visit.findFirst({ where: { id, tenantId: me.tenantId } });
       if (!visit) throw new NotFoundException('Visit not found');
       if (visit.status === 'COMPLETED' || visit.status === 'CANCELLED') throw new ConflictException('This visit is closed');
+      if (visit.kind === 'WALK_IN') throw new ConflictException('This is a pharmacy counter sale, not a consultation');
+      if (visit.status === 'WAITING') throw new ConflictException('Call the patient in before ordering tests');
 
       const tests = await tx.labTest.findMany({ where: { id: { in: labTestIds }, tenantId: me.tenantId, active: true } });
       if (tests.length !== labTestIds.length) throw new NotFoundException('One or more tests were not found');
@@ -118,8 +152,8 @@ export class LabController {
     return this.prisma.client.$transaction(async (tx) => {
       const order = await this.order(me, id, tx);
       if (order.status !== 'ORDERED') throw new ConflictException('Only tests whose sample has not been taken can be cancelled');
-      const invoiced = await tx.charge.count({ where: { source: 'LAB', sourceId: id, invoiceId: { not: null } } });
-      if (invoiced) throw new ConflictException('This test is already on an invoice; ask an admin to void it before cancelling');
+      const invoiced = await tx.charge.count({ where: { source: 'LAB', sourceId: id, invoiceId: { not: null }, voidedAt: null } });
+      if (invoiced) throw new ConflictException('This test is already on an invoice; an admin removes it there (refunding it if paid), which also cancels it');
       await tx.charge.deleteMany({ where: { source: 'LAB', sourceId: id, invoiceId: null } });
       const updated = await tx.labOrder.update({ where: { id }, data: { status: 'CANCELLED' }, include: orderInclude });
       await this.audit.log(me, 'lab.cancel', 'LabOrder', id, undefined, tx);
@@ -188,19 +222,45 @@ export class LabController {
     }
 
     const t = order.labTest;
+    let value: string;
     let flag: string | null = null;
-    if (t.resultOptions.length) {
-      if (!t.resultOptions.includes(body.value)) throw new ConflictException(`Choose one of: ${t.resultOptions.join(', ')}`);
-    } else if (t.refLow !== null || t.refHigh !== null) {
-      const n = Number(body.value.replace(',', '.'));
-      if (!Number.isFinite(n)) throw new ConflictException(`${t.name} needs a number${t.unit ? ` in ${t.unit}` : ''}`);
-      flag = flagResult(n, t.refLow === null ? null : Number(t.refLow), t.refHigh === null ? null : Number(t.refHigh));
+    let panel: { componentId: string; value: string; flag: string | null }[] | null = null;
+
+    if (t.components.length) {
+      // A panel: each component is checked against its own answers or range. Blank ones are not run.
+      panel = [];
+      for (const entry of body.values ?? []) {
+        if (!entry.value) continue;
+        const c = t.components.find((x) => x.id === entry.componentId);
+        if (!c) throw new ConflictException('That result does not belong to this test');
+        panel.push({ componentId: c.id, value: entry.value, flag: checkValue(c, entry.value) });
+      }
+      if (!panel.length) throw new ConflictException('Enter at least one result');
+      const flags = panel.map((v) => v.flag);
+      flag = flags.includes('H') ? 'H' : flags.includes('L') ? 'L' : flags.includes('N') ? 'N' : null;
+      // A one-line summary for lists and older screens; the full results are in `values`.
+      value = panel
+        .map((v) => {
+          const c = t.components.find((x) => x.id === v.componentId)!;
+          return `${c.name} ${v.value}${v.flag === 'H' || v.flag === 'L' ? ` ${v.flag}` : ''}`;
+        })
+        .join('; ');
+    } else {
+      if (!body.value) throw new ConflictException('Enter the result');
+      value = body.value;
+      flag = checkValue(t, body.value);
     }
 
-    const updated = await this.prisma.client.labOrder.update({
-      where: { id },
-      data: { status: 'RESULTED', resultValue: body.value, resultFlag: flag, resultNote: body.note || null, resultedAt: new Date(), resultedById: me.sub },
-      include: orderInclude,
+    const updated = await this.prisma.client.$transaction(async (tx) => {
+      if (panel) {
+        await tx.labResultValue.deleteMany({ where: { labOrderId: id } });
+        await tx.labResultValue.createMany({ data: panel.map((v) => ({ ...v, tenantId: me.tenantId, labOrderId: id })) });
+      }
+      return tx.labOrder.update({
+        where: { id },
+        data: { status: 'RESULTED', resultValue: value, resultFlag: flag, resultNote: body.note || null, resultedAt: new Date(), resultedById: me.sub },
+        include: orderInclude,
+      });
     });
     await this.audit.log(me, order.status === 'RESULTED' ? 'lab.correct' : 'lab.result', 'LabOrder', id);
     return updated;

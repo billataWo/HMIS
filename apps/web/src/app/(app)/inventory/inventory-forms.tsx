@@ -73,7 +73,7 @@ export function AdjustForm({ batches, unit }: { batches: DrugStock["batches"]; u
   const [reason, setReason] = useState("DAMAGED");
   const err = state.fieldErrors ?? {};
   const live = batches.filter((b) => b.quantity > 0 || !b.expired);
-  if (!live.length) return <p className="text-sm text-zinc-500">No batches to adjust.</p>;
+  if (!live.length) return <p className="text-sm text-slate-500">No batches to adjust.</p>;
 
   return (
     <form action={action} className="space-y-3">

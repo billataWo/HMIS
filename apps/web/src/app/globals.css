@@ -1,26 +1,210 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+ * Design tokens. Style: "Accessible & Ethical + Swiss minimal" for clinical software:
+ * calm medical teal, cool slate neutrals, high contrast text, restrained motion.
+ * Components use `brand-*` for the primary colour and `slate-*` for neutrals; change the
+ * brand scale here to re-theme the whole app.
+ */
+@theme {
+  --color-brand-50: #ecfeff;
+  --color-brand-100: #cffafe;
+  --color-brand-200: #a5f3fc;
+  --color-brand-300: #67e8f9;
+  --color-brand-400: #22d3ee;
+  --color-brand-500: #06b6d4;
+  --color-brand-600: #0891b2;
+  --color-brand-700: #0e7490; /* primary: 5.4:1 on white */
+  --color-brand-800: #155e75;
+  --color-brand-900: #164e63;
+  --color-brand-950: #083344;
+
+  --font-sans: var(--font-inter), var(--font-ethiopic), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono-face), ui-monospace, SFMono-Regular, monospace;
+
+  --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.06);
+  --shadow-raised: 0 4px 12px -2px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.06);
+  --shadow-overlay: 0 16px 40px -8px rgb(15 23 42 / 0.25);
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Chart marks grow from their baseline on first paint. */
+  --animate-grow-y: grow-y 0.55s var(--ease-out-soft) both;
+  --animate-grow-x: grow-x 0.55s var(--ease-out-soft) both;
+  @keyframes grow-y {
+    from {
+      transform: scaleY(0);
+    }
+  }
+  @keyframes grow-x {
+    from {
+      transform: scaleX(0);
+    }
+  }
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+:root {
+  --canvas: #f6f8fb;
+  --surface: #ffffff;
+  --surface-border: #e2e8f0;
+  --ink: #0f172a;
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --canvas: #0b1120;
+    --surface: #0f172a;
+    --surface-border: #1e293b;
+    --ink: #e2e8f0;
+    color-scheme: dark;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/*
+ * Defaults for shared controls live in the components layer, below utilities, so a page can
+ * resize any input or button with a plain utility (`w-40`, `px-3 py-1 text-xs`) and it wins.
+ */
+@layer components {
+  .control {
+    width: 100%;
+  }
+  .btn-size {
+    padding: 0.5rem 1rem;
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+  }
+}
+
+/* A card: the basic container for every panel, table and form section. */
+@utility surface {
+  border-radius: 0.875rem;
+  border: 1px solid var(--surface-border);
+  background-color: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--color-brand-500) 25%, transparent);
+  }
+
+  /* Visible keyboard focus everywhere (never removed, only restyled). */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-600);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  /* Data tables: quiet headers, comfortable rows, hover highlight. */
+  table {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  thead th {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--color-slate-500);
+    white-space: nowrap;
+  }
+  tbody tr {
+    transition: background-color 120ms ease-out;
+  }
+  td,
+  th {
+    font-variant-numeric: tabular-nums;
+  }
+
+  summary {
+    list-style: none;
+  }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary {
+    cursor: pointer;
+  }
+}
+
+/*
+ * Entrances (pages, lists, tiles) are pure CSS so content is visible even if JavaScript is slow,
+ * blocked or fails: the animation only ever runs from slightly-faded to fully shown.
+ */
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--enter-y, 6px));
+  }
+}
+.enter,
+.stagger > * {
+  animation: enter 240ms var(--ease-out-soft) both;
+}
+.enter {
+  animation-delay: var(--enter-delay, 0ms);
+}
+.stagger > :nth-child(2) { animation-delay: 35ms; }
+.stagger > :nth-child(3) { animation-delay: 70ms; }
+.stagger > :nth-child(4) { animation-delay: 105ms; }
+.stagger > :nth-child(5) { animation-delay: 140ms; }
+.stagger > :nth-child(6) { animation-delay: 175ms; }
+.stagger > :nth-child(7) { animation-delay: 210ms; }
+.stagger > :nth-child(8) { animation-delay: 245ms; }
+.stagger > :nth-child(n + 9) { animation-delay: 280ms; }
+
+/* Loading placeholders: a soft sweep instead of a blink. */
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+.shimmer {
+  background: linear-gradient(90deg, var(--color-slate-100) 25%, var(--color-slate-200) 37%, var(--color-slate-100) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+@media (prefers-color-scheme: dark) {
+  .shimmer {
+    background-image: linear-gradient(90deg, var(--color-slate-800) 25%, var(--color-slate-700) 37%, var(--color-slate-800) 63%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
+  .surface {
+    box-shadow: none;
+  }
 }

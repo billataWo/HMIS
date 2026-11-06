@@ -1,3 +1,4 @@
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { PrintButton } from "@/components/print-button";
@@ -21,7 +22,7 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
   try {
     r = await api<MohReport>(`/reports/moh-monthly${qs}`);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-zinc-500">Only clinic admins can see reports.</p>;
+    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">Only clinic admins can see reports.</p>;
     throw e;
   }
   const { ecYear: y, ecMonth: m } = r.period;
@@ -30,20 +31,20 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
   const now = toEthiopian(new Date());
   const isCurrent = now.year === y && now.month === m;
   const lastDay = shiftDay(r.period.endDay, -1);
-  const cell = "border border-zinc-300 px-2 py-1 dark:border-zinc-700";
+  const cell = "border border-slate-300 px-2 py-1 dark:border-slate-700";
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-2 print:hidden">
-        <Link href={`/reports/moh?y=${prev.y}&m=${prev.m}`} className={secondaryButtonClass}>
-          ←
+        <Link href={`/reports/moh?y=${prev.y}&m=${prev.m}`} aria-label="Previous month" className={`${secondaryButtonClass} px-2.5`}>
+          <ChevronLeft aria-hidden />
         </Link>
         <span className="px-2 font-medium">
           {r.period.labelAm} · {r.period.label}
         </span>
         {!isCurrent && (
-          <Link href={`/reports/moh?y=${next.y}&m=${next.m}`} className={secondaryButtonClass}>
-            →
+          <Link href={`/reports/moh?y=${next.y}&m=${next.m}`} aria-label="Next month" className={`${secondaryButtonClass} px-2.5`}>
+            <ChevronRight aria-hidden />
           </Link>
         )}
         <a href={`/reports/moh/csv?y=${y}&m=${m}`} className={`${secondaryButtonClass} ml-auto`}>
@@ -54,9 +55,9 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
       <header className="text-sm">
         <p className="text-lg font-semibold">
           {r.facility.name}
-          {r.facility.nameAm && <span className="font-normal text-zinc-500"> · {r.facility.nameAm}</span>}
+          {r.facility.nameAm && <span className="font-normal text-slate-500"> · {r.facility.nameAm}</span>}
         </p>
-        <p className="text-zinc-500">
+        <p className="text-slate-500">
           Monthly OPD report · {r.period.labelAm} ({formatDualDate(`${r.period.startDay}T12:00:00+03:00`)} – {formatDualDate(`${lastDay}T12:00:00+03:00`)})
           {isCurrent && " · month in progress"}
         </p>
@@ -65,7 +66,7 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
       <section>
         <h2 className="mb-2 font-medium">1. Outpatient visits by age and sex</h2>
         <table className="w-full max-w-xl border-collapse text-sm">
-          <thead className="bg-zinc-50 dark:bg-zinc-900">
+          <thead className="bg-slate-50 dark:bg-slate-900">
             <tr>
               <th className={`${cell} text-left`}>Age group</th>
               <th className={`${cell} text-right`}>Male</th>
@@ -101,10 +102,10 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
       <section>
         <h2 className="mb-2 font-medium">2. Top 10 causes of OPD morbidity (primary diagnosis)</h2>
         {r.morbidity.length === 0 ? (
-          <p className="text-sm text-zinc-500">No diagnoses recorded this month.</p>
+          <p className="text-sm text-slate-500">No diagnoses recorded this month.</p>
         ) : (
           <table className="w-full max-w-3xl border-collapse text-sm">
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className="bg-slate-50 dark:bg-slate-900">
               <tr>
                 <th className={`${cell} text-right`}>#</th>
                 <th className={`${cell} text-left`}>ICD-11</th>
@@ -136,10 +137,10 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
           Tested <strong>{r.malaria.tested}</strong> · positive <strong>{r.malaria.positive}</strong>
           {r.malaria.tested > 0 && ` (${Math.round((r.malaria.positive / r.malaria.tested) * 100)}% positivity)`}
         </p>
-        {r.malaria.byResult.length > 0 && <p className="text-sm text-zinc-500">{r.malaria.byResult.map((x) => `${x.result}: ${x.count}`).join(" · ")}</p>}
+        {r.malaria.byResult.length > 0 && <p className="text-sm text-slate-500">{r.malaria.byResult.map((x) => `${x.result}: ${x.count}`).join(" · ")}</p>}
       </section>
 
-      <p className="max-w-3xl text-xs text-zinc-500">
+      <p className="max-w-3xl text-xs text-slate-500">
         Counts come from completed and ongoing visits, primary diagnoses and verified malaria tests. Check the indicators and age bands against your Regional Health Bureau&apos;s
         current reporting form before submitting.
       </p>

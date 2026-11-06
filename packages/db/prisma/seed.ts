@@ -92,8 +92,68 @@ async function main() {
       { tenantId: tenant.id, code: "CONS-GEN", name: "General consultation", price: "150.00" },
       { tenantId: tenant.id, code: "CONS-FU", name: "Follow-up consultation", price: "80.00" },
       { tenantId: tenant.id, code: "CARD", name: "Patient card", price: "50.00" },
+      // Procedures given during the visit, charged by the doctor or nurse who gives them.
+      { tenantId: tenant.id, code: "PR-INJ", name: "Injection (IM/IV)", price: "30.00", kind: "PROCEDURE" },
+      { tenantId: tenant.id, code: "PR-IVF", name: "IV fluid administration", price: "100.00", kind: "PROCEDURE" },
+      { tenantId: tenant.id, code: "PR-DRS", name: "Wound dressing", price: "80.00", kind: "PROCEDURE" },
+      { tenantId: tenant.id, code: "PR-SUT", name: "Suturing", price: "200.00", kind: "PROCEDURE" },
+      { tenantId: tenant.id, code: "PR-NEB", name: "Nebulization", price: "100.00", kind: "PROCEDURE" },
+      { tenantId: tenant.id, code: "PR-ECG", name: "ECG", price: "300.00", kind: "PROCEDURE" },
     ],
   });
+
+  // Panels: one order, several results. Ranges are common adult values; have the clinical advisor
+  // confirm them (several differ by sex and age).
+  const level = ["Negative", "Trace", "1+", "2+", "3+"];
+  const PANELS: { name: string; loincCode?: string; price: string; components: { name: string; unit?: string; refLow?: string; refHigh?: string; resultOptions?: string[] }[] }[] = [
+    {
+      name: "Complete blood count (CBC)",
+      loincCode: "58410-2",
+      price: "250.00",
+      components: [
+        { name: "WBC", unit: "×10³/µL", refLow: "4", refHigh: "11" },
+        { name: "Neutrophils", unit: "%", refLow: "40", refHigh: "75" },
+        { name: "Lymphocytes", unit: "%", refLow: "20", refHigh: "45" },
+        { name: "RBC", unit: "×10⁶/µL", refLow: "4.2", refHigh: "5.9" },
+        { name: "Hemoglobin", unit: "g/dL", refLow: "12", refHigh: "17" },
+        { name: "Hematocrit", unit: "%", refLow: "36", refHigh: "50" },
+        { name: "MCV", unit: "fL", refLow: "80", refHigh: "100" },
+        { name: "Platelets", unit: "×10³/µL", refLow: "150", refHigh: "450" },
+      ],
+    },
+    {
+      name: "Urinalysis",
+      loincCode: "24356-8",
+      price: "80.00",
+      components: [
+        { name: "Colour" },
+        { name: "Appearance", resultOptions: ["Clear", "Slightly turbid", "Turbid"] },
+        { name: "pH", refLow: "4.5", refHigh: "8" },
+        { name: "Specific gravity", refLow: "1.005", refHigh: "1.030" },
+        { name: "Protein", resultOptions: level },
+        { name: "Glucose", resultOptions: level },
+        { name: "Ketones", resultOptions: level },
+        { name: "Blood", resultOptions: level },
+        { name: "Leukocytes", resultOptions: level },
+        { name: "Nitrite", resultOptions: ["Negative", "Positive"] },
+        { name: "WBC", unit: "/hpf", refLow: "0", refHigh: "5" },
+        { name: "RBC", unit: "/hpf", refLow: "0", refHigh: "3" },
+      ],
+    },
+  ];
+  for (const panel of PANELS) {
+    const test =
+      (await prisma.labTest.findFirst({ where: { tenantId: tenant.id, name: panel.name }, include: { components: true } })) ??
+      (await prisma.labTest.create({
+        data: { tenantId: tenant.id, name: panel.name, loincCode: panel.loincCode, price: panel.price, resultOptions: [] },
+        include: { components: true },
+      }));
+    if (test.components.length) continue; // never change a panel a clinic already has
+    await prisma.labTestComponent.createMany({
+      data: panel.components.map((c, i) => ({ tenantId: tenant.id, labTestId: test.id, sortOrder: i, resultOptions: c.resultOptions ?? [], ...c })),
+    });
+    console.log(`+ panel ${panel.name} (${panel.components.length} components)`);
+  }
 
   for (const t of LAB_TESTS) {
     const existing = await prisma.labTest.findFirst({ where: { tenantId: tenant.id, name: t.name } });

@@ -8,7 +8,7 @@ import { clinicDay, dayRange } from '../common/clinic-day.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { prescriptionInclude } from '../prescriptions/prescriptions.controller.js';
-import { queuePatientSelect } from '../visits/visits.controller.js';
+import { OPEN_RX, pendingLabTests, queuePatientSelect } from '../visits/visits.controller.js';
 
 const DispenseSchema = z.object({
   items: z
@@ -17,7 +17,9 @@ const DispenseSchema = z.object({
     .refine((items) => new Set(items.map((i) => i.itemId)).size === items.length, 'Each item may appear only once'),
 });
 
-const DrugSearchSchema = z.object({ q: z.string().trim().default('') });
+const CloseSchema = z.object({ reason: z.string().trim().min(3, 'Say why the rest will not be collected').max(300) });
+
+const DrugSearchSchema =z.object({ q: z.string().trim().default('') });
 
 /** Batches still usable today (expiry on or after the start of the clinic day). */
 const usableFrom = () => dayRange(clinicDay()).start;
@@ -70,7 +72,7 @@ export class PharmacyController {
     const db = this.prisma.client;
     const include = {
       ...prescriptionInclude,
-      visit: { select: { id: true, queueNumber: true, status: true, patient: { select: queuePatientSelect } } },
+      visit: { select: { id: true, queueNumber: true, status: true, kind: true, patient: { select: queuePatientSelect } } },
     };
     const [open, dispensedToday] = await Promise.all([
       db.prescription.findMany({
@@ -245,18 +247,74 @@ export class PharmacyController {
         include: prescriptionInclude,
       });
 
-      // A visit waiting only on the pharmacy is finished once nothing is left to dispense.
-      if (complete) {
-        const visit = await tx.visit.findUniqueOrThrow({ where: { id: p.visitId } });
-        const stillOpen = await tx.prescription.count({
-          where: { visitId: p.visitId, status: { in: ['PENDING', 'PARTIALLY_DISPENSED'] } },
-        });
-        if (visit.status === 'AWAITING_PHARMACY' && stillOpen === 0) {
-          await tx.visit.update({ where: { id: visit.id }, data: { status: 'COMPLETED', completedAt: new Date() } });
+      if (complete) await this.finishPharmacyVisit(tx, p.visitId);
+
+      await this.audit.log(me, 'prescription.dispense', 'Prescription', id, { items: body.items }, tx);
+      return updated;
+    });
+  }
+
+  /**
+   * A visit waiting only on the pharmacy is finished once nothing is left to dispense, unless lab
+   * results are still on their way to the doctor.
+   */
+  private async finishPharmacyVisit(tx: Prisma.TransactionClient, visitId: string) {
+    const visit = await tx.visit.findUniqueOrThrow({ where: { id: visitId } });
+    if (visit.status !== 'AWAITING_PHARMACY') return;
+    const stillOpen = await tx.prescription.count({ where: { visitId, status: { in: OPEN_RX } } });
+    if (stillOpen === 0 && (await pendingLabTests(tx, visitId)).length === 0) {
+      await tx.visit.update({ where: { id: visitId }, data: { status: 'COMPLETED', completedAt: new Date() } });
+    }
+  }
+
+  /**
+   * Closes what is left of a prescription the patient won't collect (bought elsewhere, left).
+   * Unpaid units that never reached an invoice are dropped from the cashier's list. Units billed on
+   * an invoice but not handed over must first be removed from it (refunded) by an admin, so the
+   * books always match what left the shelf.
+   */
+  @Post('prescriptions/:id/close')
+  @Roles('ADMIN', 'PHARMACIST')
+  async close(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(CloseSchema)) { reason }: z.infer<typeof CloseSchema>) {
+    if (!z.uuid().safeParse(id).success) throw new NotFoundException('Prescription not found');
+    return this.prisma.client.$transaction(async (tx) => {
+      const [row] = await tx.$queryRaw<{ id: string }[]>`
+        SELECT "id" FROM "Prescription" WHERE "id" = ${id} AND "tenantId" = ${me.tenantId} FOR UPDATE`;
+      if (!row) throw new NotFoundException('Prescription not found');
+      const p = await tx.prescription.findUniqueOrThrow({ where: { id }, include: { items: { include: { drug: true } } } });
+      if (p.status !== 'PENDING' && p.status !== 'PARTIALLY_DISPENSED') {
+        throw new ConflictException(`This prescription is ${p.status.toLowerCase().replace('_', ' ')}`);
+      }
+
+      // With pay-first, drug charges only come from "send to cashier", so any not yet on an invoice
+      // are for units still on the shelf.
+      if (await prepaymentRequired(tx, me.tenantId)) {
+        for (const item of p.items) {
+          const loose = await tx.charge.findMany({ where: { source: 'PHARMACY', sourceId: item.id, invoiceId: null, voidedAt: null } });
+          const qty = loose.reduce((s, c) => s + c.quantity, 0);
+          if (!qty) continue;
+          await tx.charge.deleteMany({ where: { id: { in: loose.map((c) => c.id) } } });
+          await tx.prescriptionItem.update({ where: { id: item.id }, data: { billedQty: { decrement: qty } } });
+          item.billedQty -= qty;
+        }
+      }
+      for (const item of p.items) {
+        const owed = item.billedQty - item.dispensedQty;
+        if (owed > 0) {
+          throw new ConflictException(
+            `${owed} ${item.drug.unit} of ${item.drug.genericName} are on an invoice but were not handed over. Hand them over, or ask an admin to remove them from the invoice (refund) first.`,
+          );
         }
       }
 
-      await this.audit.log(me, 'prescription.dispense', 'Prescription', id, { items: body.items }, tx);
+      const anyDispensed = p.items.some((i) => i.dispensedQty > 0);
+      const updated = await tx.prescription.update({
+        where: { id },
+        data: anyDispensed ? { status: 'DISPENSED', dispensedAt: new Date() } : { status: 'CANCELLED' },
+        include: prescriptionInclude,
+      });
+      await this.finishPharmacyVisit(tx, p.visitId);
+      await this.audit.log(me, 'prescription.close', 'Prescription', id, { reason, partly: anyDispensed }, tx);
       return updated;
     });
   }

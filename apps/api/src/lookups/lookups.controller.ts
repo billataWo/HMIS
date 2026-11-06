@@ -20,8 +20,8 @@ export class LookupsController {
   services(@CurrentUser() me: AuthUser) {
     return this.prisma.client.serviceItem.findMany({
       where: { tenantId: me.tenantId, active: true },
-      select: { id: true, code: true, name: true, price: true },
-      orderBy: { name: 'asc' },
+      select: { id: true, code: true, name: true, price: true, kind: true },
+      orderBy: [{ kind: 'asc' }, { name: 'asc' }],
     });
   }
 }

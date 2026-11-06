@@ -6,6 +6,7 @@ import { AuditService } from '../common/audit.service.js';
 import { normalizePhone } from '../common/phone.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { forgetAccount } from '../auth/auth.guard.js';
 
 const RoleEnum = z.enum(['ADMIN', 'RECEPTIONIST', 'DOCTOR', 'NURSE', 'CASHIER', 'PHARMACIST', 'LAB_TECH']);
 
@@ -50,7 +51,8 @@ export class UsersController {
 
     const { password, ...rest } = body;
     const user = await this.prisma.client.user.create({
-      data: { ...rest, tenantId: me.tenantId, passwordHash: await bcrypt.hash(password, 10) },
+      // The admin chose this password, so it is temporary: the new user replaces it at first sign-in.
+      data: { ...rest, tenantId: me.tenantId, passwordHash: await bcrypt.hash(password, 10), mustChangePassword: true },
       select: publicFields,
     });
     await this.audit.log(me, 'user.create', 'User', user.id, { role: user.role });
@@ -73,9 +75,11 @@ export class UsersController {
     const { password, ...rest } = body;
     const user = await this.prisma.client.user.update({
       where: { id },
-      data: { ...rest, ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}) },
+      // A password reset by an admin is temporary too.
+      data: { ...rest, ...(password ? { passwordHash: await bcrypt.hash(password, 10), mustChangePassword: true } : {}) },
       select: publicFields,
     });
+    forgetAccount(id); // deactivation or a new role applies on the user's next request
     await this.audit.log(me, 'user.update', 'User', id, { ...rest, passwordChanged: !!password });
     return user;
   }

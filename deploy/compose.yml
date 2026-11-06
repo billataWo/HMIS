@@ -1,0 +1,85 @@
+# HMIS production database with automatic, encrypted, off-site backups.
+# Copy .env.example to .env, fill it in, then: docker compose up -d
+# Guide: docs/backup/README.md. Disaster recovery: docs/backup/RESTORE.md.
+name: hmis
+
+x-database-env: &database-env
+  POSTGRES_USER: ${POSTGRES_USER:-hmis}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+  POSTGRES_DB: ${POSTGRES_DB:-hmis}
+  TZ: ${TZ:-Africa/Addis_Ababa}
+  PGBACKREST_REPO1_CIPHER_PASS: ${BACKUP_ENCRYPTION_KEY:?Set BACKUP_ENCRYPTION_KEY in .env}
+
+x-backup-volumes: &backup-volumes
+  - pgsocket:/var/run/postgresql
+  # The backup disk: in production a second physical disk, e.g. BACKUP_DISK=/mnt/backup
+  - ${BACKUP_DISK:-backup}:/backup
+
+services:
+  db:
+    build: ./postgres
+    image: hmis-postgres:17.11
+    restart: unless-stopped
+    shm_size: 256mb
+    # The database holds only the encryption key it needs to archive WAL, never the off-site keys.
+    environment: *database-env
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=pgbackrest --stanza=hmis archive-push %p
+      # A WAL segment is archived at least once a minute while the clinic is working:
+      # the most that a dead disk can lose is about one minute of work.
+      - -c
+      - archive_timeout=60
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - pgsocket:/var/run/postgresql
+      - ${BACKUP_DISK:-backup}:/backup
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Takes the backups, copies them off-site, tests restores, raises alerts.
+  backup:
+    image: hmis-postgres:17.11
+    command: [hmis-backup, worker]
+    user: postgres
+    restart: unless-stopped
+    stop_grace_period: 2m
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: ${BACKUP_ENV_FILE:-.env}
+    environment: *database-env
+    volumes:
+      # Read-only: the backup worker can read the database files but never change them.
+      - pgdata:/var/lib/postgresql/data:ro
+      - pgsocket:/var/run/postgresql
+      - ${BACKUP_DISK:-backup}:/backup
+
+  # Disaster recovery only (see docs/backup/RESTORE.md):
+  #   docker compose run --rm restore hmis-backup restore --help
+  restore:
+    image: hmis-postgres:17.11
+    profiles: [tools]
+    user: postgres
+    env_file: ${BACKUP_ENV_FILE:-.env}
+    environment: *database-env
+    command: [hmis-backup, restore, --help]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - pgsocket:/var/run/postgresql
+      - ${BACKUP_DISK:-backup}:/backup
+
+volumes:
+  pgdata:
+  pgsocket:
+  backup:

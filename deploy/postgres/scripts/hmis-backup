@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# HMIS backup command. Runs inside the "backup" container:
+#   docker compose exec backup hmis-backup status
+# See docs/backup/README.md.
+# shellcheck source=jobs.sh
+source /opt/hmis-backup/jobs.sh
+
+usage() {
+  cat <<'EOF'
+hmis-backup <command>
+
+  worker                 run the scheduler (the backup container's main process)
+  status                 backups in the repository, off-site state and recent events
+  now [full|diff|incr]   take a backup now (default: whatever is due, else incr), then copy off-site
+  sync                   copy the repository off-site now
+  check                  run the health checks now
+  restore-test [local|offsite]
+                         restore the latest backup into a throw-away database and check it
+  verify                 re-check every file in the repository against its checksum
+  archive                make the encrypted long-term archive (pg_dump) now
+  restore ...            disaster recovery: see `hmis-backup restore --help`
+EOF
+}
+
+worker() {
+  mkdir -p "$STATE_DIR" "$SCRATCH_DIR" "$REPO_PATH"
+  log "Backup worker starting for \"$SITE\""
+  if ! require_settings; then
+    alert_state settings failed "Backups are NOT running: BACKUP_ENCRYPTION_KEY is missing or too short."
+    sleep 300
+    exit 1
+  fi
+  until db_ready; do
+    log "Waiting for the database"
+    sleep 5
+  done
+  cleanup_restore_test
+  local out
+  if ! out=$(pgbackrest stanza-create 2>&1); then
+    record CHECK FAILED "" "Could not set up the backup repository: $(tail_text "$out")"
+    alert_state settings failed "Backups are NOT running: the repository could not be set up: $(tail_text "$out" 2)"
+    sleep 300
+    exit 1
+  fi
+  # Proves WAL archiving works end to end: forces a WAL switch and waits for it in the repository.
+  if out=$(pgbackrest check 2>&1); then
+    alert_state settings ok "Backups are running."
+  else
+    record CHECK FAILED "" "WAL archiving does not work: $(tail_text "$out")"
+    alert_state settings failed "WAL archiving does not work: $(tail_text "$out" 2)"
+  fi
+  trap 'log "Backup worker stopping"; cleanup_restore_test; exit 0' TERM INT
+  while true; do
+    tick || log "Scheduler pass ended with an error"
+    sleep 60 &
+    wait $!
+  done
+}
+
+status() {
+  echo "Site:      $SITE"
+  if offsite_configured; then
+    local ok
+    ok=$(cat "$STATE_DIR/offsite.ok" 2>/dev/null || echo 0)
+    echo "Off-site:  ${OFFSITE_LOCATION:-$OFFSITE_S3_ENDPOINT} (bucket $OFFSITE_S3_BUCKET, prefix $OFFSITE_PREFIX), last copied $( ((ok)) && date -d "@$ok" +'%F %T' || echo never)"
+  else
+    echo "Off-site:  NOT CONFIGURED"
+  fi
+  echo "Archive:   $([[ -n ${BACKUP_ARCHIVE_RECIPIENT:-} ]] && ls -1 "$ARCHIVE_DIR" 2>/dev/null | grep -c '\.age$' || echo 'NOT CONFIGURED') monthly archive(s) on the backup disk"
+  echo
+  pgbackrest info || true
+  echo
+  echo "Recent events:"
+  tail -n 15 "$STATE_DIR/events.log" 2>/dev/null |
+    jq -r '"  \(.finished | localtime | strftime("%F %T"))  \(.kind) \(.status)\(if .detail != "" then " (\(.detail))" else "" end)  \(.message)"' || true
+}
+
+cmd=${1:-help}
+shift || true
+case $cmd in
+  worker) worker ;;
+  status) status ;;
+  now)
+    require_settings
+    type=${1:-$(next_backup_type)}
+    with_lock job_backup "${type:-incr}"
+    job_offsite_sync
+    ;;
+  sync) job_offsite_sync ;;
+  check) job_check force ;;
+  restore-test) require_settings && with_lock job_restore_test "${1:-local}" ;;
+  verify) require_settings && with_lock job_verify ;;
+  archive) with_lock job_archive && job_offsite_sync ;;
+  restore) exec /opt/hmis-backup/restore.sh "$@" ;;
+  help | -h | --help) usage ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac

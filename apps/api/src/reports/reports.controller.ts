@@ -84,7 +84,7 @@ export class ReportsController {
     const [visits, newPatients, payments, invoices, outstanding, unbilled, diagnoses, labOrders, pharmacyCharges, dispensed, drugs, losses] =
       await Promise.all([
         db.visit.findMany({
-          where: { tenantId: t, checkedInAt: range, status: { not: 'CANCELLED' } },
+          where: { tenantId: t, kind: 'OPD', checkedInAt: range, status: { not: 'CANCELLED' } },
           select: { checkedInAt: true, calledAt: true, status: true, doctor: { select: { fullName: true } } },
         }),
         db.patient.count({ where: { tenantId: t, createdAt: range } }),
@@ -103,7 +103,7 @@ export class ReportsController {
           where: { tenantId: t, orderedAt: range, status: { not: 'CANCELLED' } },
           select: { status: true, resultFlag: true, labTest: { select: { name: true } } },
         }),
-        db.charge.findMany({ where: { visit: { tenantId: t }, source: 'PHARMACY', createdAt: range }, select: { unitPrice: true, quantity: true } }),
+        db.charge.findMany({ where: { visit: { tenantId: t }, source: 'PHARMACY', voidedAt: null, createdAt: range }, select: { unitPrice: true, quantity: true } }),
         db.stockMovement.findMany({
           where: { type: 'DISPENSE', createdAt: range, batch: { drug: { tenantId: t } } },
           select: { quantity: true, batch: { select: { drug: { select: { genericName: true } } } } },
@@ -215,7 +215,7 @@ export class ReportsController {
     const [tenant, visits, malaria] = await Promise.all([
       db.tenant.findUniqueOrThrow({ where: { id: t }, select: { name: true, nameAm: true, address: true } }),
       db.visit.findMany({
-        where: { tenantId: t, checkedInAt: range, status: { not: 'CANCELLED' } },
+        where: { tenantId: t, kind: 'OPD', checkedInAt: range, status: { not: 'CANCELLED' } },
         select: {
           patientId: true,
           checkedInAt: true,
@@ -233,7 +233,7 @@ export class ReportsController {
     const patientIds = [...new Set(visits.map((v) => v.patientId))];
     const firsts = await db.visit.groupBy({
       by: ['patientId'],
-      where: { tenantId: t, patientId: { in: patientIds }, status: { not: 'CANCELLED' } },
+      where: { tenantId: t, kind: 'OPD', patientId: { in: patientIds }, status: { not: 'CANCELLED' } },
       _min: { checkedInAt: true },
     });
     const firstVisit = new Map(firsts.map((f) => [f.patientId, f._min.checkedInAt!.getTime()]));

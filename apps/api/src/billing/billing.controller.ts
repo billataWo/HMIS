@@ -5,6 +5,7 @@ import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
 import { clinicDay, DAY_PATTERN, dayRange } from '../common/clinic-day.js';
 import { fromCents, toCents } from '../common/money.js';
+import { liveCharge } from '../common/settlement.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { queuePatientSelect } from '../visits/visits.controller.js';
@@ -19,11 +20,12 @@ const InvoiceSchema = z
   .object({
     visitId: z.uuid(),
     payerType: z.enum(['SELF', 'CREDIT', 'INSURANCE']).default('SELF'),
-    payerName: z.string().trim().max(200).optional(),
+    payerId: z.uuid().optional(), // a payer from the list (preferred)
+    payerName: z.string().trim().max(200).optional(), // or a name: a payer of that name is found or added
     discount: money.optional(),
     discountReason: z.string().trim().max(300).optional(),
   })
-  .refine((b) => b.payerType === 'SELF' || (b.payerName && b.payerName.length >= 2), {
+  .refine((b) => b.payerType === 'SELF' || !!b.payerId || (b.payerName && b.payerName.length >= 2), {
     message: 'Name the credit company or insurer',
     path: ['payerName'],
   })
@@ -48,6 +50,17 @@ const PaymentSchema = z
     path: ['reference'],
   });
 
+const RemoveChargeSchema = z.object({
+  reason: z.string().trim().min(5, 'Explain why this is refunded').max(300),
+  method: z.enum(['CASH', 'TELEBIRR', 'CHAPA', 'BANK_TRANSFER']).default('CASH'),
+  reference: z
+    .string()
+    .trim()
+    .max(100)
+    .transform((s) => s || undefined)
+    .optional(),
+  quantity: z.number().int().min(1).optional(), // drug lines: units to refund (default: the whole line)
+});
 const VoidSchema = z.object({ reason: z.string().trim().min(5, 'Explain why the invoice is voided').max(300) });
 const ListSchema = z.object({
   day: z.string().regex(DAY_PATTERN).optional(),
@@ -108,6 +121,18 @@ export class BillingController {
       const charges = await tx.charge.findMany({ where: { visitId: visit.id, invoiceId: null } });
       if (!charges.length) throw new ConflictException('This visit has nothing left to bill');
 
+      let payer: { id: string; name: string } | null = null;
+      if (body.payerType !== 'SELF') {
+        payer = body.payerId
+          ? await tx.payer.findFirst({ where: { id: body.payerId, tenantId: me.tenantId, active: true, type: body.payerType } })
+          : await tx.payer.upsert({
+              where: { tenantId_name: { tenantId: me.tenantId, name: body.payerName! } },
+              update: {},
+              create: { tenantId: me.tenantId, type: body.payerType, name: body.payerName! },
+            });
+        if (!payer) throw new NotFoundException('Payer not found');
+      }
+
       const subtotal = charges.reduce((s, c) => s + lineTotal(c), 0);
       const discount = body.discount ? toCents(body.discount) : 0;
       if (discount > subtotal) throw new ConflictException('The discount is larger than the bill');
@@ -124,7 +149,8 @@ export class BillingController {
           visitId: visit.id,
           number: `INV-${String(nextInvoice - 1).padStart(6, '0')}`,
           payerType: body.payerType,
-          payerName: body.payerType === 'SELF' ? undefined : body.payerName,
+          payerName: payer?.name,
+          payerId: payer?.id,
           subtotal: fromCents(subtotal),
           discount: fromCents(discount),
           discountReason: discount ? body.discountReason : undefined,
@@ -230,9 +256,115 @@ export class BillingController {
       if (invoice.status === 'VOID') throw new ConflictException('This invoice is already void');
       if (toCents(invoice.paid) > 0) throw new ConflictException('An invoice with payments cannot be voided');
 
-      await tx.charge.updateMany({ where: { invoiceId: id }, data: { invoiceId: null } });
+      // Removed (refunded) lines stay on the void invoice as history; the rest go back to "to bill".
+      await tx.charge.updateMany({ where: { invoiceId: id, ...liveCharge }, data: { invoiceId: null } });
       await tx.invoice.update({ where: { id }, data: { status: 'VOID', voidedAt: new Date(), voidReason: reason } });
       await this.audit.log(me, 'invoice.void', 'Invoice', id, { number: invoice.number, reason }, tx);
+    });
+    return this.get(me, id);
+  }
+
+  /**
+   * Admin only. Removes a line whose service was never delivered (test whose sample wasn't taken,
+   * drugs not handed over, consultation the patient left before) from its invoice. The test is
+   * cancelled or the drug units released, the invoice total drops, and anything paid beyond the
+   * new total is refunded with the chosen method. Nothing is deleted: the line stays, marked removed.
+   */
+  @Post('invoices/:id/charges/:chargeId/remove')
+  @Roles('ADMIN')
+  async removeCharge(
+    @CurrentUser() me: AuthUser,
+    @Param('id') id: string,
+    @Param('chargeId') chargeId: string,
+    @Body(new ZodPipe(RemoveChargeSchema)) body: z.infer<typeof RemoveChargeSchema>,
+  ) {
+    if (!z.uuid().safeParse(id).success || !z.uuid().safeParse(chargeId).success) throw new NotFoundException('Invoice line not found');
+    await this.prisma.client.$transaction(async (tx) => {
+      const [row] = await tx.$queryRaw<{ id: string }[]>`
+        SELECT "id" FROM "Invoice" WHERE "id" = ${id} AND "tenantId" = ${me.tenantId} FOR UPDATE`;
+      if (!row) throw new NotFoundException('Invoice not found');
+      const invoice = await tx.invoice.findUniqueOrThrow({ where: { id }, include: { charges: true } });
+      if (invoice.status === 'VOID') throw new ConflictException('This invoice is void');
+      const charge = invoice.charges.find((c) => c.id === chargeId);
+      if (!charge) throw new NotFoundException('Invoice line not found');
+      if (charge.voidedAt) throw new ConflictException('This line was already removed');
+
+      // Only what the patient never received can be taken back.
+      if (charge.source === 'LAB' && charge.sourceId) {
+        const order = await tx.labOrder.findUnique({ where: { id: charge.sourceId } });
+        if (order && order.status !== 'ORDERED' && order.status !== 'CANCELLED') {
+          throw new ConflictException('The sample for this test was already taken, so it cannot be refunded');
+        }
+        if (order?.status === 'ORDERED') await tx.labOrder.update({ where: { id: order.id }, data: { status: 'CANCELLED' } });
+      }
+      // Drug lines can be refunded in part: just the units that never left the shelf.
+      const units = body.quantity ?? charge.quantity;
+      if (units > charge.quantity) throw new ConflictException(`This line has only ${charge.quantity} units`);
+      if (units < charge.quantity && charge.source !== 'PHARMACY') throw new ConflictException('Only drug lines can be refunded in part');
+      if (charge.source === 'PHARMACY' && charge.sourceId) {
+        // Atomic: release only units that were billed but not handed over.
+        const released = await tx.$executeRaw`
+          UPDATE "PrescriptionItem" SET "billedQty" = "billedQty" - ${units}
+          WHERE "id" = ${charge.sourceId} AND "billedQty" - "dispensedQty" >= ${units}`;
+        if (released !== 1) throw new ConflictException('Those units were already handed over, so they cannot be refunded');
+      }
+      if (charge.source === 'CONSULTATION') {
+        const visit = await tx.visit.findUniqueOrThrow({ where: { id: charge.visitId } });
+        if (visit.status !== 'WAITING' && visit.status !== 'CANCELLED') {
+          throw new ConflictException('The patient has already seen the doctor, so the consultation cannot be refunded');
+        }
+      }
+
+      let live = invoice.charges.filter((c) => c.id !== chargeId && !c.voidedAt);
+      if (units < charge.quantity) {
+        // Keep the handed-over units on the line; record the refunded ones as a removed line.
+        const kept = await tx.charge.update({ where: { id: chargeId }, data: { quantity: charge.quantity - units } });
+        const { id: _id, createdAt: _at, ...copy } = charge;
+        await tx.charge.create({ data: { ...copy, quantity: units, voidedAt: new Date(), voidReason: body.reason } });
+        live = [...live, kept];
+      } else {
+        await tx.charge.update({ where: { id: chargeId }, data: { voidedAt: new Date(), voidReason: body.reason } });
+      }
+      const subtotal = live.reduce((s, c) => s + lineTotal(c), 0);
+      const discount = Math.min(toCents(invoice.discount), subtotal);
+      const total = subtotal - discount;
+      const refund = Math.max(0, toCents(invoice.paid) - total);
+      const paid = toCents(invoice.paid) - refund;
+
+      if (refund > 0) {
+        if (body.method !== 'CASH' && !body.reference) throw new ConflictException('Enter the transaction reference of the refund');
+        await tx.payment.create({
+          data: {
+            tenantId: me.tenantId,
+            invoiceId: id,
+            cashierId: me.sub,
+            method: body.method,
+            amount: fromCents(-refund),
+            reference: body.reference,
+            note: `Refund: ${body.reason}`,
+          },
+        });
+      }
+      await tx.invoice.update({
+        where: { id },
+        data: {
+          subtotal: fromCents(subtotal),
+          discount: fromCents(discount),
+          total: fromCents(total),
+          paid: fromCents(paid),
+          ...(live.length === 0
+            ? { status: 'VOID', voidedAt: new Date(), voidReason: `All lines removed: ${body.reason}` }
+            : { status: paid >= total ? 'PAID' : paid > 0 ? 'PARTIALLY_PAID' : 'OPEN' }),
+        },
+      });
+      await this.audit.log(
+        me,
+        'invoice.remove-line',
+        'Invoice',
+        id,
+        { number: invoice.number, line: charge.description, refund: fromCents(refund), method: refund ? body.method : undefined, reason: body.reason },
+        tx,
+      );
     });
     return this.get(me, id);
   }

@@ -20,33 +20,36 @@ enum FacilityType {
 }
 
 model Tenant {
-  id        String       @id @default(uuid())
-  name      String
-  nameAm    String?
-  type      FacilityType @default(CLINIC)
-  phone     String?
-  address   String?
-  nextMrn   Int          @default(1) // per-facility counter for patient MRNs
-  nextInvoice Int        @default(1) // per-facility counter for invoice numbers
+  id                 String       @id @default(uuid())
+  name               String
+  nameAm             String?
+  type               FacilityType @default(CLINIC)
+  phone              String?
+  address            String?
+  nextMrn            Int          @default(1) // per-facility counter for patient MRNs
+  nextInvoice        Int          @default(1) // per-facility counter for invoice numbers
   // Pay before service: consultation before the doctor sees the patient, lab before the sample,
   // drugs before dispensing. Charges billed to a credit company or insurer count as settled.
-  requirePrepayment Boolean @default(true)
-  createdAt DateTime     @default(now())
+  requirePrepayment  Boolean      @default(true)
+  // Registration is a front-desk job; a clinic without a receptionist can let doctors do it too.
+  doctorsCanRegister Boolean      @default(false)
+  nextPo             Int          @default(1) // per-facility counter for purchase order numbers
+  createdAt          DateTime     @default(now())
 
-  users        User[]
-  patients     Patient[]
-  appointments Appointment[]
-  visits       Visit[]
-  drugs        Drug[]
-  suppliers    Supplier[]
+  users         User[]
+  patients      Patient[]
+  appointments  Appointment[]
+  visits        Visit[]
+  drugs         Drug[]
+  suppliers     Supplier[]
   prescriptions Prescription[]
-  labTests     LabTest[]
-  labOrders    LabOrder[]
-  services     ServiceItem[]
-  invoices     Invoice[]
-  payments     Payment[]
-  cashClosings CashClosing[]
-  auditLogs    AuditLog[]
+  labTests      LabTest[]
+  labOrders     LabOrder[]
+  services      ServiceItem[]
+  invoices      Invoice[]
+  payments      Payment[]
+  cashClosings  CashClosing[]
+  auditLogs     AuditLog[]
 }
 
 enum Role {
@@ -60,27 +63,29 @@ enum Role {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  tenantId     String
-  tenant       Tenant   @relation(fields: [tenantId], references: [id])
-  fullName     String
-  phone        String
-  email        String?
-  passwordHash String
-  role         Role
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
+  id                 String   @id @default(uuid())
+  tenantId           String
+  tenant             Tenant   @relation(fields: [tenantId], references: [id])
+  fullName           String
+  phone              String
+  email              String?
+  passwordHash       String
+  role               Role
+  active             Boolean  @default(true)
+  // Set when an admin creates the account or resets the password: the user must pick their own.
+  mustChangePassword Boolean  @default(false)
+  createdAt          DateTime @default(now())
 
-  visitsAsDoctor Visit[]        @relation("VisitDoctor")
-  appointments   Appointment[]  @relation("AppointmentDoctor")
-  prescriptions  Prescription[]
-  labOrders      LabOrder[]
-  payments       Payment[]
-  invoicesCreated Invoice[]   @relation("InvoiceCreatedBy")
-  labCollected   LabOrder[]  @relation("LabCollectedBy")
-  labResulted    LabOrder[]  @relation("LabResultedBy")
-  labVerified    LabOrder[]  @relation("LabVerifiedBy")
-  cashClosings   CashClosing[]
+  visitsAsDoctor  Visit[]        @relation("VisitDoctor")
+  appointments    Appointment[]  @relation("AppointmentDoctor")
+  prescriptions   Prescription[]
+  labOrders       LabOrder[]
+  payments        Payment[]
+  invoicesCreated Invoice[]      @relation("InvoiceCreatedBy")
+  labCollected    LabOrder[]     @relation("LabCollectedBy")
+  labResulted     LabOrder[]     @relation("LabResultedBy")
+  labVerified     LabOrder[]     @relation("LabVerifiedBy")
+  cashClosings    CashClosing[]
 
   @@unique([tenantId, phone])
 }
@@ -108,22 +113,22 @@ enum Sex {
 }
 
 model Patient {
-  id          String    @id @default(uuid())
-  tenantId    String
-  tenant      Tenant    @relation(fields: [tenantId], references: [id])
-  mrn         String // medical record number, unique per facility
-  firstName   String
-  fatherName  String // Ethiopian naming: given name + father's name + grandfather's name
-  grandfather String?
-  firstNameAm   String?
-  fatherNameAm  String?
-  sex         Sex
-  dateOfBirth DateTime?
-  phone       String?
-  address     String?
-  familyId    String? // links household members
-  allergies   String[]
-  createdAt   DateTime  @default(now())
+  id           String    @id @default(uuid())
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  mrn          String // medical record number, unique per facility
+  firstName    String
+  fatherName   String // Ethiopian naming: given name + father's name + grandfather's name
+  grandfather  String?
+  firstNameAm  String?
+  fatherNameAm String?
+  sex          Sex
+  dateOfBirth  DateTime?
+  phone        String?
+  address      String?
+  familyId     String? // links household members
+  allergies    String[]
+  createdAt    DateTime  @default(now())
 
   appointments Appointment[]
   visits       Visit[]
@@ -144,18 +149,18 @@ enum AppointmentStatus {
 }
 
 model Appointment {
-  id          String            @id @default(uuid())
-  tenantId    String
-  tenant      Tenant            @relation(fields: [tenantId], references: [id])
-  patientId   String
-  patient     Patient           @relation(fields: [patientId], references: [id])
-  doctorId    String?
-  doctor      User?             @relation("AppointmentDoctor", fields: [doctorId], references: [id])
-  scheduledAt DateTime
-  reason      String?
-  status      AppointmentStatus @default(BOOKED)
+  id             String            @id @default(uuid())
+  tenantId       String
+  tenant         Tenant            @relation(fields: [tenantId], references: [id])
+  patientId      String
+  patient        Patient           @relation(fields: [patientId], references: [id])
+  doctorId       String?
+  doctor         User?             @relation("AppointmentDoctor", fields: [doctorId], references: [id])
+  scheduledAt    DateTime
+  reason         String?
+  status         AppointmentStatus @default(BOOKED)
   reminderSentAt DateTime?
-  createdAt   DateTime          @default(now())
+  createdAt      DateTime          @default(now())
 
   visit Visit?
 
@@ -183,30 +188,32 @@ enum VisitStatus {
 }
 
 model Visit {
-  id           String      @id @default(uuid())
-  tenantId     String
-  tenant       Tenant      @relation(fields: [tenantId], references: [id])
-  patientId    String
-  patient      Patient     @relation(fields: [patientId], references: [id])
-  doctorId     String?
-  doctor       User?       @relation("VisitDoctor", fields: [doctorId], references: [id])
-  appointmentId String?    @unique
-  appointment  Appointment? @relation(fields: [appointmentId], references: [id])
-  queueNumber  Int
-  status       VisitStatus @default(WAITING)
-  checkedInAt  DateTime    @default(now())
-  calledAt     DateTime? // when the doctor first called the patient in
-  completedAt  DateTime?
+  id            String       @id @default(uuid())
+  tenantId      String
+  tenant        Tenant       @relation(fields: [tenantId], references: [id])
+  patientId     String
+  patient       Patient      @relation(fields: [patientId], references: [id])
+  doctorId      String?
+  doctor        User?        @relation("VisitDoctor", fields: [doctorId], references: [id])
+  appointmentId String?      @unique
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+  queueNumber   Int
+  // WALK_IN: a pharmacy counter sale with no consultation; kept out of the queue and OPD reports.
+  kind          VisitKind    @default(OPD)
+  status        VisitStatus  @default(WAITING)
+  checkedInAt   DateTime     @default(now())
+  calledAt      DateTime? // when the doctor first called the patient in
+  completedAt   DateTime?
 
   // vitals
-  temperatureC Decimal?    @db.Decimal(4, 1)
+  temperatureC Decimal? @db.Decimal(4, 1)
   pulse        Int?
   systolicBp   Int?
   diastolicBp  Int?
   respRate     Int?
   spo2         Int?
-  weightKg     Decimal?    @db.Decimal(5, 2)
-  heightCm     Decimal?    @db.Decimal(5, 1)
+  weightKg     Decimal? @db.Decimal(5, 2)
+  heightCm     Decimal? @db.Decimal(5, 1)
 
   chiefComplaint String?
   history        String?
@@ -218,6 +225,7 @@ model Visit {
   labOrders     LabOrder[]
   charges       Charge[]
   invoices      Invoice[]
+  documents     ClinicalDocument[]
 
   @@index([tenantId, checkedInAt])
   @@index([tenantId, status])
@@ -242,19 +250,19 @@ enum PrescriptionStatus {
 }
 
 model Prescription {
-  id         String             @id @default(uuid())
-  visitId    String
-  visit      Visit              @relation(fields: [visitId], references: [id])
-  tenantId   String
-  tenant     Tenant             @relation(fields: [tenantId], references: [id])
-  prescriberId String
-  prescriber User               @relation(fields: [prescriberId], references: [id])
-  status     PrescriptionStatus @default(PENDING)
+  id             String             @id @default(uuid())
+  visitId        String
+  visit          Visit              @relation(fields: [visitId], references: [id])
+  tenantId       String
+  tenant         Tenant             @relation(fields: [tenantId], references: [id])
+  prescriberId   String
+  prescriber     User               @relation(fields: [prescriberId], references: [id])
+  status         PrescriptionStatus @default(PENDING)
   alerts         Json? // allergy / interaction alerts the prescriber saw and accepted
   overrideReason String? // required when an allergy alert was overridden
-  createdAt  DateTime           @default(now())
-  dispensedAt DateTime?
-  items      PrescriptionItem[]
+  createdAt      DateTime           @default(now())
+  dispensedAt    DateTime?
+  items          PrescriptionItem[]
 
   @@index([tenantId, status])
 }
@@ -275,55 +283,57 @@ model PrescriptionItem {
 }
 
 model Drug {
-  id           String   @id @default(uuid())
+  id           String  @id @default(uuid())
   tenantId     String
-  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  tenant       Tenant  @relation(fields: [tenantId], references: [id])
   genericName  String
   brandName    String?
   drugClass    String? // e.g. "penicillin", "nsaid"; used to match allergies and interactions
   form         String // tablet, syrup, injection…
   strength     String?
   unit         String // unit of dispensing
-  sellPrice    Decimal  @db.Decimal(12, 2)
-  reorderLevel Int      @default(0)
-  active       Boolean  @default(true)
+  sellPrice    Decimal @db.Decimal(12, 2)
+  reorderLevel Int     @default(0)
+  active       Boolean @default(true)
 
   batches           StockBatch[]
   prescriptionItems PrescriptionItem[]
+  purchaseLines     PurchaseOrderLine[]
 
   @@index([tenantId, genericName])
 }
 
 model Supplier {
-  id        String   @id @default(uuid())
-  tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
-  name      String
-  phone     String?
+  id            String   @id @default(uuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  name          String
+  phone         String?
   contactPerson String?
-  tin       String? // Ethiopian taxpayer identification number
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
+  tin           String? // Ethiopian taxpayer identification number
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
 
-  batches StockBatch[]
+  batches        StockBatch[]
+  purchaseOrders PurchaseOrder[]
 
   @@unique([tenantId, name])
 }
 
 model StockBatch {
-  id         String   @id @default(uuid())
-  drugId     String
-  drug       Drug     @relation(fields: [drugId], references: [id])
-  batchNo    String
-  expiryDate DateTime
-  quantity   Int
-  costPrice  Decimal  @db.Decimal(12, 2)
-  supplier   String? // free-text supplier name (seed / legacy); new receipts use supplierId
-  supplierId String?
-  supplierRef Supplier? @relation(fields: [supplierId], references: [id])
-  receiptRef String? // supplier invoice or delivery note number
+  id           String    @id @default(uuid())
+  drugId       String
+  drug         Drug      @relation(fields: [drugId], references: [id])
+  batchNo      String
+  expiryDate   DateTime
+  quantity     Int
+  costPrice    Decimal   @db.Decimal(12, 2)
+  supplier     String? // free-text supplier name (seed / legacy); new receipts use supplierId
+  supplierId   String?
+  supplierRef  Supplier? @relation(fields: [supplierId], references: [id])
+  receiptRef   String? // supplier invoice or delivery note number
   receivedById String?
-  receivedAt DateTime @default(now())
+  receivedAt   DateTime  @default(now())
 
   movements StockMovement[]
 
@@ -354,20 +364,56 @@ model StockMovement {
 // ───────────────────────────── Lab ─────────────────────────────
 
 model LabTest {
-  id         String   @id @default(uuid())
-  tenantId   String
-  tenant     Tenant   @relation(fields: [tenantId], references: [id])
-  name       String
-  loincCode  String?
-  unit       String?
-  refLow     Decimal? @db.Decimal(12, 3)
-  refHigh    Decimal? @db.Decimal(12, 3)
-  price      Decimal  @db.Decimal(12, 2)
+  id            String   @id @default(uuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  name          String
+  loincCode     String?
+  unit          String?
+  refLow        Decimal? @db.Decimal(12, 3)
+  refHigh       Decimal? @db.Decimal(12, 3)
+  price         Decimal  @db.Decimal(12, 2)
   // For qualitative tests (e.g. malaria film): the allowed answers. Empty = numeric or free text.
   resultOptions String[]
-  active     Boolean  @default(true)
+  active        Boolean  @default(true)
 
-  orders LabOrder[]
+  orders     LabOrder[]
+  // A panel (CBC, urinalysis…) has several components, each with its own range or answers; the
+  // test's own unit/range/options are then unused.
+  components LabTestComponent[]
+}
+
+model LabTestComponent {
+  id            String   @id @default(uuid())
+  tenantId      String
+  labTestId     String
+  labTest       LabTest  @relation(fields: [labTestId], references: [id], onDelete: Cascade)
+  name          String
+  unit          String?
+  refLow        Decimal? @db.Decimal(12, 3)
+  refHigh       Decimal? @db.Decimal(12, 3)
+  resultOptions String[]
+  sortOrder     Int      @default(0)
+
+  values LabResultValue[]
+
+  @@index([labTestId])
+}
+
+/**
+ * One component's result in a panel test.
+ */
+model LabResultValue {
+  id          String           @id @default(uuid())
+  tenantId    String
+  labOrderId  String
+  labOrder    LabOrder         @relation(fields: [labOrderId], references: [id], onDelete: Cascade)
+  componentId String
+  component   LabTestComponent @relation(fields: [componentId], references: [id])
+  value       String
+  flag        String? // H, L, N (numeric components only)
+
+  @@unique([labOrderId, componentId])
 }
 
 enum LabOrderStatus {
@@ -379,30 +425,31 @@ enum LabOrderStatus {
 }
 
 model LabOrder {
-  id          String         @id @default(uuid())
-  tenantId    String
-  tenant      Tenant         @relation(fields: [tenantId], references: [id])
-  visitId     String
-  visit       Visit          @relation(fields: [visitId], references: [id])
-  labTestId   String
-  labTest     LabTest        @relation(fields: [labTestId], references: [id])
-  orderedById String
-  orderedBy   User           @relation(fields: [orderedById], references: [id])
-  status      LabOrderStatus @default(ORDERED)
-  sampleId    String?
+  id                String           @id @default(uuid())
+  tenantId          String
+  tenant            Tenant           @relation(fields: [tenantId], references: [id])
+  visitId           String
+  visit             Visit            @relation(fields: [visitId], references: [id])
+  labTestId         String
+  labTest           LabTest          @relation(fields: [labTestId], references: [id])
+  orderedById       String
+  orderedBy         User             @relation(fields: [orderedById], references: [id])
+  status            LabOrderStatus   @default(ORDERED)
+  sampleId          String?
   sampleCollectedAt DateTime?
-  collectedById String?
-  collectedBy   User?        @relation("LabCollectedBy", fields: [collectedById], references: [id])
-  resultValue String?
-  resultFlag  String? // H, L, N (numeric tests only)
-  resultNote  String?
-  orderedAt   DateTime       @default(now())
-  resultedAt  DateTime?
-  resultedById String?
-  resultedBy   User?         @relation("LabResultedBy", fields: [resultedById], references: [id])
-  verifiedAt   DateTime?
-  verifiedById String?
-  verifiedBy   User?         @relation("LabVerifiedBy", fields: [verifiedById], references: [id])
+  collectedById     String?
+  collectedBy       User?            @relation("LabCollectedBy", fields: [collectedById], references: [id])
+  resultValue       String?
+  resultFlag        String? // H, L, N (numeric tests only)
+  resultNote        String?
+  orderedAt         DateTime         @default(now())
+  resultedAt        DateTime?
+  resultedById      String?
+  resultedBy        User?            @relation("LabResultedBy", fields: [resultedById], references: [id])
+  verifiedAt        DateTime?
+  verifiedById      String?
+  verifiedBy        User?            @relation("LabVerifiedBy", fields: [verifiedById], references: [id])
+  values            LabResultValue[] // panel tests: one per component
 
   @@index([tenantId, status])
 }
@@ -410,15 +457,103 @@ model LabOrder {
 // ───────────────────────────── Billing ─────────────────────────────
 
 model ServiceItem {
-  id       String  @id @default(uuid())
+  id       String      @id @default(uuid())
   tenantId String
-  tenant   Tenant  @relation(fields: [tenantId], references: [id])
+  tenant   Tenant      @relation(fields: [tenantId], references: [id])
   code     String
   name     String
-  price    Decimal @db.Decimal(12, 2)
-  active   Boolean @default(true)
+  price    Decimal     @db.Decimal(12, 2)
+  // CONSULTATION: a fee taken at check-in. PROCEDURE: given during the visit (injection, dressing, ECG…).
+  kind     ServiceKind @default(CONSULTATION)
+  active   Boolean     @default(true)
 
   @@unique([tenantId, code])
+}
+
+enum ServiceKind {
+  CONSULTATION
+  PROCEDURE
+}
+
+enum VisitKind {
+  OPD
+  WALK_IN
+}
+
+/**
+ * A credit company or insurer the clinic bills.
+ */
+model Payer {
+  id            String    @id @default(uuid())
+  tenantId      String
+  type          PayerType // CREDIT or INSURANCE
+  name          String
+  phone         String?
+  contactPerson String?
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+
+  invoices Invoice[]
+
+  @@unique([tenantId, name])
+}
+
+model PurchaseOrder {
+  id          String              @id @default(uuid())
+  tenantId    String
+  number      String
+  supplierId  String
+  supplier    Supplier            @relation(fields: [supplierId], references: [id])
+  status      PurchaseOrderStatus @default(DRAFT)
+  note        String?
+  createdById String
+  createdAt   DateTime            @default(now())
+  orderedAt   DateTime?
+  closedAt    DateTime?
+  lines       PurchaseOrderLine[]
+
+  @@unique([tenantId, number])
+}
+
+model PurchaseOrderLine {
+  id              String        @id @default(uuid())
+  tenantId        String
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  drugId          String
+  drug            Drug          @relation(fields: [drugId], references: [id])
+  quantity        Int
+  unitCost        Decimal?      @db.Decimal(12, 2)
+  receivedQty     Int           @default(0)
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ORDERED
+  PARTLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+/**
+ * Printed documents issued from a visit, kept for the record.
+ */
+model ClinicalDocument {
+  id          String               @id @default(uuid())
+  tenantId    String
+  visitId     String
+  visit       Visit                @relation(fields: [visitId], references: [id])
+  type        ClinicalDocumentType
+  data        Json
+  createdById String
+  createdAt   DateTime             @default(now())
+
+  @@index([visitId])
+}
+
+enum ClinicalDocumentType {
+  MEDICAL_CERTIFICATE
+  REFERRAL
 }
 
 enum ChargeSource {
@@ -442,6 +577,9 @@ model Charge {
   quantity    Int          @default(1)
   unitPrice   Decimal      @db.Decimal(12, 2)
   createdAt   DateTime     @default(now())
+  // Removed from its invoice because the service was never delivered (any overpayment refunded).
+  voidedAt    DateTime?
+  voidReason  String?
 }
 
 enum InvoiceStatus {
@@ -458,27 +596,29 @@ enum PayerType {
 }
 
 model Invoice {
-  id        String        @id @default(uuid())
-  tenantId  String
-  tenant    Tenant        @relation(fields: [tenantId], references: [id])
-  patientId String
-  patient   Patient       @relation(fields: [patientId], references: [id])
-  visitId   String?
-  visit     Visit?        @relation(fields: [visitId], references: [id])
-  number    String
-  payerType PayerType     @default(SELF)
-  payerName String? // insurer or credit company
-  status    InvoiceStatus @default(OPEN)
-  subtotal  Decimal       @db.Decimal(12, 2)
-  discount  Decimal       @default(0) @db.Decimal(12, 2)
+  id             String        @id @default(uuid())
+  tenantId       String
+  tenant         Tenant        @relation(fields: [tenantId], references: [id])
+  patientId      String
+  patient        Patient       @relation(fields: [patientId], references: [id])
+  visitId        String?
+  visit          Visit?        @relation(fields: [visitId], references: [id])
+  number         String
+  payerType      PayerType     @default(SELF)
+  payerName      String? // insurer or credit company (copied from the payer at invoicing)
+  payerId        String?
+  payer          Payer?        @relation(fields: [payerId], references: [id])
+  status         InvoiceStatus @default(OPEN)
+  subtotal       Decimal       @db.Decimal(12, 2)
+  discount       Decimal       @default(0) @db.Decimal(12, 2)
   discountReason String?
-  total     Decimal       @db.Decimal(12, 2) // subtotal - discount
-  paid      Decimal       @default(0) @db.Decimal(12, 2)
-  createdById String
-  createdBy   User        @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
-  createdAt DateTime      @default(now())
-  voidedAt   DateTime?
-  voidReason String?
+  total          Decimal       @db.Decimal(12, 2) // subtotal - discount
+  paid           Decimal       @default(0) @db.Decimal(12, 2)
+  createdById    String
+  createdBy      User          @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime      @default(now())
+  voidedAt       DateTime?
+  voidReason     String?
 
   charges  Charge[]
   payments Payment[]
@@ -521,9 +661,44 @@ model Payment {
   cashierId  String
   cashier    User          @relation(fields: [cashierId], references: [id])
   method     PaymentMethod
-  amount     Decimal       @db.Decimal(12, 2)
+  amount     Decimal       @db.Decimal(12, 2) // negative for a refund
   reference  String? // Telebirr / Chapa transaction id
+  note       String? // why a refund was given
   receivedAt DateTime      @default(now())
 
   @@index([tenantId, receivedAt])
+}
+
+/// Written by the backup worker (deploy/postgres), read by Settings → Backups. Not per clinic:
+/// one server's backups cover every clinic on it. The API's role may only read it.
+enum BackupEventKind {
+  BACKUP
+  OFFSITE_SYNC
+  CHECK
+  RESTORE_TEST
+  VERIFY
+  ARCHIVE
+  RESTORE
+}
+
+enum BackupEventStatus {
+  OK
+  WARNING
+  FAILED
+}
+
+model BackupEvent {
+  id         String            @id @default(uuid())
+  kind       BackupEventKind
+  status     BackupEventStatus
+  detail     String? // full / diff / incr, local / offsite
+  message    String?
+  sizeBytes  BigInt?
+  data       Json              @default("{}")
+  site       String?
+  startedAt  DateTime
+  finishedAt DateTime          @default(now())
+
+  @@index([kind, finishedAt])
+  @@index([finishedAt])
 }

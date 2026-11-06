@@ -1,13 +1,16 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { closeCash, createInvoice, recordPayment, voidInvoice, type FormState } from "@/app/actions";
+import { closeCash, createInvoice, recordPayment, removeInvoiceLine, voidInvoice, type FormState } from "@/app/actions";
 import { Alert, buttonClass, Field, Input, inputClass, secondaryButtonClass } from "@/components/ui";
+import type { Payer } from "@/lib/api";
 import { etb, PAYMENT_METHODS } from "@/lib/format";
 
-export function InvoiceForm({ visitId, subtotal, canDiscount }: { visitId: string; subtotal: string; canDiscount: boolean }) {
+export function InvoiceForm({ visitId, subtotal, canDiscount, payers = [] }: { visitId: string; subtotal: string; canDiscount: boolean; payers?: Payer[] }) {
   const [state, action, pending] = useActionState<FormState, FormData>(createInvoice, {});
   const [payer, setPayer] = useState(state.values?.payerType ?? "SELF");
+  const [payerId, setPayerId] = useState(state.values?.payerId ?? "");
+  const choices = payers.filter((p) => p.type === payer);
   const [discounting, setDiscounting] = useState(false);
   const err = state.fieldErrors ?? {};
 
@@ -22,8 +25,20 @@ export function InvoiceForm({ visitId, subtotal, canDiscount }: { visitId: strin
           <option value="INSURANCE">Insurance</option>
         </select>
         {payer !== "SELF" && (
-          <div className="min-w-48 flex-1">
-            <Input name="payerName" placeholder={payer === "CREDIT" ? "Company name" : "Insurer name"} defaultValue={state.values?.payerName} aria-label="Payer name" />
+          <div className="min-w-48 flex-1 space-y-1">
+            {choices.length > 0 && (
+              <select name="payerId" value={payerId} onChange={(e) => setPayerId(e.target.value)} aria-label="Payer" className={inputClass}>
+                <option value="">A new {payer === "CREDIT" ? "company" : "insurer"}…</option>
+                {choices.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            {!payerId && (
+              <Input name="payerName" placeholder={payer === "CREDIT" ? "Company name" : "Insurer name"} defaultValue={state.values?.payerName} aria-label="Payer name" />
+            )}
             {err.payerName && <span className="text-xs text-red-600">{err.payerName}</span>}
           </div>
         )}
@@ -44,7 +59,7 @@ export function InvoiceForm({ visitId, subtotal, canDiscount }: { visitId: strin
             </div>
           </div>
         ) : (
-          <button type="button" onClick={() => setDiscounting(true)} className="text-xs text-teal-700 hover:underline dark:text-teal-400">
+          <button type="button" onClick={() => setDiscounting(true)} className="text-xs text-brand-700 hover:underline dark:text-brand-400">
             Give a discount
           </button>
         ))}
@@ -109,6 +124,57 @@ export function VoidForm({ invoiceId }: { invoiceId: string }) {
           {pending ? "Voiding…" : "Void invoice"}
         </button>
         <button type="button" onClick={() => setOpen(false)} className={secondaryButtonClass}>
+          Keep it
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Admin, per invoice line: refund a service the patient never received. Drug lines can be refunded
+ * in part (only the units not handed over).
+ */
+export function RemoveLineForm({ invoiceId, chargeId, isDrug, quantity, refundDue }: { invoiceId: string; chargeId: string; isDrug: boolean; quantity: number; refundDue: boolean }) {
+  const [state, action, pending] = useActionState<FormState, FormData>(removeInvoiceLine, {});
+  const [open, setOpen] = useState(false);
+  const [method, setMethod] = useState("CASH");
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="text-xs text-red-700 hover:underline dark:text-red-400">
+        {refundDue ? "Refund" : "Remove"}
+      </button>
+    );
+  }
+  return (
+    <form action={action} className="mt-2 space-y-2 rounded-lg border border-red-200 bg-red-50/50 p-3 text-left dark:border-red-900/60 dark:bg-red-950/30">
+      <input type="hidden" name="invoiceId" value={invoiceId} />
+      <input type="hidden" name="chargeId" value={chargeId} />
+      {state.error && <Alert>{state.error}</Alert>}
+      <p className="text-xs text-slate-600 dark:text-slate-400">
+        Only for a service the patient did not receive: a test whose sample was not taken, drugs not handed over, or a consultation they left before.
+      </p>
+      <Input name="reason" required minLength={5} placeholder="Why? e.g. patient left before the sample" aria-label="Reason" defaultValue={state.values?.reason} />
+      <div className="flex flex-wrap gap-2">
+        {isDrug && quantity > 1 && (
+          <Input name="quantity" type="number" min={1} max={quantity} defaultValue={state.values?.quantity ?? quantity} aria-label="Units to refund" className="w-28" title="Units to refund" />
+        )}
+        {refundDue && (
+          <select name="method" value={method} onChange={(e) => setMethod(e.target.value)} aria-label="Refund method" className={`${inputClass} w-auto`}>
+            {Object.entries(PAYMENT_METHODS).map(([v, l]) => (
+              <option key={v} value={v}>
+                Refund by {l.toLowerCase()}
+              </option>
+            ))}
+          </select>
+        )}
+        {refundDue && method !== "CASH" && <Input name="reference" placeholder="Refund transaction ID" aria-label="Refund reference" className="w-48" />}
+      </div>
+      <div className="flex gap-2">
+        <button type="submit" disabled={pending} className={`${buttonClass} bg-red-700 px-3 py-1.5 text-xs hover:bg-red-800`}>
+          {pending ? "Saving…" : refundDue ? "Remove and refund" : "Remove line"}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className={`${secondaryButtonClass} px-3 py-1.5 text-xs`}>
           Keep it
         </button>
       </div>

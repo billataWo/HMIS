@@ -1,4 +1,4 @@
-import { api, bearer, db, makeClinic, makeStaff, startApp, stopApp } from './helpers.js';
+import { api, bearer, db, makeClinic, makeStaff, startApp, stopApp, recordDiagnosis } from './helpers.js';
 
 beforeAll(startApp);
 afterAll(stopApp);
@@ -26,7 +26,7 @@ describe('consultation (EMR)', () => {
     desk = await makeStaff(clinic.id, 'RECEPTIONIST');
     cashier = await makeStaff(clinic.id, 'CASHIER');
     patientId = (
-      await api.post('/patients').set(bearer(desk.token)).send({ firstName: 'Liya', fatherName: 'Mekonnen', sex: 'FEMALE', ageYears: 34 }).expect(201)
+      await api.post('/patients').set(bearer(desk.token)).send({ confirmDuplicate: true, firstName: 'Liya', fatherName: 'Mekonnen', sex: 'FEMALE', ageYears: 34 }).expect(201)
     ).body.id;
   });
 
@@ -81,6 +81,7 @@ describe('consultation (EMR)', () => {
     expect(res.body.previous[0].plan).toBe('Malaria RDT, review with result');
     expect(res.body.previous[0].diagnoses.map((d: { icd11Code: string }) => d.icd11Code).sort()).toEqual(['1F40', 'MG26']);
     await move(v.id, 'IN_CONSULTATION');
+    await recordDiagnosis(v.id);
     await move(v.id, 'COMPLETED');
   });
 

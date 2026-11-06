@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 export const API_URL = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 export const TOKEN_COOKIE = "hmis_token";
 
+export type DuplicatePatient = Pick<Patient, "id" | "mrn" | "firstName" | "fatherName" | "grandfather" | "sex" | "dateOfBirth" | "phone">;
+
 export interface RxAlert {
   type: "ALLERGY" | "INTERACTION" | "DUPLICATE";
   severity: "BLOCK" | "MAJOR" | "MODERATE";
@@ -16,7 +18,12 @@ export interface RxAlert {
 export class ApiError extends Error {
   constructor(
     public status: number,
-    public body: { message?: string | string[]; errors?: { field: string; message: string }[]; alerts?: RxAlert[] },
+    public body: {
+      message?: string | string[];
+      errors?: { field: string; message: string }[];
+      alerts?: RxAlert[];
+      duplicates?: DuplicatePatient[]; // registration: records that may be the same person
+    },
   ) {
     super(Array.isArray(body.message) ? body.message.join(", ") : (body.message ?? `API error ${status}`));
   }
@@ -27,13 +34,20 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = (await cookies()).get(TOKEN_COOKIE)?.value;
   if (!token) redirect("/login");
 
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    cache: "no-store",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...init.headers },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...init,
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...init.headers },
+    });
+  } catch (cause) {
+    throw new Error(`Can't reach the HMIS server at ${API_URL}. Is the API running?`, { cause });
+  }
   if (res.status === 401) redirect("/login");
   const body = res.status === 204 ? null : await res.json().catch(() => ({}));
+  // A temporary password must be replaced before anything else works.
+  if (res.status === 403 && body?.code === "PASSWORD_CHANGE_REQUIRED") redirect("/account/password");
   if (!res.ok) throw new ApiError(res.status, body ?? {});
   return body as T;
 }
@@ -45,7 +59,8 @@ export interface Me {
   fullName: string;
   phone: string;
   role: Role;
-  tenant: { id: string; name: string; nameAm: string | null };
+  mustChangePassword?: boolean;
+  tenant: { id: string; name: string; nameAm: string | null; doctorsCanRegister?: boolean };
 }
 
 export interface Patient {
@@ -72,6 +87,7 @@ export interface PatientDetail extends Patient {
     checkedInAt: string;
     status: string;
     queueNumber: number;
+    kind?: "OPD" | "WALK_IN"; // WALK_IN: a pharmacy counter sale, not a consultation
     doctor: { fullName: string } | null;
     // Only sent to clinical staff (admin, doctor, nurse).
     chiefComplaint?: string | null;
@@ -97,6 +113,11 @@ export interface QueueVisit {
   doctor: { id: string; fullName: string } | null;
   consultationPaid?: boolean; // present on /queue
   labReady?: boolean; // present on /queue: every ordered test is verified
+  labPending?: boolean; // present on /queue: some test has no verified result yet
+  rxPending?: boolean; // present on /queue: drugs still to hand over
+  carriedOver?: boolean; // present on /queue: an unfinished visit from an earlier day
+  diagnosed?: boolean; // present on /queue: at least one diagnosis recorded
+  owed?: string; // present on /queue: unpaid charges other than the consultation fee
 }
 
 export interface QueueResponse {
@@ -114,6 +135,23 @@ export interface LabTest {
   refHigh: string | null;
   price: string;
   resultOptions: string[];
+  /** Panel tests (CBC, urinalysis…): one result per component, each with its own range or answers. */
+  components?: LabComponent[];
+}
+
+export interface LabComponent {
+  id: string;
+  name: string;
+  unit: string | null;
+  refLow: string | null;
+  refHigh: string | null;
+  resultOptions: string[];
+}
+
+export interface LabValueEntry {
+  componentId: string;
+  value: string;
+  flag: "L" | "H" | "N" | null;
 }
 
 export type LabStatus = "ORDERED" | "SAMPLE_COLLECTED" | "RESULTED" | "VERIFIED" | "CANCELLED";
@@ -130,6 +168,7 @@ export interface LabOrder {
   resultedAt: string | null;
   verifiedAt: string | null;
   labTest: Omit<LabTest, "price">;
+  values?: LabValueEntry[]; // panel results (empty until verified for clinicians)
   orderedBy: { id: string; fullName: string };
   collectedBy: { fullName: string } | null;
   resultedBy: { fullName: string } | null;
@@ -215,6 +254,7 @@ export interface CatalogService {
   code: string;
   name: string;
   price: string;
+  kind?: "CONSULTATION" | "PROCEDURE";
   active: boolean;
 }
 
@@ -266,6 +306,7 @@ export interface ClinicSettings {
   phone: string | null;
   address: string | null;
   requirePrepayment: boolean;
+  doctorsCanRegister: boolean;
 }
 
 export interface Diagnosis {
@@ -284,6 +325,10 @@ export type NoteField = (typeof NOTE_FIELDS)[number];
 export type VisitDetail = QueueVisit &
   Record<VitalField, string | number | null> &
   Record<NoteField, string | null> & {
+    kind: "OPD" | "WALK_IN";
+    prepayment: boolean;
+    consultationPaid: boolean;
+    owed: string; // all unpaid charges of the visit
     diagnoses: Diagnosis[];
     previous: {
       id: string;
@@ -344,7 +389,7 @@ export interface Prescription {
 }
 
 export interface PharmacyPrescription extends Prescription {
-  visit: { id: string; queueNumber: number; status: VisitStatus; patient: QueuePatient };
+  visit: { id: string; queueNumber: number; status: VisitStatus; kind?: "OPD" | "WALK_IN"; patient: QueuePatient };
 }
 
 export interface Charge {
@@ -354,6 +399,8 @@ export interface Charge {
   quantity: number;
   unitPrice: string;
   createdAt: string;
+  voidedAt?: string | null; // removed from the invoice and refunded: never delivered
+  voidReason?: string | null;
 }
 
 export interface PendingBill {
@@ -391,7 +438,8 @@ export interface Invoice {
 
 export interface InvoiceDetail extends Invoice {
   charges: Charge[];
-  payments: { id: string; method: PaymentMethod; amount: string; reference: string | null; receivedAt: string; cashier: { id: string; fullName: string } }[];
+  // A negative amount is a refund; `note` says why.
+  payments: { id: string; method: PaymentMethod; amount: string; reference: string | null; note: string | null; receivedAt: string; cashier: { id: string; fullName: string } }[];
   visit: { id: string; queueNumber: number; checkedInAt: string } | null;
   tenant: { name: string; nameAm: string | null; phone: string | null; address: string | null };
 }
@@ -425,6 +473,92 @@ export interface Service {
   code: string;
   name: string;
   price: string;
+  kind?: "CONSULTATION" | "PROCEDURE"; // procedures are recorded during the visit
+}
+
+export interface ProcedureCharge {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPrice: string;
+  invoiceId: string | null;
+  createdAt: string;
+}
+
+export interface AuditEntry {
+  id: string;
+  action: string;
+  entity: string;
+  entityId: string | null;
+  data: Record<string, unknown> | null;
+  createdAt: string;
+  user: { id: string; fullName: string; role: Role } | null;
+}
+
+export interface ClinicalDocument {
+  id: string;
+  type: "MEDICAL_CERTIFICATE" | "REFERRAL";
+  data: Record<string, string | number>;
+  createdAt: string;
+}
+
+export interface ClinicalDocumentDetail extends ClinicalDocument {
+  visit: {
+    id: string;
+    checkedInAt: string;
+    patient: QueuePatient;
+    tenant: { name: string; nameAm: string | null; phone: string | null; address: string | null };
+    diagnoses: { icd11Code: string; label: string; isPrimary: boolean }[];
+  };
+}
+
+export interface Payer {
+  id: string;
+  type: "CREDIT" | "INSURANCE";
+  name: string;
+  phone: string | null;
+  contactPerson: string | null;
+  active: boolean;
+  balance?: string;
+  openInvoices?: number;
+}
+
+export interface PayerStatement {
+  payer: Payer;
+  tenant: { name: string; nameAm: string | null; phone: string | null; address: string | null };
+  from: string;
+  to: string;
+  billed: string;
+  balance: string;
+  invoices: StatementInvoice[];
+  unpaid: StatementInvoice[];
+}
+
+export interface StatementInvoice {
+  id: string;
+  number: string;
+  createdAt: string;
+  status: InvoiceStatus;
+  total: string;
+  paid: string;
+  balance: string;
+  patient: QueuePatient;
+  charges: { description: string; quantity: number; unitPrice: string }[];
+}
+
+export type PurchaseOrderStatus = "DRAFT" | "ORDERED" | "PARTLY_RECEIVED" | "RECEIVED" | "CANCELLED";
+
+export interface PurchaseOrder {
+  id: string;
+  number: string;
+  status: PurchaseOrderStatus;
+  note: string | null;
+  createdAt: string;
+  orderedAt: string | null;
+  total: string;
+  supplier: { id: string; name: string; phone: string | null; contactPerson: string | null; tin: string | null };
+  lines: { id: string; quantity: number; unitCost: string | null; receivedQty: number; drug: { id: string; genericName: string; strength: string | null; form: string; unit: string; sellPrice?: string } }[];
+  tenant?: { name: string; nameAm: string | null; phone: string | null; address: string | null };
 }
 
 export interface StaffUser {
@@ -435,4 +569,32 @@ export interface StaffUser {
   role: Role;
   active: boolean;
   createdAt: string;
+}
+
+export type BackupCheckStatus = "ok" | "warning" | "failing";
+
+export interface BackupEventRow {
+  id: string;
+  kind: "BACKUP" | "OFFSITE_SYNC" | "CHECK" | "RESTORE_TEST" | "VERIFY" | "ARCHIVE" | "RESTORE";
+  status: "OK" | "WARNING" | "FAILED";
+  detail: string | null;
+  message: string | null;
+  sizeBytes: number | null;
+  startedAt: string;
+  finishedAt: string;
+}
+
+/** GET /backups/status: the server's backup health, from the backup worker's events. */
+export interface BackupStatus {
+  monitored: boolean;
+  overall: BackupCheckStatus;
+  banner: string | null;
+  site: string | null;
+  lastBackup: { at: string; type: string | null; databaseBytes: number | null } | null;
+  restoreWindow: { from: string | null; to: string | null } | null;
+  offsite: { configured: boolean; location: string | null; lastCopiedAt: string | null };
+  lastRestoreTest: { at: string; ok: boolean; recoverySeconds: number | null } | null;
+  lastRestore: { at: string; message: string | null } | null;
+  checks: { key: string; label: string; status: BackupCheckStatus; detail: string; at: string | null }[];
+  recent: BackupEventRow[];
 }

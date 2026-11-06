@@ -11,7 +11,7 @@ describe('pay before service', () => {
   let feeId: string, filmId: string, amoxId: string;
 
   const checkIn = async (withFee = true) => {
-    const p = (await api.post('/patients').set(bearer(desk.token)).send({ firstName: 'Pay', fatherName: 'First', sex: 'MALE' }).expect(201)).body;
+    const p = (await api.post('/patients').set(bearer(desk.token)).send({ confirmDuplicate: true, firstName: 'Pay', fatherName: 'First', sex: 'MALE' }).expect(201)).body;
     return (await api.post('/visits').set(bearer(desk.token)).send({ patientId: p.id, ...(withFee && { serviceId: feeId }) }).expect(201)).body.id as string;
   };
   const callIn = (visitId: string) => api.patch(`/visits/${visitId}/status`).set(bearer(doctor.token)).send({ status: 'IN_CONSULTATION' });

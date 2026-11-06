@@ -82,6 +82,8 @@ export class PrescriptionsController {
     if (visit.status === 'COMPLETED' || visit.status === 'CANCELLED') {
       throw new ConflictException('This visit is closed; prescriptions can no longer be added');
     }
+    if (visit.kind === 'WALK_IN') throw new ConflictException('This is a pharmacy counter sale, not a consultation');
+    if (visit.status === 'WAITING') throw new ConflictException('Call the patient in before prescribing');
 
     const drugIds = [...new Set(body.items.map((i) => i.drugId))];
     const drugs = await db.drug.findMany({ where: { id: { in: drugIds }, tenantId: me.tenantId, active: true } });
@@ -135,8 +137,8 @@ export class PrescriptionsController {
 
       // Drop charges that haven't reached an invoice; invoiced ones need the invoice voided first.
       const itemIds = p.items.map((i) => i.id);
-      const invoiced = await tx.charge.count({ where: { source: 'PHARMACY', sourceId: { in: itemIds }, invoiceId: { not: null } } });
-      if (invoiced) throw new ConflictException('These drugs are already on an invoice; ask an admin to void it before cancelling');
+      const invoiced = await tx.charge.count({ where: { source: 'PHARMACY', sourceId: { in: itemIds }, invoiceId: { not: null }, voidedAt: null } });
+      if (invoiced) throw new ConflictException('These drugs are already on an invoice; an admin removes them there (refunding them if paid) before cancelling');
       await tx.charge.deleteMany({ where: { source: 'PHARMACY', sourceId: { in: itemIds }, invoiceId: null } });
 
       const updated = await tx.prescription.update({ where: { id }, data: { status: 'CANCELLED' }, include: prescriptionInclude });

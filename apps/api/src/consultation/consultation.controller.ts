@@ -16,6 +16,8 @@ import type { Prisma } from '@hmis/db';
 import { z } from 'zod';
 import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
+import { fromCents, toCents } from '../common/money.js';
+import { isSettled, prepaymentRequired, settlementSelect } from '../common/settlement.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { queuePatientSelect } from '../visits/visits.controller.js';
@@ -68,6 +70,12 @@ const visitInclude = {
 
 const isClosed = (status: string) => status === 'COMPLETED' || status === 'CANCELLED';
 
+/** Notes and diagnoses belong to consultations: closed visits and pharmacy counter sales refuse them. */
+function assertEditable(visit: { status: string; kind: string }) {
+  if (visit.kind === 'WALK_IN') throw new ConflictException('This is a pharmacy counter sale, not a consultation');
+  if (isClosed(visit.status)) throw new ConflictException('This visit is closed and can no longer be edited');
+}
+
 @Controller()
 @Roles('ADMIN', 'DOCTOR', 'NURSE')
 export class ConsultationController {
@@ -88,7 +96,7 @@ export class ConsultationController {
   async get(@CurrentUser() me: AuthUser, @Param('id') id: string) {
     const visit = await this.findVisit(me, id);
     const previous = await this.prisma.client.visit.findMany({
-      where: { tenantId: me.tenantId, patientId: visit.patientId, id: { not: id }, status: 'COMPLETED', checkedInAt: { lt: visit.checkedInAt } },
+      where: { tenantId: me.tenantId, kind: 'OPD', patientId: visit.patientId, id: { not: id }, status: 'COMPLETED', checkedInAt: { lt: visit.checkedInAt } },
       orderBy: { checkedInAt: 'desc' },
       take: 5,
       select: {
@@ -103,7 +111,19 @@ export class ConsultationController {
         diagnoses: { select: { icd11Code: true, label: true, isPrimary: true } },
       },
     });
-    return { ...visit, previous };
+    // What the screens need to offer the right next step: is the fee paid, what is still owed.
+    const [charges, prepayment] = await Promise.all([
+      this.prisma.client.charge.findMany({ where: { visitId: id, voidedAt: null }, select: { source: true, quantity: true, unitPrice: true, ...settlementSelect } }),
+      prepaymentRequired(this.prisma.client, me.tenantId),
+    ]);
+    const unpaid = charges.filter((c) => !isSettled(c));
+    return {
+      ...visit,
+      previous,
+      prepayment,
+      consultationPaid: charges.filter((c) => c.source === 'CONSULTATION').every(isSettled),
+      owed: fromCents(unpaid.reduce((s, c) => s + toCents(c.unitPrice) * c.quantity, 0)),
+    };
   }
 
   /**
@@ -118,7 +138,7 @@ export class ConsultationController {
     @Body(new ZodPipe(UpdateSchema)) body: z.infer<typeof UpdateSchema>,
   ) {
     const visit = await this.findVisit(me, id);
-    if (isClosed(visit.status)) throw new ConflictException('This visit is closed and can no longer be edited');
+    assertEditable(visit);
 
     const fields = Object.keys(body).filter((k) => body[k as keyof typeof body] !== undefined);
     if (me.role === 'NURSE') {
@@ -145,7 +165,7 @@ export class ConsultationController {
     @Body(new ZodPipe(DiagnosisSchema)) body: z.infer<typeof DiagnosisSchema>,
   ) {
     const visit = await this.findVisit(me, id);
-    if (isClosed(visit.status)) throw new ConflictException('This visit is closed and can no longer be edited');
+    assertEditable(visit);
     if (visit.diagnoses.some((d) => d.icd11Code === body.icd11Code)) {
       throw new ConflictException('This diagnosis is already recorded for the visit');
     }
@@ -165,7 +185,7 @@ export class ConsultationController {
   @HttpCode(204)
   async removeDiagnosis(@CurrentUser() me: AuthUser, @Param('id') id: string, @Param('diagnosisId') diagnosisId: string) {
     const visit = await this.findVisit(me, id);
-    if (isClosed(visit.status)) throw new ConflictException('This visit is closed and can no longer be edited');
+    assertEditable(visit);
     const diagnosis = visit.diagnoses.find((d) => d.id === diagnosisId);
     if (!diagnosis) throw new NotFoundException('Diagnosis not found');
 

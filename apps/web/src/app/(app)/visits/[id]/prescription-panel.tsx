@@ -35,7 +35,8 @@ const drugLabel = (d: Pick<DrugOption, "genericName" | "strength" | "form">) => 
 
 export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitId: string; prescriptions: Prescription[]; editable: boolean }) {
   const [q, setQ] = useState("");
-  const [results, setResults] = useState<DrugOption[]>([]);
+  const [found, setFound] = useState<DrugOption[]>([]);
+  const results = q.trim().length < 2 ? [] : found;
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [alerts, setAlerts] = useState<RxAlert[]>();
   const [reason, setReason] = useState("");
@@ -43,14 +44,11 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
   const [pending, start] = useTransition();
 
   useEffect(() => {
-    if (q.trim().length < 2) {
-      setResults([]);
-      return;
-    }
+    if (q.trim().length < 2) return;
     let cancelled = false;
     const t = setTimeout(async () => {
       const r = await searchDrugs(q);
-      if (!cancelled) setResults(r);
+      if (!cancelled) setFound(r);
     }, 250);
     return () => {
       cancelled = true;
@@ -64,7 +62,7 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
       { drug, drugId: drug.id, dose: `1 ${drug.unit}`, frequency: "TID", durationDays: 5, quantity: suggestQuantity("TID", 5), quantityEdited: false },
     ]);
     setQ("");
-    setResults([]);
+    setFound([]);
     setAlerts(undefined);
   };
 
@@ -108,14 +106,14 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
   const blocking = alerts?.some((a) => a.severity === "BLOCK");
 
   return (
-    <section className="space-y-3">
-      <h2 className="font-medium">Prescriptions</h2>
+    <section id="prescriptions" className="surface scroll-mt-6 space-y-4 p-5">
+      <h2 className="font-semibold text-slate-900 dark:text-white">Prescriptions</h2>
 
-      {prescriptions.length === 0 && drafts.length === 0 && <p className="text-sm text-zinc-500">Nothing prescribed yet.</p>}
+      {prescriptions.length === 0 && drafts.length === 0 && <p className="text-sm text-slate-500">Nothing prescribed yet.</p>}
       {prescriptions.map((p) => (
-        <div key={p.id} className={`rounded-md border border-zinc-200 p-3 text-sm dark:border-zinc-800 ${p.status === "CANCELLED" ? "opacity-60" : ""}`}>
+        <div key={p.id} className={`rounded-md border border-slate-200 p-3 text-sm dark:border-slate-800 ${p.status === "CANCELLED" ? "opacity-60" : ""}`}>
           <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-zinc-500">
+            <span className="text-xs font-medium text-slate-500">
               {RX_STATUS[p.status]} · Dr. {p.prescriber.fullName}
             </span>
             {editable && p.status === "PENDING" && (
@@ -129,8 +127,8 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
               <li key={i.id} className={p.status === "CANCELLED" ? "line-through" : ""}>
                 <span className="font-medium">{drugLabel(i.drug)}</span> · {i.dose} {i.frequency}
                 {i.durationDays && ` × ${i.durationDays} days`} · qty {i.quantity}
-                {i.dispensedQty > 0 && i.dispensedQty < i.quantity && <span className="text-zinc-500"> ({i.dispensedQty} given)</span>}
-                {i.instructions && <span className="block text-xs text-zinc-500">{i.instructions}</span>}
+                {i.dispensedQty > 0 && i.dispensedQty < i.quantity && <span className="text-slate-500"> ({i.dispensedQty} given)</span>}
+                {i.instructions && <span className="block text-xs text-slate-500">{i.instructions}</span>}
               </li>
             ))}
           </ul>
@@ -144,13 +142,13 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
       ))}
 
       {editable && (
-        <div className="space-y-3 rounded-md border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
+        <div className="space-y-3 rounded-md border border-dashed border-slate-300 p-3 dark:border-slate-700">
           {drafts.map((d, i) => (
-            <div key={i} className="space-y-2 border-b border-zinc-100 pb-3 dark:border-zinc-800">
+            <div key={i} className="space-y-2 border-b border-slate-100 pb-3 dark:border-slate-800">
               <div className="flex items-center justify-between gap-2 text-sm">
                 <span>
                   <span className="font-medium">{drugLabel(d.drug)}</span>
-                  <span className={`ml-2 text-xs ${d.drug.inStock >= d.quantity ? "text-zinc-500" : "text-red-700 dark:text-red-400"}`}>
+                  <span className={`ml-2 text-xs ${d.drug.inStock >= d.quantity ? "text-slate-500" : "text-red-700 dark:text-red-400"}`}>
                     {d.drug.inStock} in stock
                   </span>
                 </span>
@@ -172,7 +170,7 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
                     </option>
                   ))}
                 </select>
-                <label className="flex items-center gap-1 text-xs text-zinc-500">
+                <label className="flex items-center gap-1 text-xs text-slate-500">
                   <input
                     type="number"
                     min={1}
@@ -184,7 +182,7 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
                   />
                   days
                 </label>
-                <label className="flex items-center gap-1 text-xs text-zinc-500">
+                <label className="flex items-center gap-1 text-xs text-slate-500">
                   qty
                   <input
                     type="number"
@@ -208,15 +206,15 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
 
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Add a drug: amoxicillin, nsaid…" aria-label="Search drugs" className={inputClass} />
           {results.length > 0 && (
-            <ul className="max-h-60 overflow-y-auto rounded-md border border-zinc-200 text-sm dark:border-zinc-800">
+            <ul className="max-h-60 overflow-y-auto rounded-md border border-slate-200 text-sm dark:border-slate-800">
               {results.map((r) => (
                 <li key={r.id}>
-                  <button type="button" onClick={() => addDraft(r)} className="flex w-full justify-between gap-2 px-3 py-2 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                  <button type="button" onClick={() => addDraft(r)} className="flex w-full justify-between gap-2 px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-slate-800">
                     <span>
                       {drugLabel(r)}
-                      {r.drugClass && <span className="text-xs text-zinc-500"> · {r.drugClass}</span>}
+                      {r.drugClass && <span className="text-xs text-slate-500"> · {r.drugClass}</span>}
                     </span>
-                    <span className={`text-xs ${r.inStock > 0 ? "text-zinc-500" : "text-red-700 dark:text-red-400"}`}>
+                    <span className={`text-xs ${r.inStock > 0 ? "text-slate-500" : "text-red-700 dark:text-red-400"}`}>
                       {r.inStock > 0 ? `${r.inStock} in stock` : "out of stock"}
                     </span>
                   </button>
@@ -224,7 +222,7 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
               ))}
             </ul>
           )}
-          {q.trim().length >= 2 && results.length === 0 && <p className="text-xs text-zinc-500">No matching drug in this clinic&apos;s list.</p>}
+          {q.trim().length >= 2 && results.length === 0 && <p className="text-xs text-slate-500">No matching drug in this clinic&apos;s list.</p>}
 
           {alerts && alerts.length > 0 && (
             <div role="alert" className={`space-y-2 rounded-md border p-3 text-sm ${blocking ? "border-red-300 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-100" : "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100"}`}>

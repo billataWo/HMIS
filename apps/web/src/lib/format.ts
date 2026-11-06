@@ -1,3 +1,5 @@
+import type { BadgeTone } from "@/components/ui";
+
 const ET_MONTHS = [
   "መስከረም", "ጥቅምት", "ኅዳር", "ታኅሣሥ", "ጥር", "የካቲት", "መጋቢት", "ሚያዝያ", "ግንቦት", "ሰኔ", "ሐምሌ", "ነሐሴ", "ጳጉሜ",
 ];
@@ -63,13 +65,13 @@ export function shiftDay(day: string, by: number) {
   return d.toISOString().slice(0, 10);
 }
 
-export const VISIT_STATUS: Record<string, { label: string; className: string }> = {
-  WAITING: { label: "Waiting", className: "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-100" },
-  IN_CONSULTATION: { label: "With doctor", className: "bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-100" },
-  AWAITING_LAB: { label: "At lab", className: "bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-100" },
-  AWAITING_PHARMACY: { label: "At pharmacy", className: "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-violet-100" },
-  COMPLETED: { label: "Done", className: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300" },
-  CANCELLED: { label: "Cancelled", className: "bg-zinc-100 text-zinc-500 line-through dark:bg-zinc-800" },
+export const VISIT_STATUS: Record<string, { label: string; tone: BadgeTone }> = {
+  WAITING: { label: "Waiting", tone: "warning" },
+  IN_CONSULTATION: { label: "With doctor", tone: "brand" },
+  AWAITING_LAB: { label: "At lab", tone: "info" },
+  AWAITING_PHARMACY: { label: "At pharmacy", tone: "violet" },
+  COMPLETED: { label: "Done", tone: "success" },
+  CANCELLED: { label: "Cancelled", tone: "neutral" },
 };
 
 export function ageFrom(iso: string | null) {
@@ -97,11 +99,11 @@ export const PAYMENT_METHODS: Record<string, string> = {
   BANK_TRANSFER: "Bank transfer",
 };
 
-export const INVOICE_STATUS: Record<string, { label: string; className: string }> = {
-  OPEN: { label: "Unpaid", className: "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-100" },
-  PARTIALLY_PAID: { label: "Part paid", className: "bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-100" },
-  PAID: { label: "Paid", className: "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100" },
-  VOID: { label: "Void", className: "bg-zinc-100 text-zinc-500 line-through dark:bg-zinc-800" },
+export const INVOICE_STATUS: Record<string, { label: string; tone: BadgeTone }> = {
+  OPEN: { label: "Unpaid", tone: "warning" },
+  PARTIALLY_PAID: { label: "Part paid", tone: "info" },
+  PAID: { label: "Paid", tone: "success" },
+  VOID: { label: "Void", tone: "neutral" },
 };
 
 export const ROLE_LABELS: Record<string, string> = {

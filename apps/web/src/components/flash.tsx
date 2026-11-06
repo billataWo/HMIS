@@ -1,17 +1,42 @@
-import { Alert } from "./ui";
+"use client";
+
+import { X } from "lucide-react";
+import { useState } from "react";
+import { Reveal } from "./motion";
+import { Notice } from "./ui";
+
+type Params = { error?: string; checkedIn?: string; booked?: string; done?: string };
 
 /** Success or error banner driven by ?checkedIn=, ?booked=, ?done= or ?error= after a one-click action. */
-export function Flash({ params }: { params: { error?: string; checkedIn?: string; booked?: string; done?: string } }) {
-  if (params.error) return <div className="mb-4"><Alert>{params.error}</Alert></div>;
-  const ok = params.checkedIn
-    ? `Checked in. Queue number ${params.checkedIn}.`
-    : params.booked
-      ? "Appointment booked."
-      : (params.done ?? null);
-  if (!ok) return null;
+export function Flash({ params }: { params: Params }) {
+  const message = params.error
+    ? params.error
+    : params.checkedIn
+      ? `Checked in. Queue number ${params.checkedIn}.`
+      : params.booked
+        ? "Appointment booked."
+        : (params.done ?? null);
+  // Keyed by the message so a new action's banner reappears after an earlier one was dismissed.
+  return message ? <Banner key={message} error={!!params.error} message={message} /> : null;
+}
+
+function Banner({ error, message }: { error: boolean; message: string }) {
+  const [open, setOpen] = useState(true);
   return (
-    <div role="status" className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-100">
-      {ok}
-    </div>
+    <Reveal show={open} appear className="mb-4">
+      <Notice tone={error ? "danger" : "success"}>
+        <div className="flex items-start justify-between gap-3">
+          <span>{message}</span>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Dismiss"
+            className="-m-1 rounded-md p-1 opacity-70 transition-opacity hover:opacity-100"
+          >
+            <X aria-hidden className="size-4" />
+          </button>
+        </div>
+      </Notice>
+    </Reveal>
   );
 }

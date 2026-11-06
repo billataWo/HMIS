@@ -1,3 +1,4 @@
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
@@ -7,8 +8,8 @@ import { CloseCashForm } from "../billing-forms";
 
 function Tile({ label, value, tone }: { label: string; value: string; tone?: "warn" }) {
   return (
-    <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-      <p className="text-xs text-zinc-500">{label}</p>
+    <div className="surface p-4 dark:border-slate-800">
+      <p className="text-xs text-slate-500">{label}</p>
       <p className={`mt-1 text-xl font-semibold tabular-nums ${tone === "warn" ? "text-amber-700 dark:text-amber-400" : ""}`}>{value}</p>
     </div>
   );
@@ -22,7 +23,7 @@ async function Daily({ searchParams }: { searchParams: Promise<{ day?: string }>
   try {
     [s, me] = await Promise.all([api<DailySummary>(`/billing/daily?day=${day}`), api<Me>("/auth/me")]);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-zinc-500">Only cashiers and admins can see takings.</p>;
+    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">Only cashiers and admins can see takings.</p>;
     throw e;
   }
   const myClosing = s.closings.find((c) => c.cashier.id === me.id);
@@ -31,17 +32,17 @@ async function Daily({ searchParams }: { searchParams: Promise<{ day?: string }>
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-center gap-2">
-        <Link href={`/billing/daily?day=${shiftDay(day, -1)}`} className={secondaryButtonClass}>
-          ←
+        <Link href={`/billing/daily?day=${shiftDay(day, -1)}`} aria-label="Previous day" className={`${secondaryButtonClass} px-2.5`}>
+          <ChevronLeft aria-hidden />
         </Link>
         <span className="px-2 font-medium">
           {formatDualDate(`${day}T12:00:00+03:00`)}
-          {day === today && <span className="text-zinc-500"> · today</span>}
+          {day === today && <span className="text-slate-500"> · today</span>}
         </span>
         {day !== today && (
           <>
-            <Link href={`/billing/daily?day=${shiftDay(day, 1)}`} className={secondaryButtonClass}>
-              →
+            <Link href={`/billing/daily?day=${shiftDay(day, 1)}`} aria-label="Next day" className={`${secondaryButtonClass} px-2.5`}>
+              <ChevronRight aria-hidden />
             </Link>
             <Link href="/billing/daily" className={secondaryButtonClass}>
               Today
@@ -60,40 +61,40 @@ async function Daily({ searchParams }: { searchParams: Promise<{ day?: string }>
       <section>
         <h2 className="mb-2 font-medium">By cashier</h2>
         {s.cashiers.length === 0 ? (
-          <p className="text-sm text-zinc-500">No payments taken.</p>
+          <p className="text-sm text-slate-500">No payments taken.</p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+          <div className="overflow-x-auto surface">
             <table className="w-full text-left text-sm">
-              <thead className="bg-zinc-50 text-zinc-500 dark:bg-zinc-900">
+              <thead className="bg-slate-50/80 text-slate-500 dark:bg-slate-800/40">
                 <tr>
-                  <th className="px-3 py-2 font-medium">Cashier</th>
+                  <th className="px-4 py-3 font-medium">Cashier</th>
                   {Object.entries(PAYMENT_METHODS).map(([k, l]) => (
                     <th key={k} className="px-3 py-2 text-right font-medium">{l}</th>
                   ))}
-                  <th className="px-3 py-2 text-right font-medium">Total</th>
-                  <th className="px-3 py-2 font-medium">Closed</th>
+                  <th className="px-4 py-3 text-right font-medium">Total</th>
+                  <th className="px-4 py-3 font-medium">Closed</th>
                 </tr>
               </thead>
               <tbody>
                 {s.cashiers.map((c) => {
                   const closing = s.closings.find((x) => x.cashier.id === c.cashier.id);
                   return (
-                    <tr key={c.cashier.id} className="border-t border-zinc-200 dark:border-zinc-800">
-                      <td className="px-3 py-2">{c.cashier.fullName}</td>
+                    <tr key={c.cashier.id} className="border-t border-slate-200 dark:border-slate-800">
+                      <td className="px-4 py-3">{c.cashier.fullName}</td>
                       {Object.keys(PAYMENT_METHODS).map((k) => (
                         <td key={k} className="px-3 py-2 text-right tabular-nums">
                           {c.byMethod[k as keyof typeof c.byMethod] ? etb(c.byMethod[k as keyof typeof c.byMethod]!) : "—"}
                         </td>
                       ))}
-                      <td className="px-3 py-2 text-right font-medium tabular-nums">{etb(c.total)}</td>
-                      <td className="px-3 py-2">
+                      <td className="px-4 py-3 text-right font-medium tabular-nums">{etb(c.total)}</td>
+                      <td className="px-4 py-3">
                         {closing ? (
                           <span className={Number(closing.variance) === 0 ? "" : "font-medium text-red-700 dark:text-red-400"}>
                             {Number(closing.variance) === 0 ? "Balanced" : `${Number(closing.variance) > 0 ? "Over" : "Short"} ${etb(Math.abs(Number(closing.variance)))}`}
-                            {closing.note && <span className="block text-xs text-zinc-500">{closing.note}</span>}
+                            {closing.note && <span className="block text-xs text-slate-500">{closing.note}</span>}
                           </span>
                         ) : (
-                          <span className="text-zinc-500">Not yet</span>
+                          <span className="text-slate-500">Not yet</span>
                         )}
                       </td>
                     </tr>
@@ -106,7 +107,7 @@ async function Daily({ searchParams }: { searchParams: Promise<{ day?: string }>
       </section>
 
       {day === today && (
-        <section className="max-w-xl rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+        <section className="max-w-xl surface p-4 dark:border-slate-800">
           <h2 className="mb-3 font-medium">Close my cash</h2>
           {myClosing ? (
             <p className="text-sm">

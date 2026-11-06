@@ -11,9 +11,10 @@ const SettingsSchema = z.object({
   phone: z.string().trim().max(50).nullable().optional(),
   address: z.string().trim().max(300).nullable().optional(),
   requirePrepayment: z.boolean().optional(),
+  doctorsCanRegister: z.boolean().optional(),
 });
 
-const select = { id: true, name: true, nameAm: true, phone: true, address: true, type: true, requirePrepayment: true };
+const select = { id: true, name: true, nameAm: true, phone: true, address: true, type: true, requirePrepayment: true, doctorsCanRegister: true };
 
 @Controller('settings')
 export class SettingsController {

@@ -1,16 +1,21 @@
+import { CalendarPlus, Clock, History, ListOrdered, UserRound } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { moveVisit } from "@/app/actions";
+import { AllergyAlert } from "@/components/allergy-alert";
+import { AllergyEditor } from "@/components/allergy-editor";
 import { StatusBadge } from "@/components/status-badge";
-import { buttonClass, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
+import { buttonClass, Notice, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { Flash } from "@/components/flash";
-import { api, ApiError, type LabOrder, type LabTest, type Me, type Prescription, type VisitDetail } from "@/lib/api";
-import { ageFrom, formatDualDate, formatDuration, formatTime, fullName } from "@/lib/format";
+import { api, ApiError, type ClinicalDocument, type LabOrder, type LabTest, type Me, type Prescription, type ProcedureCharge, type Service, type VisitDetail } from "@/lib/api";
+import { ageFrom, etb, formatDualDate, formatDuration, formatTime, fullName } from "@/lib/format";
 import { ConsultationForm } from "./consultation-form";
 import { DiagnosisPanel } from "./diagnosis-panel";
 import { LabPanel } from "./lab-panel";
 import { PrescriptionPanel } from "./prescription-panel";
+import { DocumentsPanel } from "./documents-panel";
+import { ProceduresPanel } from "./procedures-panel";
 
 const VITAL_LABELS: [keyof VisitDetail, string, string][] = [
   ["temperatureC", "Temp", "°C"],
@@ -34,12 +39,12 @@ function ReadOnly({ v }: { v: VisitDetail }) {
     <div className="space-y-4 text-sm">
       <p>
         <span className="font-medium">Vitals: </span>
-        {vitals.length ? vitals.join(" · ") : <span className="text-zinc-500">not recorded</span>}
+        {vitals.length ? vitals.join(" · ") : <span className="text-slate-500">not recorded</span>}
       </p>
       {notes.map(([label, text]) => (
         <div key={label}>
           <h3 className="font-medium">{label}</h3>
-          <p className="whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">{text || <span className="text-zinc-500">—</span>}</p>
+          <p className="whitespace-pre-wrap text-slate-700 dark:text-slate-300">{text || <span className="text-slate-500">—</span>}</p>
         </div>
       ))}
     </div>
@@ -53,23 +58,31 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
   let prescriptions: Prescription[];
   let labOrders: LabOrder[];
   let labTests: LabTest[];
+  let procedures: ProcedureCharge[];
+  let services: Service[];
+  let documents: ClinicalDocument[];
   try {
-    [v, prescriptions, labOrders, labTests] = await Promise.all([
+    [v, prescriptions, labOrders, labTests, procedures, services, documents] = await Promise.all([
       api<VisitDetail>(`/visits/${id}`),
       api<Prescription[]>(`/visits/${id}/prescriptions`),
       api<LabOrder[]>(`/visits/${id}/lab-orders`),
       api<LabTest[]>("/lab/tests"),
+      api<ProcedureCharge[]>(`/visits/${id}/procedures`),
+      api<Service[]>("/lookups/services"),
+      api<ClinicalDocument[]>(`/visits/${id}/documents`),
     ]);
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) notFound();
     if (e instanceof ApiError && e.status === 403) {
-      return <p className="text-sm text-zinc-500">Only doctors, nurses and admins can open consultation records.</p>;
+      return <p className="text-sm text-slate-500">Only doctors, nurses and admins can open consultation records.</p>;
     }
     throw e;
   }
 
-  const closed = v.status === "COMPLETED" || v.status === "CANCELLED";
-  const mode = me.role === "DOCTOR" ? "doctor" : me.role === "NURSE" ? "nurse" : null;
+  // A pharmacy counter sale is shown for reference only: it is not a consultation.
+  const closed = v.status === "COMPLETED" || v.status === "CANCELLED" || v.kind === "WALK_IN";
+  const mode = v.kind === "WALK_IN" ? null : me.role === "DOCTOR" ? "doctor" : me.role === "NURSE" ? "nurse" : null;
+  const feeUnpaid = v.prepayment && !v.consultationPaid;
   const age = ageFrom(v.patient.dateOfBirth);
   const returnTo = `/visits/${v.id}`;
 
@@ -82,9 +95,17 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={v.status} />
             <Link href={`/patients/${v.patient.id}`} className={secondaryButtonClass}>
+              <UserRound aria-hidden />
               Patient record
             </Link>
+            {mode === "doctor" && (
+              <Link href={`/appointments/new?patientId=${v.patient.id}`} className={secondaryButtonClass}>
+                <CalendarPlus aria-hidden />
+                Book follow-up
+              </Link>
+            )}
             <Link href="/queue" className={secondaryButtonClass}>
+              <ListOrdered aria-hidden />
               Queue
             </Link>
           </div>
@@ -92,68 +113,113 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
       />
 
       <Flash params={flash} />
-      {v.patient.allergies.length > 0 && (
-        <div className="mb-4 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-100">
-          Allergies: {v.patient.allergies.join(", ")}
+      <AllergyAlert allergies={v.patient.allergies} className={mode ? "mb-2" : "mb-4"} />
+      {mode && !closed && (
+        <div className="mb-4">
+          <AllergyEditor patientId={v.patient.id} allergies={v.patient.allergies} />
         </div>
       )}
 
-      <p className="mb-6 text-sm text-zinc-500">
+      <p className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500">
+        <Clock aria-hidden className="size-4" />
         {formatDualDate(v.checkedInAt)} · arrived {formatTime(v.checkedInAt)}
         {v.calledAt && ` · seen after ${formatDuration(v.checkedInAt, v.calledAt)}`}
         {v.doctor && ` · Dr. ${v.doctor.fullName}`}
       </p>
 
-      <div className="grid gap-8 lg:grid-cols-[1fr_22rem]">
-        <div className="space-y-8">
-          {v.status === "WAITING" && mode === "doctor" && (
-            <form action={moveVisit.bind(null, v.id, "IN_CONSULTATION", returnTo)} className="rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950">
-              <p className="mb-2 text-sm">This patient is still waiting. Call them in to start the consultation.</p>
-              <button className={buttonClass}>Call in</button>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] xl:gap-8">
+        <div className="min-w-0 space-y-6">
+          {v.kind === "WALK_IN" && <Notice tone="info">This is a pharmacy counter sale, not a consultation.</Notice>}
+          {v.status === "WAITING" && mode === "doctor" && feeUnpaid && (
+            <Notice tone="warning">The consultation fee has not been paid yet. The patient can be called in once the cashier has taken it.</Notice>
+          )}
+          {Number(v.owed) > 0 && !feeUnpaid && v.status !== "WAITING" && (
+            <Notice tone="warning">The patient still has {etb(v.owed)} to pay at the cashier before leaving.</Notice>
+          )}
+          {v.status === "WAITING" && mode === "doctor" && !feeUnpaid && (
+            <form action={moveVisit.bind(null, v.id, "IN_CONSULTATION", returnTo)}>
+              <Notice tone="warning">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <span>This patient is still waiting. Call them in to start the consultation.</span>
+                  <button className={`${buttonClass} px-3 py-1.5 text-xs`}>Call in</button>
+                </div>
+              </Notice>
             </form>
           )}
           {v.status === "AWAITING_PHARMACY" && mode === "doctor" && (
-            <p className="rounded-md bg-violet-50 px-3 py-2 text-sm text-violet-900 dark:bg-violet-950 dark:text-violet-100">
-              Sent to the pharmacy. Notes can still be updated until the visit is completed.
-            </p>
+            <form action={moveVisit.bind(null, v.id, "IN_CONSULTATION", returnTo)}>
+              <Notice tone="info">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <span>Sent to the pharmacy. The visit closes by itself once the drugs are dispensed.</span>
+                  <button className={`${secondaryButtonClass} px-3 py-1.5 text-xs`}>Resume consultation</button>
+                </div>
+              </Notice>
+            </form>
           )}
           {v.status === "AWAITING_LAB" && mode === "doctor" && (
-            <form action={moveVisit.bind(null, v.id, "IN_CONSULTATION", returnTo)} className="flex items-center gap-3 rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:bg-sky-950 dark:text-sky-100">
-              Waiting for lab results.
-              <button className={`${secondaryButtonClass} px-3 py-1 text-xs`}>Results back: resume consultation</button>
+            <form action={moveVisit.bind(null, v.id, "IN_CONSULTATION", returnTo)}>
+              <Notice tone="info">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <span>Waiting for lab results.</span>
+                  <button className={`${secondaryButtonClass} px-3 py-1.5 text-xs`}>Results back: resume consultation</button>
+                </div>
+              </Notice>
             </form>
           )}
 
-          {closed || !mode ? <ReadOnly v={v} /> : <ConsultationForm visit={v} mode={mode} />}
+          {closed || !mode ? (
+            <ReadOnly v={v} />
+          ) : (
+            <ConsultationForm
+              visit={v}
+              mode={mode}
+              open={{
+                diagnosed: v.diagnoses.length > 0,
+                lab: labOrders.some((o) => o.status === "ORDERED" || o.status === "SAMPLE_COLLECTED" || o.status === "RESULTED"),
+                rx: prescriptions.some((p) => p.status === "PENDING" || p.status === "PARTIALLY_DISPENSED"),
+              }}
+            />
+          )}
           <DiagnosisPanel visitId={v.id} diagnoses={v.diagnoses} editable={!closed && mode === "doctor"} />
-          <LabPanel visitId={v.id} orders={labOrders} tests={labTests} editable={!closed && mode === "doctor"} />
-          <PrescriptionPanel visitId={v.id} prescriptions={prescriptions} editable={!closed && mode === "doctor"} />
+          {/* Tests and drugs are ordered once the doctor has called the patient in. */}
+          <LabPanel visitId={v.id} orders={labOrders} tests={labTests} editable={!closed && mode === "doctor" && v.status !== "WAITING"} />
+          <PrescriptionPanel visitId={v.id} prescriptions={prescriptions} editable={!closed && mode === "doctor" && v.status !== "WAITING"} />
+          <ProceduresPanel visitId={v.id} items={procedures} procedures={services.filter((s) => s.kind === "PROCEDURE")} editable={!closed && !!mode} />
+          {mode === "doctor" || documents.length > 0 ? (
+            <DocumentsPanel visitId={v.id} documents={documents} canIssue={mode === "doctor" && v.status !== "WAITING" && v.status !== "CANCELLED"} diagnosis={v.diagnoses.find((d) => d.isPrimary)?.label ?? ""} />
+          ) : null}
         </div>
 
-        <aside>
-          <h2 className="mb-2 font-medium">Previous visits</h2>
+        <aside className="lg:sticky lg:top-6 lg:self-start">
+          <h2 className="mb-3 flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
+            <History aria-hidden className="size-4 text-slate-400" />
+            Previous visits
+          </h2>
           {v.previous.length === 0 ? (
-            <p className="text-sm text-zinc-500">First visit at this clinic.</p>
+            <p className="text-sm text-slate-500">First visit at this clinic.</p>
           ) : (
-            <ul className="space-y-3">
+            <ul className="relative space-y-3 before:absolute before:top-2 before:bottom-2 before:left-1.75 before:w-px before:bg-slate-200 dark:before:bg-slate-800">
               {v.previous.map((p) => (
-                <li key={p.id} className="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-800">
-                  <Link href={`/visits/${p.id}`} className="font-medium text-teal-700 hover:underline dark:text-teal-400">
+                <li key={p.id} className="relative pl-6 text-sm">
+                  <span aria-hidden className="absolute top-1.5 left-0 size-3.75 rounded-full border-2 border-white bg-brand-600 ring-1 ring-brand-600/30 dark:border-slate-950" />
+                  <div className="surface p-3">
+                  <Link href={`/visits/${p.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-400">
                     {formatDualDate(p.checkedInAt)}
                   </Link>
-                  {p.doctor && <span className="text-zinc-500"> · Dr. {p.doctor.fullName}</span>}
+                  {p.doctor && <span className="text-slate-500"> · Dr. {p.doctor.fullName}</span>}
                   {p.diagnoses.length > 0 && (
                     <p className="mt-1">{p.diagnoses.map((d) => `${d.label} (${d.icd11Code})`).join(", ")}</p>
                   )}
-                  {p.chiefComplaint && <p className="mt-1 text-zinc-600 dark:text-zinc-400">{p.chiefComplaint}</p>}
+                  {p.chiefComplaint && <p className="mt-1 text-slate-600 dark:text-slate-400">{p.chiefComplaint}</p>}
                   {(p.systolicBp || p.weightKg) && (
-                    <p className="mt-1 text-xs text-zinc-500">
+                    <p className="mt-1 text-xs text-slate-500">
                       {p.systolicBp && p.diastolicBp && `BP ${p.systolicBp}/${p.diastolicBp}`}
                       {p.systolicBp && p.weightKg && " · "}
                       {p.weightKg && `${p.weightKg} kg`}
                     </p>
                   )}
-                  {p.plan && <p className="mt-1 text-xs text-zinc-500">Plan: {p.plan}</p>}
+                  {p.plan && <p className="mt-1 text-xs text-slate-500">Plan: {p.plan}</p>}
+                  </div>
                 </li>
               ))}
             </ul>
