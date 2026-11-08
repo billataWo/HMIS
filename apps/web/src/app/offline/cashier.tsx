@@ -1,0 +1,127 @@
+"use client";
+
+import { Printer } from "lucide-react";
+import { useState } from "react";
+import { createPortal } from "react-dom";
+import { Badge, buttonClass, Card, EmptyState, inputClass } from "@/components/ui";
+import { payVisit } from "@/lib/offline/actions";
+import type { OfflineBill, OfflinePayment } from "@/lib/offline/view";
+import { fullName, money, PatientLine, type TabProps, useBusy } from "./shared";
+
+export function Cashier({ view, userId }: TabProps) {
+  const [receipt, setReceipt] = useState<OfflinePayment | null>(null);
+  return (
+    <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
+      <div className="space-y-4">
+        {view.bills.map((b) => (
+          // Re-created when the amount owed changes (after a part payment), so the amount resets.
+          <Bill key={`${b.id}-${b.subtotal}`} bill={b} userId={userId} />
+        ))}
+        {!view.bills.length && <EmptyState title="Nothing waiting to be paid on this PC" />}
+      </div>
+      <Card title="Taken on this PC" description="Provisional receipts; the official receipt comes with the invoice once this is sent.">
+        <ul className="-my-2 divide-y divide-slate-100 dark:divide-slate-800">
+          {view.payments.map((p) => (
+            <li key={p.opId} className="flex items-center justify-between gap-2 py-2 text-sm">
+              <span className="min-w-0 truncate">
+                {fullName(p.patient)} · {money(p.amount)}
+              </span>
+              <span className="flex items-center gap-2">
+                <Badge tone={p.sent ? "success" : "warning"}>{p.sent ? "Sent" : "Waiting"}</Badge>
+                <button
+                  aria-label="Print receipt"
+                  onClick={() => {
+                    setReceipt(p);
+                    setTimeout(() => window.print(), 50);
+                  }}
+                  className="rounded p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  <Printer aria-hidden className="size-4" />
+                </button>
+              </span>
+            </li>
+          ))}
+          {!view.payments.length && <li className="py-3 text-sm text-slate-500">None yet.</li>}
+        </ul>
+      </Card>
+      {/* Printed on its own: the workspace itself is hidden when printing. */}
+      {receipt &&
+        createPortal(
+          <div className="hidden p-8 text-black print:block">
+            <h1 className="text-xl font-semibold">{view.snap.me.tenant.name}</h1>
+            <p className="mt-1 text-sm">PROVISIONAL RECEIPT (recorded offline)</p>
+            <p className="mt-4">Patient: {fullName(receipt.patient)}</p>
+            <p>
+              Amount: {money(receipt.amount)} ({receipt.method === "CASH" ? "cash" : "Telebirr"})
+            </p>
+            <p>Date: {new Date(receipt.at).toLocaleString("en-GB", { timeZone: "Africa/Addis_Ababa" })}</p>
+            <p>Cashier: {view.snap.me.fullName}</p>
+            <p className="mt-4 text-sm">The official receipt is issued when this payment reaches the HMIS server.</p>
+          </div>,
+          document.body,
+        )}
+    </div>
+  );
+}
+
+const cents = (s: string) => Math.round(Number(s) * 100);
+
+function Bill({ bill, userId }: { bill: OfflineBill; userId: string }) {
+  const owed = cents(bill.subtotal);
+  const [amount, setAmount] = useState(bill.subtotal);
+  const [method, setMethod] = useState<"CASH" | "TELEBIRR">("CASH");
+  const [reference, setReference] = useState("");
+  const [busy, run] = useBusy();
+  const n = Number(amount);
+  const amountOk = /^\d+(\.\d{1,2})?$/.test(amount.trim()) && n > 0;
+  const tooMuch = amountOk && cents(amount) > owed;
+  const valid = amountOk && !tooMuch && (method === "CASH" || reference.trim().length >= 4);
+  return (
+    <section className="surface p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <PatientLine p={bill.patient} />
+        {bill.offline && <Badge tone="violet">Added offline</Badge>}
+      </div>
+      <ul className="mt-3 space-y-1 text-sm text-slate-600 dark:text-slate-400">
+        {bill.charges.map((c) => (
+          <li key={c.id} className="flex justify-between gap-3">
+            <span>
+              {c.description}
+              {c.quantity > 1 ? ` × ${c.quantity}` : ""}
+            </span>
+            <span className="tabular-nums">{money(Number(c.unitPrice) * c.quantity)}</span>
+          </li>
+        ))}
+        {Number(bill.paid ?? 0) > 0 && (
+          <li className="flex justify-between gap-3 text-emerald-700 dark:text-emerald-400">
+            <span>Paid so far</span>
+            <span className="tabular-nums">−{money(bill.paid!)}</span>
+          </li>
+        )}
+      </ul>
+      <div className="mt-3 flex flex-wrap items-end justify-between gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+        <p className="font-semibold text-slate-900 tabular-nums dark:text-white">Owed {money(bill.subtotal)}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={method} onChange={(e) => setMethod(e.target.value as "CASH" | "TELEBIRR")} className={`${inputClass} w-32`} aria-label="Payment method">
+            <option value="CASH">Cash</option>
+            <option value="TELEBIRR">Telebirr</option>
+          </select>
+          {method === "TELEBIRR" && (
+            <input aria-label="Telebirr transaction number" placeholder="Transaction no." value={reference} onChange={(e) => setReference(e.target.value)} className={`${inputClass} w-40`} />
+          )}
+          <input aria-label="Amount received" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className={`${inputClass} w-32 tabular-nums`} />
+          <button
+            disabled={busy || !valid}
+            onClick={() => run(() => payVisit(userId, bill.id, bill.patient, Math.round(n * 100) / 100, method, method === "TELEBIRR" ? reference.trim() : undefined))}
+            className={buttonClass}
+          >
+            Take payment
+          </button>
+        </div>
+      </div>
+      {tooMuch && <p className="mt-2 text-sm text-red-700 dark:text-red-300">More than is owed ({money(bill.subtotal)}): take only what is owed.</p>}
+      {amountOk && !tooMuch && cents(amount) < owed && <p className="mt-2 text-sm text-amber-700 dark:text-amber-300">Less than is owed: the rest stays owed.</p>}
+      {method === "TELEBIRR" && <p className="mt-2 text-sm text-slate-500">Check the Telebirr message on the patient&apos;s phone and copy its transaction number.</p>}
+    </section>
+  );
+}

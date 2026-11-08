@@ -12,6 +12,10 @@ export const IS_PUBLIC = 'isPublic';
 export const ROLES = 'roles';
 export const ALLOW_PENDING_PASSWORD = 'allowPendingPassword';
 
+/** Reachable by an admin who has not set up two-step sign-in yet (who am I, the setup itself). */
+export const ALLOW_TWO_STEP_SETUP = 'allowTwoStepSetup';
+export const AllowTwoStepSetup = () => SetMetadata(ALLOW_TWO_STEP_SETUP, true);
+
 /** Reachable while the user still has to replace a temporary password (who am I, change password). */
 export const AllowPendingPassword = () => SetMetadata(ALLOW_PENDING_PASSWORD, true);
 

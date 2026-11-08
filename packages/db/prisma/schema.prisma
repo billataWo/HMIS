@@ -63,18 +63,30 @@ enum Role {
 }
 
 model User {
-  id                 String   @id @default(uuid())
+  id                 String    @id @default(uuid())
   tenantId           String
-  tenant             Tenant   @relation(fields: [tenantId], references: [id])
+  tenant             Tenant    @relation(fields: [tenantId], references: [id])
   fullName           String
   phone              String
   email              String?
   passwordHash       String
   role               Role
-  active             Boolean  @default(true)
+  active             Boolean   @default(true)
   // Set when an admin creates the account or resets the password: the user must pick their own.
-  mustChangePassword Boolean  @default(false)
-  createdAt          DateTime @default(now())
+  mustChangePassword Boolean   @default(false)
+  /// Sign-ins (tokens) issued before this are no longer accepted: set on a password change or
+  /// reset, so a stolen or old sign-in stops working.
+  sessionsValidAfter DateTime?
+  /// Two-step sign-in (authenticator app codes, RFC 6238). Required for admins.
+  totpSecret         String?
+  /// Set while the app is being added, until the first code confirms it.
+  totpPendingSecret  String?
+  totpEnabledAt      DateTime?
+  /// The last accepted 30-second step: each code works only once.
+  totpLastStep       Int?
+  /// SHA-256 hashes of the unused one-time recovery codes.
+  totpRecoveryCodes  String[]  @default([])
+  createdAt          DateTime  @default(now())
 
   visitsAsDoctor  Visit[]        @relation("VisitDoctor")
   appointments    Appointment[]  @relation("AppointmentDoctor")
@@ -743,6 +755,40 @@ model SyncClient {
   appliedRows BigInt    @default(0)
   lastError   String?
   edgeVersion String?
+
+  @@index([tenantId])
+}
+
+/// Replies to requests sent with an Idempotency-Key (offline work replayed by the browser): a
+/// repeat of the same key gets the stored reply instead of doing the work twice. Kept 14 days.
+model IdempotentRequest {
+  tenantId  String
+  key       String
+  userId    String
+  method    String
+  path      String
+  status    Int
+  response  Json
+  createdAt DateTime @default(now())
+
+  @@id([tenantId, key])
+  @@index([createdAt])
+}
+
+/// A waiting-room screen (TV). It holds its own key, which can only read the queue board (numbers
+/// and doctors), never a staff session. Paired once with a short code from Settings → Screens.
+model DisplayScreen {
+  id               String    @id @default(uuid())
+  tenantId         String
+  name             String
+  /// SHA-256 of the screen's key (the key itself lives only in the screen's cookie).
+  tokenHash        String?   @unique
+  /// SHA-256 of the 6-digit pairing code, while one is waiting to be used.
+  pairingCodeHash  String?   @unique
+  pairingExpiresAt DateTime?
+  createdAt        DateTime  @default(now())
+  lastSeenAt       DateTime?
+  revokedAt        DateTime?
 
   @@index([tenantId])
 }

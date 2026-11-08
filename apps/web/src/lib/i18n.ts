@@ -28,6 +28,7 @@ const AM: Record<string, string> = {
   Administration: "አስተዳደር",
   "Sign out": "ውጣ",
   Password: "የይለፍ ቃል",
+  "Two-step": "ባለሁለት ደረጃ መግቢያ",
   Language: "ቋንቋ",
 
   // Home

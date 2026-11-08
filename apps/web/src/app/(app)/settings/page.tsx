@@ -24,6 +24,9 @@ export default function SettingsPage() {
             <Link href="/settings/sync" className={secondaryButtonClass}>
               Cloud sync
             </Link>
+            <Link href="/settings/screens" className={secondaryButtonClass}>
+              Screens
+            </Link>
             <Link href="/settings/prices" className={secondaryButtonClass}>
               Prices &amp; lab tests
             </Link>

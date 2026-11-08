@@ -9,9 +9,10 @@ Multi-tenant, offline-first clinic management system for Ethiopian private clini
 | `apps/web` | Staff web app: Next.js, React, TypeScript, Tailwind |
 | `apps/api` | Backend API: NestJS |
 | `packages/db` | PostgreSQL schema and migrations (Prisma), shared by the API |
-| `docker-compose.yml` | Local PostgreSQL 17 and Redis 7 (development, no backups) |
+| `docker-compose.yml` | Local PostgreSQL 17 for development (this computer only, no backups) |
 | `deploy/` | Production database with automatic backups, and the off-site WORM store |
 | `docs/backup/` | Backup guide and the restore runbook |
+| `docs/security/` | How patient data is protected, the security review, and the go-live checklist |
 
 ## First-time setup
 
@@ -22,7 +23,7 @@ cp .env.example .env
 cp .env.example packages/db/.env
 cp .env.example apps/api/.env
 pnpm install                    # also generates and builds the Prisma client
-pnpm db:up                      # start Postgres + Redis (Docker Desktop must be running)
+pnpm db:up                      # start Postgres (Docker Desktop must be running)
 pnpm db:migrate                 # create tables
 pnpm db:app-role                # let the API's restricted database role log in
 pnpm db:seed                    # demo clinic, admin user, sample drugs/tests
@@ -179,6 +180,15 @@ A clinic can work on its own server at the clinic (the **clinic server**), which
 - **Rules for developers:**
   - A migration that adds a clinic table must call `SELECT hmis_sync_attach('Table')`; `test/sync.e2e-spec.ts` checks this.
   - Upgrade the cloud before the clinic servers.
+
+## Browser offline mode
+
+Cloud-hosted clinics keep working through an internet outage, each PC with the work it already had ([docs/offline/README.md](docs/offline/README.md)).
+
+- **Preparing:** a service worker (`public/sw.js`) keeps the offline workspace (`/offline`) and shows it whenever a page can't load. While online, each PC keeps the signed-in person's working day in IndexedDB, refreshed every 3 minutes.
+- **Working offline:** reception, doctor, cashier, lab and pharmacy work is queued with temporary ids for new records.
+- **Sending:** when the connection returns, queued work is replayed in order through `/offline/replay`, which adds the sign-in and an `Idempotency-Key`. The API (`IdempotencyInterceptor`) applies each key once, so a resend after a lost reply never registers or charges twice.
+- **Refusals:** the server's normal rules apply on replay. Anything refused lands in "Needs attention" with what to do.
 
 ## Clinic isolation (row-level security)
 

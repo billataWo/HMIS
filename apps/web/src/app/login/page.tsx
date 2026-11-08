@@ -1,6 +1,7 @@
 import { HeartPulse, ShieldCheck, Smartphone, Stethoscope } from "lucide-react";
 import type { Metadata } from "next";
 import { FadeIn } from "@/components/enter";
+import { OfflineWaiting } from "@/components/offline-waiting";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Sign in" };
@@ -49,6 +50,7 @@ export default function LoginPage() {
           </div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">Sign in</h1>
           <p className="mt-1 mb-8 text-sm text-slate-500">Use your phone number and password · በስልክ ቁጥርዎ ይግቡ</p>
+          <OfflineWaiting />
           <LoginForm />
           <p className="mt-8 text-xs text-slate-400">Forgot your password? Ask your clinic administrator to reset it.</p>
         </FadeIn>

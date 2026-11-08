@@ -29,7 +29,9 @@ describe('backup status', () => {
       sizeBytes: 5_000_000_000n,
       data: { oldestBackupAt: epochAgo(13 * 24 * 60 * MIN), databaseBytes: 80_000_000 },
     });
-    await event('CHECK', 'OK', ago(5 * MIN), { data: { offsite: true, offsiteLocation: 'Addis Ababa', archive: true, lastArchivedAt: epochAgo(MIN) } });
+    await event('CHECK', 'OK', ago(5 * MIN), {
+      data: { offsite: true, offsiteLocation: 'Addis Ababa', archive: true, lastArchivedAt: epochAgo(MIN), diskEncryption: { checked: true, daysAgo: 0, unencrypted: [], unattendedBoot: true } },
+    });
     await event('OFFSITE_SYNC', 'OK', ago(10 * MIN), { data: { location: 'Addis Ababa' } });
     await event('RESTORE_TEST', 'OK', ago(2 * 24 * 60 * MIN), { detail: 'local', data: { recoverySeconds: 140, patients: 12, visits: 30 } });
     await event('RESTORE_TEST', 'OK', ago(9 * 24 * 60 * MIN), { detail: 'offsite', data: { recoverySeconds: 400, patients: 12, visits: 30 } });
@@ -57,6 +59,7 @@ describe('backup status', () => {
     expect(s.checks.map((c: { key: string; status: string }) => [c.key, c.status])).toEqual([
       ['backup', 'ok'],
       ['health', 'ok'],
+      ['encryption', 'ok'],
       ['offsite', 'ok'],
       ['restore-test', 'ok'],
       ['restore-test-offsite', 'ok'],
@@ -100,6 +103,16 @@ describe('backup status', () => {
     await event('OFFSITE_SYNC', 'FAILED', ago(MIN), { message: 'network unreachable' });
     s = await status();
     expect(s.checks.find((c: { key: string }) => c.key === 'offsite')).toMatchObject({ status: 'failing' });
+  });
+
+  it("warns while the server's disks are not encrypted, or were never checked", async () => {
+    await healthy();
+    await event('CHECK', 'WARNING', ago(0), { data: { offsite: true, archive: true, diskEncryption: { checked: true, daysAgo: 0, unencrypted: ['Backup disk'], unattendedBoot: false } } });
+    let s = await status();
+    expect(s.checks.find((c: { key: string }) => c.key === 'encryption')).toMatchObject({ status: 'warning', detail: expect.stringContaining('Not encrypted: Backup disk') });
+    await event('CHECK', 'WARNING', ago(0), { data: { offsite: true, archive: true } });
+    s = await status();
+    expect(s.checks.find((c: { key: string }) => c.key === 'encryption')).toMatchObject({ status: 'warning', detail: expect.stringContaining('host-check.sh') });
   });
 
   it('cannot be written or altered through the application role', async () => {

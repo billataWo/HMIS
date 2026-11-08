@@ -132,6 +132,19 @@ job_check() {
   offsite_configured || warnings+=("No off-site copy is configured")
   [[ -n ${BACKUP_ARCHIVE_RECIPIENT:-} ]] || warnings+=("Long-term archive is not set up (no BACKUP_ARCHIVE_RECIPIENT)")
 
+  # Disk encryption, as found by deploy/host-check.sh on the host (a container can't see it).
+  local hs=$STATE_DIR/host-security.json encryption='{"checked":false}'
+  if [[ -f $hs ]] && jq -e . "$hs" >/dev/null 2>&1; then
+    local plain checked_days
+    plain=$(jq -r '[.disks[] | select(.encrypted | not) | .label] | join(", ")' "$hs")
+    checked_days=$(( ($(date +%s) - $(stat -c %Y "$hs")) / 86400 ))
+    [[ -z $plain ]] || warnings+=("Not encrypted: $plain. A stolen disk would expose patient records")
+    ((checked_days <= 8)) || warnings+=("Disk encryption was last checked $checked_days days ago (run deploy/host-check.sh daily)")
+    encryption=$(jq -c --argjson days "$checked_days" '{checked: true, checkedAt, daysAgo: $days, unencrypted: [.disks[] | select(.encrypted | not) | .label], unattendedBoot: ([.disks[] | select(.encrypted) | .tpm2] | all)}' "$hs")
+  else
+    warnings+=("Disk encryption has not been checked: run deploy/host-check.sh on the server")
+  fi
+
   if ((${#problems[@]})); then
     status=FAILED
   elif ((${#warnings[@]})); then
@@ -143,8 +156,8 @@ job_check() {
   [[ -n $message ]] || message="Archiving, disk space and settings are fine"
   data=$(jq -cn --arg a "${archived:-0}" --arg r "${ready:-0}" --arg d "$(df --output=pcent "$BACKUP_ROOT" | tail -1 | tr -dc '0-9')" \
     --argjson offsite "$(offsite_configured && echo true || echo false)" --arg loc "${OFFSITE_LOCATION:-}" \
-    --argjson archive "$([[ -n ${BACKUP_ARCHIVE_RECIPIENT:-} ]] && echo true || echo false)" \
-    '{lastArchivedAt: ($a|tonumber), walWaiting: ($r|tonumber), backupDiskPercent: ($d|tonumber), offsite: $offsite, offsiteLocation: $loc, archive: $archive}')
+    --argjson archive "$([[ -n ${BACKUP_ARCHIVE_RECIPIENT:-} ]] && echo true || echo false)" --argjson encryption "$encryption" \
+    '{lastArchivedAt: ($a|tonumber), walWaiting: ($r|tonumber), backupDiskPercent: ($d|tonumber), offsite: $offsite, offsiteLocation: $loc, archive: $archive, diskEncryption: $encryption}')
   prev=$(cat "$STATE_DIR/check.status" 2>/dev/null || echo none)
   # Record when the picture changes, and once a day so the status page stays fresh.
   if [[ -n $force || $status != "$prev" ]] || due check-recorded 86400; then

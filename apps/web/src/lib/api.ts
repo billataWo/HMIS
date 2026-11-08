@@ -48,6 +48,8 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const body = res.status === 204 ? null : await res.json().catch(() => ({}));
   // A temporary password must be replaced before anything else works.
   if (res.status === 403 && body?.code === "PASSWORD_CHANGE_REQUIRED") redirect("/account/password");
+  // Admins must set up two-step sign-in before anything else.
+  if (res.status === 403 && body?.code === "TWO_STEP_SETUP_REQUIRED") redirect("/account/two-step");
   if (!res.ok) throw new ApiError(res.status, body ?? {});
   return body as T;
 }
@@ -60,6 +62,7 @@ export interface Me {
   phone: string;
   role: Role;
   mustChangePassword?: boolean;
+  twoStep?: { enabled: boolean; required: boolean };
   tenant: { id: string; name: string; nameAm: string | null; doctorsCanRegister?: boolean };
 }
 
@@ -569,6 +572,7 @@ export interface StaffUser {
   role: Role;
   active: boolean;
   createdAt: string;
+  totpEnabledAt?: string | null; // two-step sign-in is on
 }
 
 export type BackupCheckStatus = "ok" | "warning" | "failing";

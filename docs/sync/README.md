@@ -5,7 +5,7 @@ data still reaches the cloud.
 
 | Clinic works on | When the internet is down | Data in the cloud |
 |---|---|---|
-| **The cloud** (default) | Cannot work (the browser offline mode is planned) | Lives there |
+| **The cloud** (default) | Each PC keeps working with the work it already had ([browser offline mode](../offline/README.md)); PCs see each other's work once the connection is back | Lives there |
 | **A clinic server** (a small PC at the clinic) | Keeps working normally: every screen, every rule | A read-only copy, updated within seconds whenever the internet is up |
 
 With a clinic server, staff use HMIS over the clinic's own network. Each change is kept on the

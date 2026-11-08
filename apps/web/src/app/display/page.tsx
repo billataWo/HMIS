@@ -1,31 +1,47 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { Suspense } from "react";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { CallPop } from "@/components/motion";
-import { api, type Me, type QueueVisit } from "@/lib/api";
+import { API_URL } from "@/lib/api";
 import { formatDualDate } from "@/lib/format";
+import { PairForm } from "./pair-form";
 
 export const metadata: Metadata = { title: "Queue display" };
 
-// Shows only queue numbers and doctors, never patient names: the screen is in a public waiting room.
-async function Board() {
-  const [me, { day, visits: all }] = await Promise.all([
-    api<Me>("/auth/me"),
-    api<{ day: string; visits: QueueVisit[] }>("/queue"),
-  ]);
-  // Earlier days' queue numbers would clash with today's, so the TV shows today's visits only.
-  const visits = all.filter((v) => !v.carriedOver);
-  const serving = visits
-    .filter((v) => v.status === "IN_CONSULTATION")
-    .sort((a, b) => (b.calledAt ?? "").localeCompare(a.calledAt ?? ""));
-  const next = visits.filter((v) => v.status === "WAITING").slice(0, 10);
+type Board = {
+  clinic: { name: string; nameAm: string | null };
+  day: string;
+  serving: { id: string; queueNumber: number; doctor: string | null }[];
+  next: { id: string; queueNumber: number }[];
+};
+
+/**
+ * The waiting-room TV. It uses its own display key (from pairing), never a staff sign-in, and the
+ * board it reads holds only queue numbers and doctors: the screen is in a public waiting room.
+ */
+async function Screen() {
+  const token = (await cookies()).get("hmis_display")?.value;
+  if (!token) return <PairForm />;
+  const res = await fetch(`${API_URL}/display/queue`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }).catch(() => null);
+  if (res?.status === 401) return <PairForm removed />;
+  if (!res?.ok) {
+    return (
+      <>
+        <AutoRefresh seconds={15} />
+        <p className="py-16 text-center text-3xl text-slate-500">Waiting for the HMIS server…</p>
+      </>
+    );
+  }
+  const { clinic, day, serving, next } = (await res.json()) as Board;
 
   return (
     <>
+      <AutoRefresh seconds={10} />
       <header className="flex flex-wrap items-baseline justify-between gap-4 border-b border-white/10 pb-4">
         <div>
-          <p className="text-3xl font-semibold">{me.tenant.name}</p>
-          {me.tenant.nameAm && <p className="text-xl text-slate-400">{me.tenant.nameAm}</p>}
+          <p className="text-3xl font-semibold">{clinic.name}</p>
+          {clinic.nameAm && <p className="text-xl text-slate-400">{clinic.nameAm}</p>}
         </div>
         <p className="text-xl text-slate-400">{formatDualDate(`${day}T12:00:00+03:00`)}</p>
       </header>
@@ -39,7 +55,7 @@ async function Board() {
             {serving.map((v) => (
               <CallPop key={v.id} className="rounded-2xl bg-linear-to-br from-brand-600 to-brand-800 p-6 shadow-overlay">
                 <p className="text-7xl font-bold tabular-nums sm:text-8xl">{v.queueNumber}</p>
-                <p className="mt-2 text-2xl text-brand-50">{v.doctor ? `Dr. ${v.doctor.fullName}` : ""}</p>
+                <p className="mt-2 text-2xl text-brand-50">{v.doctor ? `Dr. ${v.doctor}` : ""}</p>
               </CallPop>
             ))}
           </div>
@@ -67,9 +83,8 @@ async function Board() {
 export default function DisplayPage() {
   return (
     <main className="min-h-screen flex-1 bg-slate-950 px-6 py-6 text-white sm:px-10">
-      <AutoRefresh seconds={10} />
       <Suspense fallback={<p className="text-2xl text-slate-500">Loading…</p>}>
-        <Board />
+        <Screen />
       </Suspense>
     </main>
   );

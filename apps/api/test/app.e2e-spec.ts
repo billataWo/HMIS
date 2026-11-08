@@ -1,53 +1,17 @@
-import { Test } from '@nestjs/testing';
-import type { INestApplication } from '@nestjs/common';
-import bcrypt from 'bcryptjs';
-import request from 'supertest';
-import type { App } from 'supertest/types.js';
-import { createPrismaClient, type Role } from '@hmis/db';
-import { AppModule } from './../src/app.module.js';
-
-const db = createPrismaClient();
-let app: INestApplication<App>;
-const api = {
-  get: (url: string) => request(app.getHttpServer()).get(url),
-  post: (url: string) => request(app.getHttpServer()).post(url),
-  patch: (url: string) => request(app.getHttpServer()).patch(url),
-};
-
-/** A random 09XXXXXXXX number; phones must be unique across runs because login searches all clinics. */
-function phone() {
-  return '09' + String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
-}
+import type { Role } from '@hmis/db';
+import { api, bearer, db, login, makeUser as makeUserRecord, phone, startApp, stopApp } from './helpers.js';
 
 async function makeClinic(name: string) {
   return db.tenant.create({ data: { name } });
 }
 
+/** A staff account; returns its phone number (admins get two-step sign-in, see helpers). */
 async function makeUser(tenantId: string, role: Role, password = 'password123') {
-  const p = phone();
-  await db.user.create({
-    data: { tenantId, phone: p, role, fullName: `${role} user`, passwordHash: await bcrypt.hash(password, 4) },
-  });
-  return p;
+  return (await makeUserRecord(tenantId, role, password)).phone;
 }
 
-async function login(phoneNumber: string, password = 'password123') {
-  const res = await api.post('/auth/login').send({ phone: phoneNumber, password }).expect(200);
-  return res.body.token as string;
-}
-
-const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
-
-beforeAll(async () => {
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-  app = moduleRef.createNestApplication();
-  await app.init();
-});
-
-afterAll(async () => {
-  await app.close();
-  await db.$disconnect();
-});
+beforeAll(startApp);
+afterAll(stopApp);
 
 describe('health', () => {
   it('reports the database as up without logging in', () =>

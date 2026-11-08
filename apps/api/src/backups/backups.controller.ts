@@ -104,6 +104,22 @@ export class BackupsController {
       });
     }
 
+    // 2b. Disk encryption on the server (reported by deploy/host-check.sh through the worker).
+    if (check) {
+      const enc = (health.diskEncryption ?? { checked: false }) as { checked: boolean; unencrypted?: string[]; unattendedBoot?: boolean; daysAgo?: number };
+      checks.push({
+        key: 'encryption',
+        label: 'Disk encryption',
+        status: !enc.checked || enc.unencrypted?.length || (enc.daysAgo ?? 0) > 8 ? 'warning' : 'ok',
+        detail: !enc.checked
+          ? 'Not checked yet: run deploy/host-check.sh on the server (docs/security/disk-encryption.md).'
+          : enc.unencrypted?.length
+            ? `Not encrypted: ${enc.unencrypted.join(', ')}. A stolen disk would expose patient records.`
+            : `The database and backup disks are encrypted${enc.unattendedBoot ? ' and unlock by themselves after a power cut' : ''}.${(enc.daysAgo ?? 0) > 8 ? ` Last checked ${enc.daysAgo} days ago.` : ''}`,
+        at: check.finishedAt.toISOString(),
+      });
+    }
+
     // 3. The off-site copy (the "1" in 3-2-1).
     if (!offsiteConfigured) {
       checks.push({ key: 'offsite', label: 'Off-site copy', status: 'warning', detail: 'No off-site storage is configured, so a fire or theft would take the backups too.', at: null });

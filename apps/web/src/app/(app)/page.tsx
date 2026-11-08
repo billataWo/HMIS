@@ -60,6 +60,8 @@ const QUICK: Partial<Record<Role, { label: string; href: string; icon: LucideIco
 async function HomeContent() {
   const [me, lang] = await Promise.all([api<Me>("/auth/me"), getLang()]);
   if (me.mustChangePassword) redirect("/account/password");
+  // Admins must set up two-step sign-in first (the API refuses them everything else meanwhile).
+  if (me.twoStep?.required && !me.twoStep.enabled) redirect("/account/two-step");
   const quick = [
     ...(QUICK[me.role] ?? []),
     ...(me.role === "DOCTOR" && canRegister(me) ? [{ label: "Register patient", href: "/patients/new", icon: UserPlus }] : []),

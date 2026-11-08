@@ -16,7 +16,7 @@ export type Raw = {
 };
 
 /** Server bookkeeping, never sent anywhere. Every other table in the schema is clinic data. */
-export const NOT_SYNCED = new Set(['_prisma_migrations', 'BackupEvent', 'SyncOutbox', 'SyncState', 'SyncClient']);
+export const NOT_SYNCED = new Set(['_prisma_migrations', 'BackupEvent', 'SyncOutbox', 'SyncState', 'SyncClient', 'IdempotentRequest', 'DisplayScreen']);
 
 export type TableMeta = { name: string; columns: Set<string>; pk: string[]; deps: string[] };
 export type Tables = Map<string, TableMeta>;

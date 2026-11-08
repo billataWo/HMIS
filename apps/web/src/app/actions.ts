@@ -1,9 +1,10 @@
 "use server";
 
 import { refresh } from "next/cache";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { LANG_COOKIE } from "@/lib/i18n";
+import { setChallenge } from "./two-step-actions";
 import {
   api,
   API_URL,
@@ -39,13 +40,27 @@ function text(form: FormData, key: string) {
   return String(form.get(key) ?? "").trim();
 }
 
+/** The sign-in cookie: unreadable by scripts, only sent by this site, HTTPS-only in production. */
+async function setTokenCookie(token: string) {
+  (await cookies()).set(TOKEN_COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 12 * 60 * 60,
+    path: "/",
+  });
+}
+
 export async function login(_: FormState, form: FormData): Promise<FormState> {
   const phone = text(form, "phone");
+  // The API limits wrong passwords per address too: tell it the user's address (set by the
+  // reverse proxy, or by Next.js from the connection), not this web server's.
+  const forwarded = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim();
   let res: Response;
   try {
     res = await fetch(`${API_URL}/auth/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(forwarded && { "X-Forwarded-For": forwarded }) },
       body: JSON.stringify({ phone, password: String(form.get("password") ?? "") }),
       cache: "no-store",
     });
@@ -58,14 +73,14 @@ export async function login(_: FormState, form: FormData): Promise<FormState> {
   }
   if (!res.ok) return { error: "Wrong phone number or password.", values: { phone } };
 
-  const { token, mustChangePassword } = (await res.json()) as { token: string; mustChangePassword?: boolean };
-  (await cookies()).set(TOKEN_COOKIE, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    maxAge: 12 * 60 * 60,
-    path: "/",
-  });
+  const body = (await res.json()) as { token?: string; mustChangePassword?: boolean; twoStepRequired?: boolean; challenge?: string };
+  // Two-step sign-in: the password was right; the code comes next.
+  if (body.twoStepRequired && body.challenge) {
+    await setChallenge(body.challenge);
+    redirect("/login/two-step");
+  }
+  const { token, mustChangePassword } = body as { token: string; mustChangePassword?: boolean };
+  await setTokenCookie(token);
   redirect(mustChangePassword ? "/account/password" : "/");
 }
 
@@ -693,7 +708,9 @@ export async function changePassword(_: FormState, form: FormData): Promise<Form
   const next = String(form.get("next") ?? "");
   if (next !== String(form.get("confirm") ?? "")) return { error: "The two new passwords are not the same.", fieldErrors: { confirm: "Type the same password twice" } };
   try {
-    await api("/auth/password", { method: "POST", body: JSON.stringify({ current: String(form.get("current") ?? ""), next }) });
+    // The change signs out every other session of this account; this one continues on the new token.
+    const { token } = await api<{ token: string }>("/auth/password", { method: "POST", body: JSON.stringify({ current: String(form.get("current") ?? ""), next }) });
+    await setTokenCookie(token);
   } catch (e) {
     return toFormState(e, {});
   }

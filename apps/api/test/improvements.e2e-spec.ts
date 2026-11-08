@@ -145,8 +145,9 @@ describe('improvements to the current modules', () => {
 
       await api.post('/auth/password').set(bearer(first.token)).send({ current: 'wrong', next: 'my-own-pass' }).expect(401);
       await api.post('/auth/password').set(bearer(first.token)).send({ current: 'temporary1', next: 'temporary1' }).expect(400);
-      await api.post('/auth/password').set(bearer(first.token)).send({ current: 'temporary1', next: 'my-own-pass' }).expect(200);
-      await api.get('/billing/pending').set(bearer(first.token)).expect(200);
+      const changed = (await api.post('/auth/password').set(bearer(first.token)).send({ current: 'temporary1', next: 'my-own-pass' }).expect(200)).body;
+      // The change ends other sign-ins; this one carries on with the fresh token it returns.
+      await api.get('/billing/pending').set(bearer(changed.token)).expect(200);
       await api.post('/auth/login').send({ phone: created.phone, password: 'my-own-pass' }).expect(200);
     });
   });

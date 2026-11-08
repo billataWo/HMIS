@@ -111,6 +111,34 @@ export class BillingController {
     return visits.map((v) => ({ ...v, subtotal: fromCents(v.charges.reduce((s, c) => s + lineTotal(c), 0)) }));
   }
 
+  /**
+   * What each visit still owes: charges not invoiced yet plus the balance of its open self-pay
+   * invoices. For the offline cashier, who takes payments per visit (POST visits/:id/payments).
+   */
+  @Get('billing/owed')
+  async owed(@CurrentUser() me: AuthUser) {
+    const open = { payerType: 'SELF' as const, status: { in: ['OPEN' as const, 'PARTIALLY_PAID' as const] } };
+    const visits = await this.prisma.client.visit.findMany({
+      where: { tenantId: me.tenantId, OR: [{ charges: { some: { invoiceId: null } } }, { invoices: { some: open } }] },
+      orderBy: { checkedInAt: 'asc' },
+      take: 300,
+      include: {
+        patient: { select: queuePatientSelect },
+        doctor: { select: { fullName: true } },
+        charges: { where: { ...liveCharge, OR: [{ invoiceId: null }, { invoice: open }] }, orderBy: { createdAt: 'asc' } },
+        invoices: { where: open, select: { total: true, paid: true } },
+      },
+    });
+    return visits
+      .map(({ invoices, ...v }) => {
+        const unbilled = v.charges.filter((c) => c.invoiceId === null).reduce((s, c) => s + lineTotal(c), 0);
+        const balance = invoices.reduce((s, i) => s + toCents(i.total) - toCents(i.paid), 0);
+        const paid = invoices.reduce((s, i) => s + toCents(i.paid), 0);
+        return { ...v, subtotal: fromCents(unbilled + balance), paid: fromCents(paid) };
+      })
+      .filter((b) => toCents(b.subtotal) > 0);
+  }
+
   @Post('invoices')
   async createInvoice(@CurrentUser() me: AuthUser, @Body(new ZodPipe(InvoiceSchema)) body: z.infer<typeof InvoiceSchema>) {
     if (body.discount && me.role !== 'ADMIN') throw new ForbiddenException('Only an admin can give a discount');
@@ -132,53 +160,68 @@ export class BillingController {
             });
         if (!payer) throw new NotFoundException('Payer not found');
       }
-
-      const subtotal = charges.reduce((s, c) => s + lineTotal(c), 0);
-      const discount = body.discount ? toCents(body.discount) : 0;
-      if (discount > subtotal) throw new ConflictException('The discount is larger than the bill');
-
-      const { nextInvoice } = await tx.tenant.update({
-        where: { id: me.tenantId },
-        data: { nextInvoice: { increment: 1 } },
-        select: { nextInvoice: true },
+      return this.invoiceCharges(tx, me, visit, charges, {
+        payerType: body.payerType,
+        payer,
+        discount: body.discount ? toCents(body.discount) : 0,
+        discountReason: body.discountReason,
       });
-      const created = await tx.invoice.create({
-        data: {
-          tenantId: me.tenantId,
-          patientId: visit.patientId,
-          visitId: visit.id,
-          number: `INV-${String(nextInvoice - 1).padStart(6, '0')}`,
-          payerType: body.payerType,
-          payerName: payer?.name,
-          payerId: payer?.id,
-          subtotal: fromCents(subtotal),
-          discount: fromCents(discount),
-          discountReason: discount ? body.discountReason : undefined,
-          total: fromCents(subtotal - discount),
-          // A fully discounted bill has nothing left to collect.
-          status: subtotal - discount === 0 ? 'PAID' : 'OPEN',
-          createdById: me.sub,
-        },
-      });
-
-      // Claim the charges only if nobody else invoiced them in the meantime.
-      const claimed = await tx.charge.updateMany({
-        where: { id: { in: charges.map((c) => c.id) }, invoiceId: null },
-        data: { invoiceId: created.id },
-      });
-      if (claimed.count !== charges.length) throw new ConflictException('These charges were just invoiced by someone else');
-
-      await this.audit.log(
-        me,
-        'invoice.create',
-        'Invoice',
-        created.id,
-        { number: created.number, total: fromCents(subtotal - discount), discount: fromCents(discount) },
-        tx,
-      );
-      return created;
     });
     return this.get(me, invoice.id);
+  }
+
+  /** Puts a visit's charges on a new invoice, inside the caller's transaction. */
+  private async invoiceCharges(
+    tx: Prisma.TransactionClient,
+    me: AuthUser,
+    visit: { id: string; patientId: string },
+    charges: { id: string; quantity: number; unitPrice: { toString(): string } }[],
+    opts: { payerType: 'SELF' | 'CREDIT' | 'INSURANCE'; payer: { id: string; name: string } | null; discount: number; discountReason?: string },
+  ) {
+    const subtotal = charges.reduce((s, c) => s + lineTotal(c), 0);
+    const discount = opts.discount;
+    if (discount > subtotal) throw new ConflictException('The discount is larger than the bill');
+
+    const { nextInvoice } = await tx.tenant.update({
+      where: { id: me.tenantId },
+      data: { nextInvoice: { increment: 1 } },
+      select: { nextInvoice: true },
+    });
+    const created = await tx.invoice.create({
+      data: {
+        tenantId: me.tenantId,
+        patientId: visit.patientId,
+        visitId: visit.id,
+        number: `INV-${String(nextInvoice - 1).padStart(6, '0')}`,
+        payerType: opts.payerType,
+        payerName: opts.payer?.name,
+        payerId: opts.payer?.id,
+        subtotal: fromCents(subtotal),
+        discount: fromCents(discount),
+        discountReason: discount ? opts.discountReason : undefined,
+        total: fromCents(subtotal - discount),
+        // A fully discounted bill has nothing left to collect.
+        status: subtotal - discount === 0 ? 'PAID' : 'OPEN',
+        createdById: me.sub,
+      },
+    });
+
+    // Claim the charges only if nobody else invoiced them in the meantime.
+    const claimed = await tx.charge.updateMany({
+      where: { id: { in: charges.map((c) => c.id) }, invoiceId: null },
+      data: { invoiceId: created.id },
+    });
+    if (claimed.count !== charges.length) throw new ConflictException('These charges were just invoiced by someone else');
+
+    await this.audit.log(
+      me,
+      'invoice.create',
+      'Invoice',
+      created.id,
+      { number: created.number, total: fromCents(subtotal - discount), discount: fromCents(discount) },
+      tx,
+    );
+    return created;
   }
 
   @Get('invoices')
@@ -208,39 +251,89 @@ export class BillingController {
   @Post('invoices/:id/payments')
   async pay(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(PaymentSchema)) body: z.infer<typeof PaymentSchema>) {
     if (!z.uuid().safeParse(id).success) throw new NotFoundException('Invoice not found');
+    await this.prisma.client.$transaction((tx) => this.payInvoice(tx, me, id, toCents(body.amount), body.method, body.reference));
+    return this.get(me, id);
+  }
 
-    await this.prisma.client.$transaction(async (tx) => {
-      // Lock the invoice so two payments at once can't both fit into the same balance.
-      const [row] = await tx.$queryRaw<{ id: string }[]>`
-        SELECT "id" FROM "Invoice" WHERE "id" = ${id} AND "tenantId" = ${me.tenantId} FOR UPDATE`;
-      if (!row) throw new NotFoundException('Invoice not found');
-      const invoice = await tx.invoice.findUniqueOrThrow({ where: { id } });
+  /** Records a payment on one invoice, inside the caller's transaction. Amount in cents. */
+  private async payInvoice(
+    tx: Prisma.TransactionClient,
+    me: AuthUser,
+    id: string,
+    amount: number,
+    method: z.infer<typeof PaymentSchema>['method'],
+    reference?: string,
+  ) {
+    // Lock the invoice so two payments at once can't both fit into the same balance.
+    const [row] = await tx.$queryRaw<{ id: string }[]>`
+      SELECT "id" FROM "Invoice" WHERE "id" = ${id} AND "tenantId" = ${me.tenantId} FOR UPDATE`;
+    if (!row) throw new NotFoundException('Invoice not found');
+    const invoice = await tx.invoice.findUniqueOrThrow({ where: { id } });
 
-      if (invoice.status === 'VOID') throw new ConflictException('This invoice is void');
-      const balance = toCents(invoice.total) - toCents(invoice.paid);
-      const amount = toCents(body.amount);
-      if (balance <= 0) throw new ConflictException('This invoice is already paid');
-      if (amount > balance) throw new ConflictException(`Amount is more than the balance of ${fromCents(balance)} ETB`);
+    if (invoice.status === 'VOID') throw new ConflictException('This invoice is void');
+    const balance = toCents(invoice.total) - toCents(invoice.paid);
+    if (balance <= 0) throw new ConflictException('This invoice is already paid');
+    if (amount > balance) throw new ConflictException(`Amount is more than the balance of ${fromCents(balance)} ETB`);
 
-      const closed = await tx.cashClosing.findFirst({ where: { tenantId: me.tenantId, cashierId: me.sub, day: new Date(clinicDay()) } });
-      if (closed) throw new ConflictException("You have already closed today's cash; ask another cashier or an admin");
+    const closed = await tx.cashClosing.findFirst({ where: { tenantId: me.tenantId, cashierId: me.sub, day: new Date(clinicDay()) } });
+    if (closed) throw new ConflictException("You have already closed today's cash; ask another cashier or an admin");
 
-      if (body.reference) {
-        const dup = await tx.payment.findFirst({ where: { tenantId: me.tenantId, method: body.method, reference: body.reference } });
-        if (dup) throw new ConflictException('This transaction reference has already been recorded');
+    if (reference) {
+      const dup = await tx.payment.findFirst({ where: { tenantId: me.tenantId, method, reference } });
+      if (dup) throw new ConflictException('This transaction reference has already been recorded');
+    }
+
+    await tx.payment.create({
+      data: { tenantId: me.tenantId, invoiceId: id, cashierId: me.sub, method, amount: fromCents(amount), reference },
+    });
+    const paid = toCents(invoice.paid) + amount;
+    await tx.invoice.update({
+      where: { id },
+      data: { paid: fromCents(paid), status: paid >= toCents(invoice.total) ? 'PAID' : 'PARTIALLY_PAID' },
+    });
+    await this.audit.log(me, 'payment.create', 'Invoice', id, { method, amount: fromCents(amount) }, tx);
+  }
+
+  /**
+   * A payment toward everything a visit owes (the offline cashier works per visit, not per
+   * invoice): bills the charges not invoiced yet, then pays the visit's open self-pay invoices,
+   * oldest first. Instalments work; a payment someone else already took is refused clearly.
+   */
+  @Post('visits/:id/payments')
+  async payVisit(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(PaymentSchema)) body: z.infer<typeof PaymentSchema>) {
+    if (!z.uuid().safeParse(id).success) throw new NotFoundException('Visit not found');
+    const invoiceIds = await this.prisma.client.$transaction(async (tx) => {
+      // One payment toward a visit at a time.
+      const [visit] = await tx.$queryRaw<{ id: string; patientId: string }[]>`
+        SELECT "id", "patientId" FROM "Visit" WHERE "id" = ${id} AND "tenantId" = ${me.tenantId} FOR UPDATE`;
+      if (!visit) throw new NotFoundException('Visit not found');
+      const unbilled = await tx.charge.findMany({ where: { visitId: id, invoiceId: null } });
+      if (unbilled.length) await this.invoiceCharges(tx, me, visit, unbilled, { payerType: 'SELF', payer: null, discount: 0 });
+
+      const open = await tx.invoice.findMany({
+        where: { visitId: id, tenantId: me.tenantId, payerType: 'SELF', status: { in: ['OPEN', 'PARTIALLY_PAID'] } },
+        orderBy: { createdAt: 'asc' },
+      });
+      const owed = open.reduce((s, i) => s + toCents(i.total) - toCents(i.paid), 0);
+      if (owed <= 0) throw new ConflictException({ message: 'Nothing is owed on this visit any more', code: 'NOTHING_OWED' });
+      let amount = toCents(body.amount);
+      if (amount > owed) {
+        throw new ConflictException({ message: `Amount is more than the ${fromCents(owed)} ETB owed on this visit`, code: 'MORE_THAN_OWED' });
       }
 
-      await tx.payment.create({
-        data: { tenantId: me.tenantId, invoiceId: id, cashierId: me.sub, method: body.method, amount: fromCents(amount), reference: body.reference },
-      });
-      const paid = toCents(invoice.paid) + amount;
-      await tx.invoice.update({
-        where: { id },
-        data: { paid: fromCents(paid), status: paid >= toCents(invoice.total) ? 'PAID' : 'PARTIALLY_PAID' },
-      });
-      await this.audit.log(me, 'payment.create', 'Invoice', id, { method: body.method, amount: fromCents(amount) }, tx);
+      const paid: string[] = [];
+      for (const inv of open) {
+        const portion = Math.min(amount, toCents(inv.total) - toCents(inv.paid));
+        if (portion <= 0) continue;
+        // A transaction reference belongs to one payment row (duplicates are refused).
+        await this.payInvoice(tx, me, inv.id, portion, body.method, paid.length ? undefined : body.reference);
+        paid.push(inv.id);
+        amount -= portion;
+        if (amount <= 0) break;
+      }
+      return paid;
     });
-    return this.get(me, id);
+    return { visitId: id, invoices: await Promise.all(invoiceIds.map((i) => this.get(me, i))) };
   }
 
   /** Admin only. Only unpaid invoices can be voided; their charges go back to "to bill". */

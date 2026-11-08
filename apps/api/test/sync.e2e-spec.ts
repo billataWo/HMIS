@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { createPrismaClient } from '@hmis/db';
+import { newSecret } from '../src/auth/totp.js';
 import { enableCapture, disableCapture, hashToken, NOT_SYNCED, readOutbox } from '../src/sync/engine.js';
 import { pushOnce, type Transport } from '../src/sync/sync.agent.js';
 import { EDGE_APP_URL, EDGE_URL } from './global-setup.js';
@@ -47,7 +48,10 @@ describe('clinic server → cloud sync', () => {
     const tenant = await edge.tenant.create({ data: { name: 'Edge Clinic', requirePrepayment: false } });
     tenantId = tenant.id;
     staffPhone = phone();
-    await edge.user.create({ data: { tenantId, phone: staffPhone, role: 'ADMIN', fullName: 'Edge Admin', passwordHash: await bcrypt.hash('password123', 4) } });
+    // Admins use two-step sign-in; the secret travels with the account to the cloud copy.
+    await edge.user.create({
+      data: { tenantId, phone: staffPhone, role: 'ADMIN', fullName: 'Edge Admin', passwordHash: await bcrypt.hash('password123', 4), totpSecret: newSecret(), totpEnabledAt: new Date() },
+    });
     patientId = (await edge.patient.create({ data: { tenantId, mrn: 'EDGE-1', firstName: 'Almaz', fatherName: 'Tesfaye', sex: 'FEMALE' } })).id;
     await edge.serviceItem.create({ data: { tenantId, code: 'FEE', name: 'Consultation', price: '150.25' } });
 

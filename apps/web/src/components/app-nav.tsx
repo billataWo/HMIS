@@ -29,6 +29,8 @@ import { type Lang, tr } from "@/lib/i18n";
 import type { Me, Role } from "@/lib/api";
 import { ROLE_LABELS } from "@/lib/format";
 import { DURATION, EASE } from "./motion";
+import { OfflineAgent, OfflineChip } from "./offline-agent";
+import { clearSnapshot } from "@/lib/offline/idb";
 
 type Item = { href: string; label: string; labelAm: string; icon: LucideIcon; roles?: Role[] };
 
@@ -179,6 +181,7 @@ function LanguageSwitch({ lang }: { lang: Lang }) {
 function UserCard({ me, lang }: { me: Me; lang: Lang }) {
   return (
     <>
+    <OfflineChip />
     <LanguageSwitch lang={lang} />
     <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-2.5 dark:border-slate-800 dark:bg-slate-900">
       <span aria-hidden className="grid size-9 shrink-0 place-items-center rounded-full bg-slate-100 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
@@ -190,10 +193,15 @@ function UserCard({ me, lang }: { me: Me; lang: Lang }) {
           {ROLE_LABELS[me.role]} ·{" "}
           <Link href="/account/password" className="hover:text-brand-700 hover:underline">
             {tr(lang, "Password")}
+          </Link>{" "}
+          ·{" "}
+          <Link href="/account/two-step" className="hover:text-brand-700 hover:underline">
+            {tr(lang, "Two-step")}
           </Link>
         </p>
       </div>
-      <form action={logout}>
+      {/* Signing out removes this user's patient data from the browser; unsent work stays. */}
+      <form action={logout} onSubmit={() => void clearSnapshot().catch(() => undefined)}>
         <button
           aria-label={tr(lang, "Sign out")}
           title={tr(lang, "Sign out")}
@@ -224,6 +232,7 @@ export function AppNav({ me, lang }: { me: Me; lang: Lang }) {
 
   return (
     <>
+      <OfflineAgent me={me} />
       {/* Phones and tablets: top bar with a slide-in menu. */}
       <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-slate-200 bg-white/85 px-4 py-2.5 backdrop-blur-md md:hidden print:hidden dark:border-slate-800 dark:bg-slate-950/85">
         <Brand me={me} />

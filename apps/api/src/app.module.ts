@@ -4,6 +4,8 @@ import { TenantContextInterceptor } from './common/tenant-context.js';
 import { JwtModule } from '@nestjs/jwt';
 import { AppController } from './app.controller.js';
 import { AuthController } from './auth/auth.controller.js';
+import { TwoStepController } from './auth/two-step.controller.js';
+import { DisplaysController } from './displays/displays.controller.js';
 import { AuthGuard } from './auth/auth.guard.js';
 import { AuditService } from './common/audit.service.js';
 import { PatientsController } from './patients/patients.controller.js';
@@ -25,6 +27,9 @@ import { ProceduresController } from './procedures/procedures.controller.js';
 import { AuditController } from './audit/audit.controller.js';
 import { BackupsController } from './backups/backups.controller.js';
 import { CloudCopyGuard } from './sync/read-only.guard.js';
+import { IdempotencyInterceptor } from './common/idempotency.interceptor.js';
+import { ServerTimeInterceptor } from './common/server-time.interceptor.js';
+import { OfflineController } from './offline/offline.controller.js';
 import { SyncAgent } from './sync/sync.agent.js';
 import { SyncController } from './sync/sync.controller.js';
 import { DocumentsController } from './documents/documents.controller.js';
@@ -33,8 +38,12 @@ import { PayersController } from './payers/payers.controller.js';
 import { PurchaseOrdersController } from './inventory/purchase-orders.controller.js';
 
 const jwtSecret = process.env.JWT_SECRET;
-if (!jwtSecret || (process.env.NODE_ENV === 'production' && jwtSecret === 'change-me')) {
-  throw new Error('Set a strong JWT_SECRET in the environment');
+// Anyone who knows this secret can sign in as anyone, in any clinic: in production it must be
+// long and random (openssl rand -base64 48), never a placeholder.
+const WEAK_SECRETS = new Set(['change-me', 'changeme', 'secret', 'jwt-secret', 'password']);
+if (!jwtSecret) throw new Error('Set JWT_SECRET in the environment');
+if (process.env.NODE_ENV === 'production' && (jwtSecret.length < 32 || WEAK_SECRETS.has(jwtSecret.toLowerCase()))) {
+  throw new Error('JWT_SECRET is too weak for production: use at least 32 random characters (openssl rand -base64 48)');
 }
 
 @Module({
@@ -42,6 +51,8 @@ if (!jwtSecret || (process.env.NODE_ENV === 'production' && jwtSecret === 'chang
   controllers: [
     AppController,
     AuthController,
+    TwoStepController,
+    DisplaysController,
     UsersController,
     PatientsController,
     VisitsController,
@@ -60,6 +71,7 @@ if (!jwtSecret || (process.env.NODE_ENV === 'production' && jwtSecret === 'chang
     AuditController,
     BackupsController,
     SyncController,
+    OfflineController,
     DocumentsController,
     WalkInController,
     PayersController,
@@ -71,7 +83,11 @@ if (!jwtSecret || (process.env.NODE_ENV === 'production' && jwtSecret === 'chang
     // After AuthGuard (needs the signed-in user): cloud copies of clinic-server clinics are read-only.
     { provide: APP_GUARD, useClass: CloudCopyGuard },
     SyncAgent,
+    // Outermost: stamps every reply with the server time (see the interceptor).
+    { provide: APP_INTERCEPTOR, useClass: ServerTimeInterceptor },
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
+    // Inside the tenant context (registered after it): replayed offline work is applied once.
+    { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
   ],
 })
 export class AppModule {}

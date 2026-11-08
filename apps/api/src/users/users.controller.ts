@@ -23,9 +23,10 @@ const UpdateUserSchema = z.object({
   role: RoleEnum.optional(),
   active: z.boolean().optional(),
   password: z.string().min(8).optional(),
+  resetTwoStep: z.literal(true).optional(), // lost phone: the user sets two-step sign-in up again
 });
 
-const publicFields = { id: true, fullName: true, phone: true, email: true, role: true, active: true, createdAt: true };
+const publicFields = { id: true, fullName: true, phone: true, email: true, role: true, active: true, createdAt: true, totpEnabledAt: true };
 
 @Controller('users')
 @Roles('ADMIN')
@@ -72,15 +73,19 @@ export class UsersController {
       throw new ConflictException('You cannot deactivate yourself or remove your own admin role');
     }
 
-    const { password, ...rest } = body;
+    const { password, resetTwoStep, ...rest } = body;
+    const twoStepReset = resetTwoStep
+      ? { totpSecret: null, totpPendingSecret: null, totpEnabledAt: null, totpLastStep: null, totpRecoveryCodes: [], sessionsValidAfter: new Date() }
+      : {};
     const user = await this.prisma.client.user.update({
       where: { id },
       // A password reset by an admin is temporary too.
-      data: { ...rest, ...(password ? { passwordHash: await bcrypt.hash(password, 10), mustChangePassword: true } : {}) },
+      // A reset also ends the user's current sign-ins (whoever knew the old password is out).
+      data: { ...rest, ...twoStepReset, ...(password ? { passwordHash: await bcrypt.hash(password, 10), mustChangePassword: true, sessionsValidAfter: new Date() } : {}) },
       select: publicFields,
     });
     forgetAccount(id); // deactivation or a new role applies on the user's next request
-    await this.audit.log(me, 'user.update', 'User', id, { ...rest, passwordChanged: !!password });
+    await this.audit.log(me, 'user.update', 'User', id, { ...rest, passwordChanged: !!password, ...(resetTwoStep && { twoStepReset: true }) });
     return user;
   }
 }
