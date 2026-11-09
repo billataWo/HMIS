@@ -7,6 +7,9 @@
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 
+# Set here, not in the app's settings: AletCloud passes those to the build too, where
+# NODE_ENV=production would make pnpm skip the build tools (devDependencies).
+export NODE_ENV=production
 export API_PORT="${API_PORT:-4000}"
 unset API_BASE_PATH
 NODE_OPTIONS="--max-old-space-size=${HMIS_API_HEAP_MB:-96}" sh "$here/start-api.sh" &
