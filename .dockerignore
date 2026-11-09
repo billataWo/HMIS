@@ -1,0 +1,20 @@
+# The application image (deploy/app/Dockerfile) is built from the repository root: send only the
+# sources. Never secrets, never local builds or dependencies (they are made inside the image).
+**/node_modules
+**/dist
+**/.next
+**/.next-*
+**/out
+**/coverage
+**/.turbo
+**/*.tsbuildinfo
+packages/db/src/generated
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
+.git
+.vscode
+.idea
+deploy/.env
+deploy/hmis-ca.crt

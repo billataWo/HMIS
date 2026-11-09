@@ -36,6 +36,16 @@ import { DocumentsController } from './documents/documents.controller.js';
 import { WalkInController } from './pharmacy/walk-in.controller.js';
 import { PayersController } from './payers/payers.controller.js';
 import { PurchaseOrdersController } from './inventory/purchase-orders.controller.js';
+import { PlatformAuthController } from './platform/platform-auth.controller.js';
+import { PlatformController } from './platform/platform.controller.js';
+import { PublicController } from './platform/public.controller.js';
+import { SubscriptionController } from './platform/subscription.controller.js';
+import { PlatformGuard } from './platform/platform-auth.js';
+import { SubscriptionGuard } from './platform/subscription.guard.js';
+import { PaymentsController } from './platform/payments/payments.controller.js';
+import { SubscriptionScheduler } from './platform/payments/scheduler.js';
+import { LicenceAgent } from './licence/licence.agent.js';
+import { ExportsController } from './exports/exports.controller.js';
 
 const jwtSecret = process.env.JWT_SECRET;
 // Anyone who knows this secret can sign in as anyone, in any clinic: in production it must be
@@ -76,12 +86,23 @@ if (process.env.NODE_ENV === 'production' && (jwtSecret.length < 32 || WEAK_SECR
     WalkInController,
     PayersController,
     PurchaseOrdersController,
+    SubscriptionController,
+    PublicController,
+    PlatformAuthController,
+    PlatformController,
+    PaymentsController,
+    ExportsController,
   ],
   providers: [
     AuditService,
     { provide: APP_GUARD, useClass: AuthGuard },
     // After AuthGuard (needs the signed-in user): cloud copies of clinic-server clinics are read-only.
     { provide: APP_GUARD, useClass: CloudCopyGuard },
+    // Then the clinic's subscription: read-only when suspended, modules outside the plan.
+    { provide: APP_GUARD, useClass: SubscriptionGuard },
+    PlatformGuard,
+    SubscriptionScheduler,
+    LicenceAgent,
     SyncAgent,
     // Outermost: stamps every reply with the server time (see the interceptor).
     { provide: APP_INTERCEPTOR, useClass: ServerTimeInterceptor },

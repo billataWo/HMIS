@@ -1,4 +1,5 @@
 import { networkInterfaces } from "node:os";
+import { resolve } from "node:path";
 import type { NextConfig } from "next";
 
 /**
@@ -55,6 +56,11 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Lets a verification build run beside a running `next dev` without fighting over .next.
   distDir: process.env.NEXT_DIST_DIR ?? ".next",
+  // The server image (deploy/app/Dockerfile): a self-contained server with only the files it needs.
+  ...(process.env.NEXT_STANDALONE === "1" && {
+    output: "standalone" as const,
+    outputFileTracingRoot: resolve(process.cwd(), "../.."),
+  }),
   allowedDevOrigins: devOrigins,
   cacheComponents: true,
   async headers() {

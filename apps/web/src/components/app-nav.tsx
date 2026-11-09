@@ -32,7 +32,8 @@ import { DURATION, EASE } from "./motion";
 import { OfflineAgent, OfflineChip } from "./offline-agent";
 import { clearSnapshot } from "@/lib/offline/idb";
 
-type Item = { href: string; label: string; labelAm: string; icon: LucideIcon; roles?: Role[] };
+/** `feature`: shown only when the clinic's plan includes that module. */
+type Item = { href: string; label: string; labelAm: string; icon: LucideIcon; roles?: Role[]; feature?: string };
 
 const GROUPS: { title?: string; items: Item[] }[] = [
   { items: [{ href: "/", label: "Home", labelAm: "መነሻ", icon: House }] },
@@ -56,7 +57,7 @@ const GROUPS: { title?: string; items: Item[] }[] = [
     title: "Finance",
     items: [
       { href: "/billing", label: "Billing", labelAm: "ክፍያ", icon: Receipt, roles: ["ADMIN", "CASHIER"] },
-      { href: "/billing/payers", label: "Credit & insurance", labelAm: "ዱቤና መድን", icon: Landmark, roles: ["ADMIN", "CASHIER"] },
+      { href: "/billing/payers", label: "Credit & insurance", labelAm: "ዱቤና መድን", icon: Landmark, roles: ["ADMIN", "CASHIER"], feature: "CREDIT" },
       { href: "/reports", label: "Reports", labelAm: "ሪፖርቶች", icon: ChartColumn, roles: ["ADMIN"] },
     ],
   },
@@ -110,7 +111,7 @@ function NavLinks({ me, lang, layoutGroup, onNavigate }: { me: Me; lang: Lang; l
   return (
     <nav aria-label="Main" className="space-y-5">
       {GROUPS.map((g, gi) => {
-        const items = g.items.filter((i) => !i.roles || i.roles.includes(me.role));
+        const items = g.items.filter((i) => (!i.roles || i.roles.includes(me.role)) && (!i.feature || !me.features || me.features.includes(i.feature)));
         if (items.length === 0) return null;
         return (
           <div key={g.title ?? gi}>

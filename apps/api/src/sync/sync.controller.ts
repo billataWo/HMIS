@@ -1,10 +1,12 @@
-import { Body, ConflictException, Controller, Get, Headers, HttpCode, Post, Res, UnauthorizedException } from '@nestjs/common';
+import { Body, ConflictException, Controller, Get, Headers, HttpCode, NotFoundException, Post, Res, UnauthorizedException } from '@nestjs/common';
 import type { Response } from 'express';
 import { z } from 'zod';
 import { type AuthUser, CurrentUser, Public } from '../auth/auth.decorators.js';
 import { tenantContext } from '../common/tenant-context.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { issueLicence } from '../licence/licence.js';
+import { platformEnabled } from '../platform/platform-auth.js';
 import { applyChanges, exportRows, hashToken, loadTables, schemaVersion, SyncError, type Tables } from './engine.js';
 
 const PushSchema = z.object({
@@ -110,6 +112,18 @@ export class SyncController {
    *  - cloud-copy: this is the cloud's read-only copy of a clinic that works on its clinic server
    *  - off: neither (a cloud-only clinic, or no sync set up)
    */
+  /** The clinic server's HMIS licence, fresh from its subscription (fetched every hour). */
+  @Public()
+  @Get('licence')
+  async licence(@Headers('authorization') authorization: string | undefined) {
+    const client = await this.client(authorization);
+    if (!platformEnabled() || !(await this.prisma.system.subscription.findUnique({ where: { tenantId: client.tenantId } }))) {
+      throw new NotFoundException('This cloud issues no licence for this clinic');
+    }
+    const { text } = await issueLicence(this.prisma.system, client.tenantId);
+    return { licence: text };
+  }
+
   @Get('status')
   async status(@CurrentUser() me: AuthUser) {
     const admin = me.role === 'ADMIN';

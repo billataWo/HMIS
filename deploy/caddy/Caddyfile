@@ -1,0 +1,53 @@
+# HTTPS in front of HMIS (deploy/compose.yml). Set in deploy/.env:
+#   HMIS_SITE  the address(es) people open, e.g. "192.168.1.10" or "192.168.1.10, hmis.lan" on a
+#              clinic server, "hmis.example.et" on the cloud
+#   HMIS_TLS   "internal" (default): certificates from this server's own authority, which the
+#              clinic's PCs and tablets trust once (docs/install/README.md); or an email address:
+#              free public certificates (Let's Encrypt) for a domain reachable from the internet
+{
+	# Nothing on the server needs Caddy's admin API.
+	admin off
+	# The ":80" site below redirects to HTTPS itself, except for the certificate authority file.
+	auto_https disable_redirects
+}
+
+# Plain HTTP: only the clinic's certificate authority (for PCs and tablets to install), and a
+# redirect to HTTPS for everything else.
+:80 {
+	handle /hmis-ca.crt {
+		root * /data/caddy/pki/authorities/local
+		rewrite * /root.crt
+		header Content-Type application/x-x509-ca-cert
+		header Content-Disposition "attachment; filename=hmis-ca.crt"
+		file_server
+	}
+	handle {
+		redir https://{host}{uri} permanent
+	}
+}
+
+{$HMIS_SITE} {
+	tls {$HMIS_TLS:internal}
+	encode zstd gzip
+	# Don't advertise the server software.
+	header {
+		-Server
+		-Via
+	}
+
+	# Caddy replaces any X-Forwarded-For sent by the browser with the real address: the per-address
+	# sign-in limits rely on it.
+
+	# Clinic servers send their changes to the cloud here; the API refuses anyone without a token.
+	handle /sync/* {
+		reverse_proxy api:4000
+	}
+	# Chapa and Telebirr report payments here (HMIS cloud); each report only makes the API ask them.
+	handle /public/payments/* {
+		reverse_proxy api:4000
+	}
+	# Everything else is the web app. The API itself is never reachable from outside.
+	handle {
+		reverse_proxy web:3000
+	}
+}

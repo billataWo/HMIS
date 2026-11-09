@@ -18,6 +18,12 @@ export default function SettingsPage() {
         subtitle="ቅንብሮች"
         actions={
           <>
+            <Link href="/settings/subscription" className={secondaryButtonClass}>
+              Subscription
+            </Link>
+            <Link href="/settings/data" className={secondaryButtonClass}>
+              Your data
+            </Link>
             <Link href="/settings/backups" className={secondaryButtonClass}>
               Backups
             </Link>

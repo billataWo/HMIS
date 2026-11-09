@@ -72,16 +72,17 @@ later, including restores.
 
 ## Setting up a server
 
-You need: a Linux server with Docker, a **second physical disk** for backups, and a storage key
-for the off-site bucket (see below). Allow the backup disk about 3× the database size plus the
-monthly archives.
+You need: a Linux server, a **second physical disk** for backups, and a storage key for the
+off-site bucket (see below). Allow the backup disk about 3× the database size plus the monthly
+archives. The backups are part of every HMIS server: the [installer](../install/README.md) sets
+them up along with the rest.
 
-1. Mount the backup disk, e.g. at `/mnt/backup`, and give it to the database user:
-   `sudo chown 999:999 /mnt/backup && sudo chmod 700 /mnt/backup`
-2. `cd deploy && cp .env.example .env`, then fill in `.env`:
-   - `POSTGRES_PASSWORD`, `BACKUP_SITE_NAME`, `BACKUP_DISK=/mnt/backup`
-   - `BACKUP_ENCRYPTION_KEY`: `openssl rand -base64 36`. **Without this key the backups cannot be
-     read.** Print it, seal it, keep one copy in the clinic's safe and one with the support team.
+1. Mount the backup disk, e.g. at `/mnt/backup` (encrypted:
+   [disk encryption](../security/disk-encryption.md), step 3).
+2. `sudo bash deploy/hmis install` asks for the backup disk and writes `deploy/.env`, including
+   a random `BACKUP_ENCRYPTION_KEY`. **Without this key the backups cannot be read.** Print it,
+   seal it, keep one copy in the clinic's safe and one with the support team. Then fill in, in
+   `deploy/.env`:
    - The `OFFSITE_S3_*` values and `OFFSITE_LOCATION` from the off-site setup below.
    - `BACKUP_ARCHIVE_RECIPIENT`: on an offline computer, `age-keygen -o hmis-archive.key`; put the
      printed public key (`age1…`) here. Keep `hmis-archive.key` on two USB sticks (safe + support
@@ -89,12 +90,10 @@ monthly archives.
    - Alerts: `ALERT_TELEGRAM_*` and/or `ALERT_SMTP_URL` + `ALERT_EMAIL_*`, and
      `BACKUP_HEARTBEAT_URL` from your heartbeat monitor (set it to expect a ping every hour,
      with a 3-hour grace period).
-3. `docker compose up -d --build`
-4. Point the API at it (`DATABASE_URL`/`APP_DATABASE_URL` on port 5432), run the migrations and
-   `pnpm db:app-role` as usual.
-5. Within a few minutes: `docker compose exec backup hmis-backup status` shows the first full
+3. `sudo deploy/hmis up` (re)starts everything with these settings.
+4. Within a few minutes: `docker compose exec backup hmis-backup status` shows the first full
    backup and the first restore test; Settings → Backups shows them too.
-6. Put a UPS on the server. PostgreSQL survives a power cut, but disks do not like many of them.
+5. Put a UPS on the server. PostgreSQL survives a power cut, but disks do not like many of them.
 
 The development `docker-compose.yml` at the repository root has no backups on purpose.
 

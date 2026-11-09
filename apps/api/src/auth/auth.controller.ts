@@ -8,6 +8,7 @@ import { clientIp } from '../common/client-ip.js';
 import { normalizePhone } from '../common/phone.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { AllowWhileSuspended, tenantPlan } from '../platform/subscription.guard.js';
 import { AllowPendingPassword, AllowTwoStepSetup, type AuthUser, CurrentUser, Public } from './auth.decorators.js';
 import { hashRecoveryCode, looksLikeRecoveryCode, verifyTotp } from './totp.js';
 import { forgetAccount } from './auth.guard.js';
@@ -226,6 +227,7 @@ export class AuthController {
   @HttpCode(200)
   @AllowPendingPassword()
   @AllowTwoStepSetup()
+  @AllowWhileSuspended()
   async changePassword(@CurrentUser() me: AuthUser, @Body(new ZodPipe(PasswordSchema)) body: z.infer<typeof PasswordSchema>) {
     const user = await this.prisma.client.user.findFirst({ where: { id: me.sub, tenantId: me.tenantId } });
     if (!user || !(await bcrypt.compare(body.current, user.passwordHash))) {
@@ -262,6 +264,15 @@ export class AuthController {
     });
     if (!user) throw new UnauthorizedException();
     const { totpEnabledAt, ...rest } = user;
-    return { ...rest, twoStep: { enabled: !!totpEnabledAt, required: user.role === 'ADMIN' } };
+    const plan = await tenantPlan(this.prisma, me.tenantId);
+    return {
+      ...rest,
+      twoStep: { enabled: !!totpEnabledAt, required: user.role === 'ADMIN' },
+      // null: every module. The screens hide what the plan does not include.
+      features: plan.features,
+      subscription: plan.managed
+        ? { state: plan.state, readOnly: plan.readOnly, daysLeft: plan.daysLeft, endsAt: plan.endsAt, planName: plan.planName, source: plan.source, unlicensed: !!plan.unlicensed }
+        : null,
+    };
   }
 }

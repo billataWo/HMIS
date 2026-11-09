@@ -345,8 +345,22 @@ archive_due() {
 }
 
 # --- Scheduler --------------------------------------------------------------------------------
+# A brand-new server: the database is up but the migrations have not created HMIS's tables yet.
+# (Not when the database is down: then the checks must run and raise the alarm.)
+schema_missing() {
+  [[ $(psql -XAt -c "SELECT to_regclass('public.\"Patient\"') IS NULL" 2>/dev/null) == t ]]
+}
+
 tick() {
   flush_pending
+  # The first backup and restore test wait for the tables, or the first restore test would
+  # "fail" on an empty database.
+  if schema_missing; then
+    [[ -e $STATE_DIR/waiting-for-schema ]] || log "Waiting for the HMIS tables (migrations) before the first backup"
+    touch "$STATE_DIR/waiting-for-schema"
+    return 0
+  fi
+  rm -f "$STATE_DIR/waiting-for-schema"
   local type
   if due backup-failed 900; then
     type=$(next_backup_type)

@@ -10,7 +10,7 @@ Multi-tenant, offline-first clinic management system for Ethiopian private clini
 | `apps/api` | Backend API: NestJS |
 | `packages/db` | PostgreSQL schema and migrations (Prisma), shared by the API |
 | `docker-compose.yml` | Local PostgreSQL 17 for development (this computer only, no backups) |
-| `deploy/` | Production database with automatic backups, and the off-site WORM store |
+| `deploy/` | The server: `hmis` (install and run), Compose file, app images, Caddy (HTTPS), database with automatic backups, the off-site WORM store |
 | `docs/backup/` | Backup guide and the restore runbook |
 | `docs/security/` | How patient data is protected, the security review, and the go-live checklist |
 
@@ -154,6 +154,12 @@ The database schema for all nine is in place in `packages/db/prisma/schema.prism
 
 To check a production build while `pnpm dev` is running, build into a separate folder: `NEXT_DIST_DIR=.next-check pnpm --filter web build`.
 
+## Servers
+
+A clinic server or the cloud server is installed with `sudo bash deploy/hmis install` ([docs/install/README.md](docs/install/README.md)). [`deploy/compose.yml`](deploy/compose.yml) runs Caddy (HTTPS, the only way in), the web app, the API (as `hmis_owner`/`hmis_app`, never the database superuser), PostgreSQL and the backup worker. Migrations are applied automatically before the API starts. New clinics: `sudo deploy/hmis clinic create ...`.
+
+On the HMIS cloud (`HMIS_PLATFORM=1`) HMIS runs as a service ([docs/saas/README.md](docs/saas/README.md)): clinics ask on `/request`, HMIS staff approve them and look after plans, subscriptions, invoices and payments in the platform console (`/platform`); a suspended clinic becomes read-only.
+
 ## Backups
 
 Production runs the database from [`deploy/compose.yml`](deploy/compose.yml), with a backup worker beside it. The full guide is in [docs/backup/README.md](docs/backup/README.md), and disaster recovery in [docs/backup/RESTORE.md](docs/backup/RESTORE.md).
@@ -175,7 +181,7 @@ A clinic can work on its own server at the clinic (the **clinic server**), which
 - **Applying:** the cloud applies changes as `hmis_app` under the clinic's row-level security, so a clinic server can only ever write its own clinic.
 - **Read-only cloud copy:** while a clinic has a clinic server, its cloud copy refuses changes (`CLOUD_COPY_READ_ONLY`), but staff can still sign in there to look things up. Every page shows how fresh the copy is.
 - **Setup and status:**
-  - `node apps/api/dist/sync/cli.js` handles tokens (on the cloud), and bootstrap, enable and status (on the clinic server).
+  - `sudo deploy/hmis sync …` (`node apps/api/dist/sync/cli.js` in the API container) handles tokens (on the cloud), and bootstrap, enable and status (on the clinic server).
   - Settings → Cloud sync shows the status in the app.
 - **Rules for developers:**
   - A migration that adds a clinic table must call `SELECT hmis_sync_attach('Table')`; `test/sync.e2e-spec.ts` checks this.

@@ -73,6 +73,12 @@ async function Patient({
                 Add family member
               </Link>
             )}
+            {me.role === "ADMIN" && (
+              // A download (the right of access): a plain link, not a page change.
+              <a href={`/patients/${p.id}/export`} className={secondaryButtonClass}>
+                Export record
+              </a>
+            )}
           </div>
         }
       />

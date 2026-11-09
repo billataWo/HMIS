@@ -11,3 +11,4 @@ packages/db/src/generated/
 .env.*
 !.env.example
 .DS_Store
+deploy/hmis-ca.crt

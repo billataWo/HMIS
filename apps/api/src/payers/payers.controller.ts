@@ -6,6 +6,7 @@ import { clinicDay, DAY_PATTERN, dayRange } from '../common/clinic-day.js';
 import { fromCents, toCents } from '../common/money.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { RequiresFeature } from '../platform/subscription.guard.js';
 import { queuePatientSelect } from '../visits/visits.controller.js';
 
 const optional = (max: number) =>
@@ -80,6 +81,7 @@ export class PayersController {
   }
 
   @Post()
+  @RequiresFeature('CREDIT')
   @Roles('ADMIN')
   async create(@CurrentUser() me: AuthUser, @Body(new ZodPipe(PayerSchema)) body: z.infer<typeof PayerSchema>) {
     const exists = await this.prisma.client.payer.findFirst({ where: { tenantId: me.tenantId, name: { equals: body.name, mode: 'insensitive' } } });
@@ -90,6 +92,7 @@ export class PayersController {
   }
 
   @Patch(':id')
+  @RequiresFeature('CREDIT')
   @Roles('ADMIN')
   async update(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(PayerUpdateSchema)) body: z.infer<typeof PayerUpdateSchema>) {
     await this.payer(me, id);

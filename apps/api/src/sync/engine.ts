@@ -16,7 +16,9 @@ export type Raw = {
 };
 
 /** Server bookkeeping, never sent anywhere. Every other table in the schema is clinic data. */
-export const NOT_SYNCED = new Set(['_prisma_migrations', 'BackupEvent', 'SyncOutbox', 'SyncState', 'SyncClient', 'IdempotentRequest', 'DisplayScreen']);
+export const NOT_SYNCED = new Set(['_prisma_migrations', 'BackupEvent', 'SyncOutbox', 'SyncState', 'SyncClient', 'IdempotentRequest', 'DisplayScreen',
+  // The HMIS platform: subscriptions belong to the cloud, never to a clinic server.
+  'Plan', 'Subscription', 'ClinicRequest', 'PlatformUser', 'PlatformAuditLog', 'PlatformSetting', 'PlatformInvoice', 'PlatformPayment', 'PlatformCheckout', 'InstalledLicence']);
 
 export type TableMeta = { name: string; columns: Set<string>; pk: string[]; deps: string[] };
 export type Tables = Map<string, TableMeta>;

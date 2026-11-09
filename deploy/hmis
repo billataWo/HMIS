@@ -1,0 +1,272 @@
+#!/usr/bin/env bash
+# HMIS server command. Run as root from the HMIS folder (docs/install/README.md):
+#   sudo bash deploy/hmis install     first installation: settings, secrets, start, first clinic
+#   sudo deploy/hmis <command>        afterwards (see `deploy/hmis help`)
+set -Eeuo pipefail
+
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+env_file="$here/.env"
+ca_file="$here/hmis-ca.crt"
+
+compose() { docker compose --project-directory "$here" -f "$here/compose.yml" "$@"; }
+say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
+warn() { printf '\033[33m! %s\033[0m\n' "$*" >&2; }
+die() { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
+need_root() { [[ $EUID -eq 0 ]] || die "Run as root: sudo bash deploy/hmis $*"; }
+getenv() { grep -E "^$1=" "$env_file" 2>/dev/null | tail -1 | cut -d= -f2- || true; }
+
+# ask "Question" "default" → the answer (or the default on Enter)
+ask() {
+  local answer
+  read -r -p "$1${2:+ [$2]}: " answer </dev/tty
+  printf '%s' "${answer:-$2}"
+}
+yes_no() { [[ $(ask "$1 (y/n)" "$2") =~ ^[Yy] ]]; }
+
+# Sets KEY=value in .env, replacing the (possibly commented-out) line from .env.example.
+set_env() {
+  local tmp
+  tmp=$(mktemp)
+  awk -v k="$1" -v v="$2" '!done && $0 ~ "^#? *" k "=" { print k "=" v; done = 1; next } { print } END { if (!done) print k "=" v }' "$env_file" >"$tmp"
+  cat "$tmp" >"$env_file"
+  rm -f "$tmp"
+}
+
+ensure_docker() {
+  if command -v docker >/dev/null && docker compose version >/dev/null 2>&1; then return; fi
+  command -v apt-get >/dev/null || die "Install Docker Engine with the Compose plugin first: https://docs.docker.com/engine/install/"
+  yes_no "Docker is not installed. Install it now from Ubuntu's packages?" y || die "HMIS runs in Docker: install it first."
+  apt-get update
+  apt-get install -y docker.io docker-compose-v2
+  systemctl enable --now docker
+}
+
+write_env() {
+  say "Settings"
+  cp "$here/.env.example" "$env_file"
+  chmod 600 "$env_file"
+
+  local ip site tls name disk
+  ip=$( (hostname -I 2>/dev/null || true) | awk '{print $1}')
+  if yes_no "Is this the HMIS cloud server, with a domain name reachable from the internet?" n; then
+    site=$(ask "Its domain name, e.g. hmis.example.et" "")
+    tls=$(ask "Email for the certificate authority (Let's Encrypt) to send expiry warnings to" "")
+    [[ -n $site && $tls == *@* ]] || die "Both the domain and an email address are needed."
+    set_env HMIS_PLATFORM 1
+    set_env HMIS_PUBLIC_URL "https://$site"
+  else
+    echo "Staff open HMIS at this server's address on the clinic network. Give it a fixed address"
+    echo "(a DHCP reservation in the router), or the PCs lose it after the router restarts."
+    site=$(ask "Address of this server on the clinic network" "$ip")
+    tls=internal
+    if yes_no "Does HMIS bill this clinic (it gets a licence from HMIS)?" y; then
+      set_env HMIS_LICENCE required
+    fi
+  fi
+  name=$(ask "Name of this server, shown in backup alerts" "$(uname -n) HMIS server")
+  disk=""
+  if mountpoint -q /mnt/backup 2>/dev/null; then disk=/mnt/backup; fi
+  disk=$(ask "Backup disk (a second disk, mounted; empty: none yet)" "$disk")
+
+  set_env HMIS_SITE "$site"
+  set_env HMIS_TLS "$tls"
+  set_env JWT_SECRET "$(openssl rand -base64 48 | tr -d '\n')"
+  set_env POSTGRES_PASSWORD "$(openssl rand -hex 24)"
+  set_env HMIS_DB_OWNER_PASSWORD "$(openssl rand -hex 24)"
+  set_env HMIS_DB_APP_PASSWORD "$(openssl rand -hex 24)"
+  set_env BACKUP_ENCRYPTION_KEY "$(openssl rand -base64 36 | tr -d '\n')"
+  set_env BACKUP_SITE_NAME "$name"
+  [[ -n $disk ]] && set_env BACKUP_DISK "$disk"
+  echo "Written to $env_file (readable by root only). Off-site storage and alerts: edit it later,"
+  echo "then run: sudo deploy/hmis up (docs/backup/README.md)."
+}
+
+prepare_backup_disk() {
+  local disk
+  disk=$(getenv BACKUP_DISK)
+  if [[ -z $disk ]]; then
+    warn "No backup disk: backups go to the same disk as the database until BACKUP_DISK is set in $env_file."
+    return
+  fi
+  mountpoint -q "$disk" || warn "$disk is not a mounted disk: check /etc/fstab (docs/security/disk-encryption.md)."
+  mkdir -p "$disk"
+  chown 999:999 "$disk" # the postgres user inside the containers
+  chmod 700 "$disk"
+}
+
+start() {
+  say "Building and starting HMIS (the first time takes several minutes)"
+  compose build --pull
+  if ! compose up -d --remove-orphans; then
+    compose logs --tail 40 roles migrate api 2>/dev/null || true
+    die "HMIS did not start: see the messages above."
+  fi
+  local site host port i
+  site=$(getenv HMIS_SITE)
+  host=$(printf '%s' "${site%%,*}" | tr -d ' ')
+  port=$(getenv HTTPS_PORT)
+  port=${port:-443}
+  printf 'Waiting for HMIS to answer at https://%s' "$host"
+  for i in $(seq 1 90); do
+    if curl -skf -o /dev/null --resolve "$host:$port:127.0.0.1" "https://$host:$port/login"; then
+      echo " ready."
+      return
+    fi
+    printf '.'
+    sleep 2
+  done
+  echo
+  compose ps
+  die "HMIS is not answering yet: check 'sudo deploy/hmis logs'."
+}
+
+ca_cert() {
+  [[ $(getenv HMIS_TLS) == internal ]] || { echo "This server uses public certificates: nothing to install on the PCs."; return; }
+  local i
+  for i in $(seq 1 30); do
+    compose exec -T caddy cat /data/caddy/pki/authorities/local/root.crt >"$ca_file.tmp" 2>/dev/null && [[ -s $ca_file.tmp ]] && break
+    sleep 1
+  done
+  [[ -s $ca_file.tmp ]] || { rm -f "$ca_file.tmp"; die "Caddy has not created its certificate authority yet: try again in a minute."; }
+  mv "$ca_file.tmp" "$ca_file"
+  chmod 644 "$ca_file"
+  local site host
+  site=$(getenv HMIS_SITE)
+  host=$(printf '%s' "${site%%,*}" | tr -d ' ')
+  say "This server's certificate authority"
+  echo "Each PC and tablet trusts it once (docs/install/README.md, \"Trust the server\"). Get it from"
+  echo "  http://$host/hmis-ca.crt   or the file $ca_file (USB stick)"
+  echo "and check that its fingerprint is:"
+  openssl x509 -in "$ca_file" -noout -fingerprint -sha256 | cut -d= -f2
+}
+
+host_check_cron() {
+  local script="$here/host-check.sh"
+  if [[ -d /etc/cron.d ]]; then
+    printf '# HMIS: are the disks encrypted? (docs/security/disk-encryption.md)\n0 6 * * * root bash %q >/dev/null 2>&1\n' "$script" >/etc/cron.d/hmis-host-check
+    chmod 644 /etc/cron.d/hmis-host-check
+  else
+    warn "cron is not installed (apt-get install cron): the daily disk check is not scheduled."
+  fi
+  bash "$script" || warn "Some disks are not encrypted: see docs/security/disk-encryption.md."
+}
+
+# The HMIS cloud: the first operator of the platform console, who adds the others there.
+first_operator() {
+  [[ $(getenv HMIS_PLATFORM) == 1 ]] || return 0
+  if ! compose exec -T api node dist/platform/cli.js list | grep -q "^No operators"; then return; fi
+  say "The platform console (https://$(getenv HMIS_SITE | cut -d, -f1 | tr -d " ")/platform)"
+  local name email
+  name=$(ask "Your full name (the first operator, owner of the console)" "")
+  email=$(ask "Your email (you sign in with it)" "")
+  compose exec -T api node dist/platform/cli.js add-operator --name "$name" --email "$email" --role OWNER
+}
+
+first_clinic() {
+  # On the HMIS cloud, clinics come from requests approved in the platform console.
+  [[ $(getenv HMIS_PLATFORM) == 1 ]] && return 0
+  if ! compose exec -T api node dist/clinic/cli.js list | grep -q '^No clinics'; then return; fi
+  if [[ $(getenv HMIS_LICENCE) == required ]]; then
+    echo "A clinic server synced to the cloud copies its clinic from there later (sync bootstrap):"
+    echo "leave the licence empty for it. An own-server install is created from its licence file."
+    local file admin phone
+    file=$(ask "Licence file from HMIS (empty: none yet)" "")
+    [[ -n $file ]] || return 0
+    [[ -r $file ]] || die "Cannot read $file"
+    admin=$(ask "First admin's full name" "")
+    phone=$(ask "First admin's mobile number" "")
+    say "Creating the clinic from its licence"
+    compose exec -T api node dist/clinic/cli.js create --licence - --admin-name "$admin" --admin-phone "$phone" <"$file"
+    return
+  fi
+  yes_no "Create the clinic and its first admin now?" y || {
+    echo "Later: sudo deploy/hmis clinic create --name \"...\" --admin-name \"...\" --admin-phone 09..."
+    return
+  }
+  local name am admin phone
+  name=$(ask "Clinic name (English)" "")
+  am=$(ask "Clinic name in Amharic (optional)" "")
+  admin=$(ask "First admin's full name" "")
+  phone=$(ask "First admin's mobile number" "")
+  say "Creating the clinic"
+  compose exec -T api node dist/clinic/cli.js create --name "$name" ${am:+--name-am "$am"} --admin-name "$admin" --admin-phone "$phone"
+}
+
+install() {
+  need_root install
+  # So that `sudo deploy/hmis …` works afterwards, whatever the copy did to the file modes.
+  chmod 755 "$here/hmis" "$here/host-check.sh"
+  command -v openssl >/dev/null || die "openssl is needed (apt-get install openssl)."
+  ensure_docker
+  if [[ -f $env_file ]]; then
+    say "Keeping the existing settings in $env_file"
+  else
+    write_env
+  fi
+  prepare_backup_disk
+  start
+  ca_cert
+  say "Disk encryption check (daily at 06:00)"
+  host_check_cron
+  first_operator
+  first_clinic
+  say "HMIS is installed: https://$(getenv HMIS_SITE | cut -d, -f1 | tr -d ' ')"
+  cat <<EOF
+Before the clinic uses it (docs/security/README.md, checklist):
+  - Print the backup encryption key and keep it in the clinic's safe, with a copy for the support
+    team. Without it the backups cannot be read:
+        BACKUP_ENCRYPTION_KEY=$(getenv BACKUP_ENCRYPTION_KEY)
+  - Set up the off-site copy and alerts in $env_file (docs/backup/README.md), then: sudo deploy/hmis up
+  - Make each PC and tablet trust this server (above), and turn on BitLocker on PCs used offline.
+EOF
+}
+
+usage() {
+  cat <<'EOF'
+sudo deploy/hmis <command>
+
+  install                 first installation (safe to re-run: keeps deploy/.env)
+  up                      build and (re)start after an update or a change to deploy/.env
+  status                  the containers and the backups
+  logs [service...]       recent messages (services: caddy web api migrate db backup)
+  clinic <command>        create / list clinics, reset a locked-out admin, import <file> (an export)
+  platform <command>      HMIS cloud: add-operator / list / reset <email> (platform console)
+  licence status          the HMIS licence on this server; licence install <file>: a new one
+  sync <command>          clinic server ↔ cloud (docs/sync/README.md)
+  ca-cert                 this server's certificate authority for the PCs (and its fingerprint)
+  host-check              check the disk encryption now
+  stop                    stop HMIS (the data stays)
+EOF
+}
+
+cmd=${1:-help}
+shift || true
+case $cmd in
+  install) install ;;
+  up) need_root up; prepare_backup_disk; start ;;
+  status) compose ps; compose exec -T backup hmis-backup status || true ;;
+  logs) compose logs --tail 100 "$@" ;;
+  clinic)
+    if [[ ${1:-} == import ]]; then
+      [[ -r ${2:-} ]] || die "usage: deploy/hmis clinic import <export file>"
+      compose exec -T api node dist/clinic/cli.js import - <"$2"
+    else
+      compose exec -T api node dist/clinic/cli.js "$@"
+    fi
+    ;;
+  sync) compose exec -T api node dist/sync/cli.js "$@" ;;
+  platform) compose exec -T api node dist/platform/cli.js "$@" ;;
+  licence)
+    if [[ ${1:-} == install ]]; then
+      [[ -r ${2:-} ]] || die "usage: deploy/hmis licence install <licence file>"
+      compose exec -T api node dist/licence/cli.js install - <"$2"
+    else
+      compose exec -T api node dist/licence/cli.js "${@:-status}"
+    fi
+    ;;
+  ca-cert) need_root ca-cert; ca_cert ;;
+  host-check) need_root host-check; bash "$here/host-check.sh" ;;
+  stop) compose stop ;;
+  help | -h | --help) usage ;;
+  *) usage; exit 2 ;;
+esac

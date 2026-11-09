@@ -1,4 +1,4 @@
-import { Body, ConflictException, Controller, Get, NotFoundException, Param, Patch, Post } from '@nestjs/common';
+import { Body, ConflictException, Controller, ForbiddenException, Get, NotFoundException, Param, Patch, Post } from '@nestjs/common';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
@@ -7,6 +7,7 @@ import { normalizePhone } from '../common/phone.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { forgetAccount } from '../auth/auth.guard.js';
+import { tenantPlan } from '../platform/subscription.guard.js';
 
 const RoleEnum = z.enum(['ADMIN', 'RECEPTIONIST', 'DOCTOR', 'NURSE', 'CASHIER', 'PHARMACIST', 'LAB_TECH']);
 
@@ -36,6 +37,19 @@ export class UsersController {
     private readonly audit: AuditService,
   ) {}
 
+  /** The plan limits how many staff accounts can be active at once. */
+  private async checkStaffLimit(tenantId: string) {
+    const plan = await tenantPlan(this.prisma, tenantId);
+    if (plan.maxStaff === null) return;
+    const active = await this.prisma.client.user.count({ where: { tenantId, active: true } });
+    if (active >= plan.maxStaff) {
+      throw new ForbiddenException({
+        message: `The ${plan.planName} plan allows ${plan.maxStaff} active staff accounts. Deactivate someone who has left, or ask HMIS for a bigger plan (Settings → Subscription).`,
+        code: 'STAFF_LIMIT',
+      });
+    }
+  }
+
   @Get()
   list(@CurrentUser() me: AuthUser) {
     return this.prisma.client.user.findMany({
@@ -49,6 +63,7 @@ export class UsersController {
   async create(@CurrentUser() me: AuthUser, @Body(new ZodPipe(CreateUserSchema)) body: z.infer<typeof CreateUserSchema>) {
     const exists = await this.prisma.client.user.findFirst({ where: { tenantId: me.tenantId, phone: body.phone } });
     if (exists) throw new ConflictException('A staff account with this phone number already exists');
+    await this.checkStaffLimit(me.tenantId);
 
     const { password, ...rest } = body;
     const user = await this.prisma.client.user.create({
@@ -72,6 +87,7 @@ export class UsersController {
     if (id === me.sub && (body.active === false || (body.role && body.role !== 'ADMIN'))) {
       throw new ConflictException('You cannot deactivate yourself or remove your own admin role');
     }
+    if (body.active === true && !existing.active) await this.checkStaffLimit(me.tenantId);
 
     const { password, resetTwoStep, ...rest } = body;
     const twoStepReset = resetTwoStep

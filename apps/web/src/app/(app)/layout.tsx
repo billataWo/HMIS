@@ -3,7 +3,7 @@ import { AppNav, AppNavSkeleton } from "@/components/app-nav";
 import Link from "next/link";
 import { Notice } from "@/components/ui";
 import { api, type BackupStatus, type Me, type SyncStatus } from "@/lib/api";
-import { formatAgo, minutesAgo } from "@/lib/format";
+import { formatAgo, formatDualDate, minutesAgo } from "@/lib/format";
 import { getLang } from "@/lib/lang";
 
 async function Navigation() {
@@ -25,6 +25,55 @@ async function BackupBanner() {
       </Link>
     </Notice>
   );
+}
+
+/**
+ * The clinic's HMIS subscription: everyone is told when the clinic is read-only (and why nothing
+ * can be saved); admins are told ahead of time, while there is still time to pay.
+ */
+async function SubscriptionBanner() {
+  const me = await api<Me>("/auth/me");
+  const s = me.subscription;
+  if (!s) return null;
+  const admin = me.role === "ADMIN";
+  const open = (
+    <Link href="/settings/subscription" className="font-medium underline underline-offset-4">
+      Subscription
+    </Link>
+  );
+  if (s.unlicensed) {
+    return (
+      <Notice tone="danger" className="mb-6 print:hidden">
+        This server has no valid HMIS licence: records can be looked at and printed, but nothing new can be saved.{" "}
+        {admin ? <>Install the licence from HMIS: {open}.</> : "Please tell the clinic's admin."}
+      </Notice>
+    );
+  }
+  if (s.readOnly) {
+    return (
+      <Notice tone="danger" className="mb-6 print:hidden">
+        {s.state === "cancelled" ? "This clinic's HMIS subscription has ended" : "This clinic's HMIS subscription is suspended"}: records can be
+        looked at and printed, but nothing new can be saved.{" "}
+        {admin ? <>Pay the open invoice to continue: {open}.</> : "Please tell the clinic's admin."}
+      </Notice>
+    );
+  }
+  if (!admin) return null;
+  if (s.state === "overdue") {
+    return (
+      <Notice tone="warning" className="mb-6 print:hidden">
+        The HMIS subscription is overdue. In {s.daysLeft} day{s.daysLeft === 1 ? "" : "s"} the clinic becomes read-only until it is paid: {open}.
+      </Notice>
+    );
+  }
+  if (s.endsAt && s.daysLeft !== null && s.daysLeft <= 7) {
+    return (
+      <Notice tone="info" className="mb-6 print:hidden">
+        {s.state === "trial" ? "The free trial" : "The paid period"} ends on {formatDualDate(s.endsAt)} ({s.daysLeft} day{s.daysLeft === 1 ? "" : "s"}): {open}.
+      </Notice>
+    );
+  }
+  return null;
 }
 
 /**
@@ -66,6 +115,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <Navigation />
       </Suspense>
       <main className="mx-auto w-full max-w-6xl min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8 print:max-w-none print:p-0">
+        <Suspense fallback={null}>
+          <SubscriptionBanner />
+        </Suspense>
         <Suspense fallback={null}>
           <BackupBanner />
         </Suspense>

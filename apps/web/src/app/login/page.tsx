@@ -1,7 +1,10 @@
 import { HeartPulse, ShieldCheck, Smartphone, Stethoscope } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
+import { Suspense } from "react";
 import { FadeIn } from "@/components/enter";
 import { OfflineWaiting } from "@/components/offline-waiting";
+import { publicPlans } from "@/lib/public-api";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Sign in" };
@@ -11,6 +14,19 @@ const POINTS = [
   { icon: Smartphone, text: "Telebirr, Chapa and cash, with pay-before-service" },
   { icon: ShieldCheck, text: "Each clinic's records kept private, every change audited" },
 ];
+
+/** On the HMIS cloud only: new clinics ask for HMIS here. */
+async function RequestLink() {
+  if (!(await publicPlans())) return null;
+  return (
+    <p className="mt-3 text-sm text-slate-500">
+      New clinic?{" "}
+      <Link href="/request" className="font-medium text-brand-700 hover:underline dark:text-brand-400">
+        Request HMIS
+      </Link>
+    </p>
+  );
+}
 
 export default function LoginPage() {
   return (
@@ -53,6 +69,9 @@ export default function LoginPage() {
           <OfflineWaiting />
           <LoginForm />
           <p className="mt-8 text-xs text-slate-400">Forgot your password? Ask your clinic administrator to reset it.</p>
+          <Suspense fallback={null}>
+            <RequestLink />
+          </Suspense>
         </FadeIn>
       </section>
     </main>

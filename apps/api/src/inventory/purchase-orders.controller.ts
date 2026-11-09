@@ -6,6 +6,7 @@ import { AuditService } from '../common/audit.service.js';
 import { fromCents, toCents } from '../common/money.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { RequiresFeature } from '../platform/subscription.guard.js';
 
 const Lines = z
   .array(
@@ -40,6 +41,7 @@ const withTotal = <T extends WithLines>(po: T) => ({
  */
 @Controller('purchase-orders')
 @Roles('ADMIN', 'PHARMACIST')
+@RequiresFeature('PURCHASE_ORDERS')
 export class PurchaseOrdersController {
   constructor(
     private readonly prisma: PrismaService,

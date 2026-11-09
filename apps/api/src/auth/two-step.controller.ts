@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { AuditService } from '../common/audit.service.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { AllowWhileSuspended } from '../platform/subscription.guard.js';
 import { AllowTwoStepSetup, type AuthUser, CurrentUser } from './auth.decorators.js';
 import { forgetAccount } from './auth.guard.js';
 import { hashRecoveryCode, newRecoveryCodes, newSecret, otpauthUri, verifyTotp } from './totp.js';
@@ -19,6 +20,8 @@ const PasswordSchema = z.object({ password: z.string().min(1).max(200) });
  * admin without it on these pages); any other role may turn it on.
  */
 @Controller('auth/two-step')
+// Securing an account is never blocked by an unpaid bill.
+@AllowWhileSuspended()
 export class TwoStepController {
   constructor(
     private readonly prisma: PrismaService,

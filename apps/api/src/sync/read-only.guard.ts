@@ -1,4 +1,4 @@
-import { CanActivate, ConflictException, ExecutionContext, Injectable } from '@nestjs/common';
+import { CanActivate, ConflictException, ExecutionContext, Injectable, SetMetadata } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { type AuthUser, IS_PUBLIC } from '../auth/auth.decorators.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -13,6 +13,10 @@ export function forgetCloudCopy(tenantId?: string) {
 }
 
 const READS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+const ALLOW_ON_CLOUD_COPY = 'allowOnCloudCopy';
+/** Writes nothing the clinic server owns (paying HMIS's invoices): allowed on the cloud copy. */
+export const AllowOnCloudCopy = () => SetMetadata(ALLOW_ON_CLOUD_COPY, true);
 
 /**
  * On the cloud, a clinic that works on its own clinic server has a read-only copy here: staff
@@ -38,6 +42,7 @@ export class CloudCopyGuard implements CanActivate {
     const req = ctx.switchToHttp().getRequest();
     if (READS.has(req.method)) return true;
     if (this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [ctx.getHandler(), ctx.getClass()])) return true;
+    if (this.reflector.getAllAndOverride<boolean>(ALLOW_ON_CLOUD_COPY, [ctx.getHandler(), ctx.getClass()])) return true;
     const user: AuthUser | undefined = req.user;
     if (!user || !(await this.isCloudCopy(user.tenantId))) return true;
     throw new ConflictException({

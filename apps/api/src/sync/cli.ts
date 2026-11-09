@@ -19,7 +19,8 @@
 import 'dotenv/config';
 import { randomBytes } from 'node:crypto';
 import { createPrismaClient } from '@hmis/db';
-import { applyChanges, type Change, disableCapture, enableCapture, hashToken, loadTables, schemaVersion } from './engine.js';
+import { importClinicLines, textLines } from '../exports/clinic-data.js';
+import { disableCapture, enableCapture, hashToken } from './engine.js';
 
 const [cmd, sub, ...rest] = process.argv.slice(2);
 const owner = createPrismaClient(process.env.DATABASE_URL);
@@ -69,54 +70,17 @@ async function bootstrap() {
 
   const res = await fetch(`${url.replace(/\/+$/, '')}/sync/export`, { headers: { authorization: `Bearer ${secret}` } });
   if (!res.ok || !res.body) fail(`The cloud refused the export: ${res.status} ${await res.text()}`);
-  let tenantId = '';
-  const tenantDb = createPrismaClient(appUrl, { tenant: () => tenantId });
-  const tables = await loadTables(owner);
-  let batch: Change[] = [];
-  let total = 0;
-  let seq = 0;
-  let ended = false;
-  const flush = async () => {
-    if (!batch.length) return;
-    const changes = batch;
-    batch = [];
-    // Under row-level security as that clinic: the export can only fill in its own clinic.
-    total += await tenantDb.$transaction((tx) => applyChanges(tx, tables, changes), { timeout: 300_000 });
-    process.stdout.write(`\r${total} rows`);
-  };
-
-  const decoder = new TextDecoder();
-  let buffer = '';
-  for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-    buffer += decoder.decode(chunk, { stream: true });
-    let nl: number;
-    while ((nl = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, nl);
-      buffer = buffer.slice(nl + 1);
-      if (!line.trim()) continue;
-      const msg = JSON.parse(line) as { type: string; tenantId?: string; version?: string; table?: string; row?: unknown; rows?: number };
-      if (msg.type === 'meta') {
-        tenantId = msg.tenantId!;
-        const mine = await schemaVersion(owner);
-        if ((msg.version ?? '') > mine) fail(`The cloud is on ${msg.version}, this server on ${mine}: update this server first.`);
-      } else if (msg.type === 'row') {
-        const row = JSON.stringify(msg.row);
-        const t = tables.get(msg.table!);
-        if (!t) fail(`Unknown table ${msg.table}: update this server first.`);
-        const key = JSON.stringify(Object.fromEntries(t.pk.map((c) => [c, (msg.row as Record<string, unknown>)[c]])));
-        batch.push({ seq: String(++seq), table: msg.table!, op: 'U', key, row });
-        if (batch.length >= 500) await flush();
-      } else if (msg.type === 'end') {
-        await flush();
-        if (msg.rows !== total) fail(`\nExpected ${msg.rows} rows, applied ${total}: run bootstrap again with --force.`);
-        ended = true;
-      }
-    }
+  try {
+    // The same loading as an export file (exports/clinic-data.ts), under row-level security as that clinic.
+    const { rows } = await importClinicLines(owner, appUrl, textLines(res.body as unknown as AsyncIterable<Uint8Array>), {
+      allowExisting: true,
+      onProgress: (n) => process.stdout.write(`\r${n} rows`),
+    });
+    await enableCapture(owner, { snapshot: false });
+    console.log(`\nCopied ${rows} rows of the clinic. Capture is on: changes made here now go to the cloud.`);
+  } catch (e) {
+    fail(`\n${e instanceof Error ? e.message : e} Run bootstrap again with --force.`);
   }
-  if (!ended) fail('\nThe download stopped before the end: run bootstrap again with --force.');
-  await enableCapture(owner, { snapshot: false });
-  console.log(`\nCopied ${total} rows of the clinic. Capture is on: changes made here now go to the cloud.`);
-  await tenantDb.$disconnect();
 }
 
 async function status() {

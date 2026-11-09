@@ -2,6 +2,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "./generated/prisma/client.js";
 
 export * from "./generated/prisma/client.js";
+export { addStarterCatalog } from "./starter.js";
 
 export type Db = PrismaClient;
 

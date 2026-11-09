@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# The database roles, set up before every start of HMIS (the "roles" service in deploy/compose.yml).
+# Runs as the PostgreSQL superuser, which only this, the backup worker and administrators use:
+#   hmis_owner  owns the tables; runs the migrations and the API's few cross-clinic lookups
+#               (sign-in, sync). Not a superuser: it cannot read files, run programs on the
+#               server, change roles or touch other databases.
+#   hmis_app    the API's everyday role, under row-level security (one clinic per request).
+# Safe to re-run. It also moves a database created before these roles existed (when everything
+# ran as the superuser) over to hmis_owner.
+set -Eeuo pipefail
+
+: "${HMIS_DB_OWNER_PASSWORD:?Set HMIS_DB_OWNER_PASSWORD in deploy/.env}"
+: "${HMIS_DB_APP_PASSWORD:?Set HMIS_DB_APP_PASSWORD in deploy/.env}"
+for v in HMIS_DB_OWNER_PASSWORD HMIS_DB_APP_PASSWORD; do
+  value=${!v}
+  if (( ${#value} < 16 )); then
+    echo "$v must be at least 16 characters (openssl rand -hex 24)." >&2
+    exit 1
+  fi
+done
+
+psql -X -q -v ON_ERROR_STOP=1 -h /var/run/postgresql -U "${POSTGRES_USER:-hmis}" -d "${POSTGRES_DB:-hmis}" \
+  -v owner_pw="$HMIS_DB_OWNER_PASSWORD" -v app_pw="$HMIS_DB_APP_PASSWORD" -v db="${POSTGRES_DB:-hmis}" <<'SQL'
+SELECT NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'hmis_owner') AS new_owner,
+       NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'hmis_app') AS new_app \gset
+\if :new_owner
+CREATE ROLE hmis_owner;
+\endif
+\if :new_app
+CREATE ROLE hmis_app;
+\endif
+ALTER ROLE hmis_owner WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'owner_pw';
+ALTER ROLE hmis_app WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'app_pw';
+
+ALTER DATABASE :"db" OWNER TO hmis_owner;
+ALTER SCHEMA public OWNER TO hmis_owner;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+
+-- A database whose tables were created by the superuser: hand them to hmis_owner. (Sequences
+-- that belong to a table move with it; enum types and functions are moved separately.)
+DO $$
+DECLARE
+  me oid := (SELECT oid FROM pg_roles WHERE rolname = current_user);
+  r record;
+BEGIN
+  FOR r IN
+    SELECT c.relname, c.relkind FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'public' AND c.relowner = me AND c.relkind IN ('r', 'p', 'v', 'm', 'S')
+       AND NOT (c.relkind = 'S' AND EXISTS (SELECT FROM pg_depend d WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid AND d.deptype IN ('a', 'i')))
+  LOOP
+    EXECUTE format('ALTER %s public.%I OWNER TO hmis_owner',
+      CASE r.relkind WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW' WHEN 'S' THEN 'SEQUENCE' ELSE 'TABLE' END, r.relname);
+  END LOOP;
+  FOR r IN
+    SELECT t.typname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+     WHERE n.nspname = 'public' AND t.typowner = me AND t.typtype IN ('e', 'd')
+  LOOP
+    EXECUTE format('ALTER TYPE public.%I OWNER TO hmis_owner', r.typname);
+  END LOOP;
+  -- Includes the sync capture trigger (SECURITY DEFINER): it must run as hmis_owner, never as
+  -- the superuser.
+  FOR r IN
+    SELECT p.oid::regprocedure AS sig FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public' AND p.proowner = me
+  LOOP
+    EXECUTE format('ALTER FUNCTION %s OWNER TO hmis_owner', r.sig);
+  END LOOP;
+END
+$$;
+
+-- Tables that future migrations create are open to hmis_app like the existing ones (the
+-- row-level-security migration grants the existing ones).
+ALTER DEFAULT PRIVILEGES FOR ROLE hmis_owner IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO hmis_app;
+SQL
+echo "Database roles ready: hmis_owner (owner, not a superuser) and hmis_app (row-level security)."

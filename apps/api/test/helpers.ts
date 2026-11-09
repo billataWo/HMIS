@@ -42,6 +42,12 @@ export async function startApp() {
   await nest.listen(0, '127.0.0.1');
 }
 
+/** The running app's own address (e.g. to play the HMIS cloud for a clinic server in the same test). */
+export function appUrl() {
+  const address = (app.getHttpServer() as unknown as { address(): { port: number } }).address();
+  return `http://127.0.0.1:${address.port}`;
+}
+
 /** The running app's database service (restricted `client` and owner `system`). */
 export function appPrisma() {
   return app.get(PrismaService);

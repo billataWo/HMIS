@@ -54,6 +54,55 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
+export type SubscriptionState = "trial" | "active" | "overdue" | "suspended" | "cancelled";
+
+export interface PlatformInvoice {
+  id: string;
+  number: string;
+  planName: string;
+  cycle: "MONTHLY" | "YEARLY";
+  periodStart: string;
+  periodEnd: string;
+  subtotal: string;
+  vat: string;
+  total: string;
+  status: "OPEN" | "PAID" | "VOID";
+  dueDate: string;
+  issuedAt: string;
+  paidAt: string | null;
+  voidReason: string | null;
+  payments: { id: string; amount: string; method: string; status: "PENDING" | "CONFIRMED" | "REJECTED"; reference: string | null; paidAt: string; rejectReason: string | null }[];
+  paid: string;
+}
+
+export type ClinicSubscription =
+  | { managed: false }
+  | {
+      managed: true;
+      state: SubscriptionState;
+      readOnly: boolean;
+      manual: boolean;
+      endsAt: string | null;
+      graceEndsAt: string | null;
+      daysLeft: number | null;
+      planName: string;
+      deployment: "CLOUD" | "CLINIC_SERVER" | "ON_PREMISE";
+      billingCycle: "MONTHLY" | "YEARLY";
+      suspendReason: string | null;
+      plan: { name: string; code: string; description: string | null; priceMonthly: string | null; priceYearly: string | null; maxStaff: number | null; features: { code: string; name: string }[] } | null;
+      activeStaff: number;
+      invoices: PlatformInvoice[];
+      online: { CHAPA: boolean; TELEBIRR: boolean };
+      bankDetails: string | null;
+      support: { phone: string | null; email: string | null };
+      /** "licence": a clinic server or own-server install, run by its HMIS licence. */
+      source: "subscription" | "licence";
+      unlicensed?: boolean;
+      licence?: { id: string; issuedAt: string; source: "sync" | "upload"; installedAt: string; clinicName: string } | null;
+      /** Where a synced clinic's admins pay HMIS (the cloud). */
+      payAt?: string | null;
+    };
+
 export type Role = "ADMIN" | "RECEPTIONIST" | "DOCTOR" | "NURSE" | "CASHIER" | "PHARMACIST" | "LAB_TECH";
 
 export interface Me {
@@ -63,6 +112,10 @@ export interface Me {
   role: Role;
   mustChangePassword?: boolean;
   twoStep?: { enabled: boolean; required: boolean };
+  /** The modules in the clinic's plan; null: every module. */
+  features?: string[] | null;
+  /** null: the clinic is not billed as a service (no limits). */
+  subscription?: { state: SubscriptionState; readOnly: boolean; daysLeft: number | null; endsAt: string | null; planName: string | null; source?: string; unlicensed?: boolean } | null;
   tenant: { id: string; name: string; nameAm: string | null; doctorsCanRegister?: boolean };
 }
 

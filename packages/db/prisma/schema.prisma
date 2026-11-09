@@ -50,6 +50,7 @@ model Tenant {
   payments      Payment[]
   cashClosings  CashClosing[]
   auditLogs     AuditLog[]
+  subscription  Subscription?
 }
 
 enum Role {
@@ -791,4 +792,285 @@ model DisplayScreen {
   revokedAt        DateTime?
 
   @@index([tenantId])
+}
+
+// ─── HMIS as a service: the platform (the cloud server only) ──────────────────────────────────
+// Written only through the owner connection, by the platform console and the request flow. The
+// application role can read a clinic's own subscription and invoices (row-level security) and the
+// plans, nothing else. None of it is sent between clinic servers and the cloud (NOT_SYNCED).
+
+enum DeploymentType {
+  CLOUD // works on the HMIS cloud
+  CLINIC_SERVER // its own server at the clinic, synced to the cloud
+  ON_PREMISE // its own server, not connected to the cloud
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  CANCELLED
+}
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+}
+
+enum ClinicRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PlatformRole {
+  OWNER // everything, including plans, prices, operators and settings
+  BILLING // clinics, invoices and payments
+  SUPPORT // looks at clinics and requests, approves requests
+}
+
+enum PlatformInvoiceStatus {
+  OPEN
+  PAID
+  VOID
+}
+
+enum PlatformPaymentMethod {
+  CHAPA
+  TELEBIRR
+  BANK_TRANSFER
+  CASH
+  OTHER
+}
+
+enum PlatformPaymentStatus {
+  PENDING // reported by the clinic (a bank transfer), waiting for HMIS to confirm it
+  CONFIRMED
+  REJECTED
+}
+
+/// A subscription plan. Limits are enforced by the API; features name optional modules.
+model Plan {
+  id            String         @id @default(uuid())
+  code          String         @unique
+  name          String
+  description   String?
+  priceMonthly  Decimal        @db.Decimal(12, 2)
+  priceYearly   Decimal        @db.Decimal(12, 2)
+  /// Active staff accounts allowed; null: no limit.
+  maxStaff      Int?
+  /// Optional modules: CREDIT (credit companies and insurance), PURCHASE_ORDERS, CLINIC_SERVER.
+  features      String[]       @default([])
+  /// Offered on the public request page and for new subscriptions.
+  active        Boolean        @default(true)
+  sortOrder     Int            @default(0)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  subscriptions Subscription[]
+}
+
+/// One per clinic that HMIS bills. A clinic without one (development, a server installed before
+/// HMIS was sold as a service) is not limited.
+model Subscription {
+  id            String             @id @default(uuid())
+  tenantId      String             @unique
+  tenant        Tenant             @relation(fields: [tenantId], references: [id])
+  planId        String
+  plan          Plan               @relation(fields: [planId], references: [id])
+  deployment    DeploymentType     @default(CLOUD)
+  status        SubscriptionStatus @default(TRIAL)
+  billingCycle  BillingCycle       @default(MONTHLY)
+  trialEndsAt   DateTime?
+  /// The end of the last paid period. Null while ACTIVE: no end (a free or legacy clinic).
+  paidUntil     DateTime?
+  /// Days after the end during which everything still works (with warnings) before read-only.
+  graceDays     Int                @default(14)
+  /// Suspended by HMIS (e.g. a disputed payment), whatever the dates say.
+  suspendedAt   DateTime?
+  suspendReason String?
+  cancelledAt   DateTime?
+  cancelReason  String?
+  /// The clinic's records were deleted (after cancellation); this row and HMIS's invoices stay.
+  dataDeletedAt DateTime?
+  notes         String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  invoices      PlatformInvoice[]
+}
+
+/// "We would like to use HMIS": sent from the public request page, reviewed by HMIS.
+model ClinicRequest {
+  id            String              @id @default(uuid())
+  reference     String              @unique
+  clinicName    String
+  clinicNameAm  String?
+  type          FacilityType        @default(CLINIC)
+  region        String
+  city          String
+  address       String?
+  licenceNumber String?
+  contactName   String
+  contactPhone  String
+  contactEmail  String?
+  planCode      String?
+  staffCount    Int?
+  deployment    DeploymentType      @default(CLOUD)
+  message       String?
+  status        ClinicRequestStatus @default(PENDING)
+  ip            String?
+  reviewedById  String?
+  reviewedAt    DateTime?
+  rejectReason  String?
+  /// The clinic created on approval.
+  tenantId      String?
+  createdAt     DateTime            @default(now())
+
+  @@index([status, createdAt])
+}
+
+/// HMIS staff who run the platform console. Separate from clinic staff: never in a clinic.
+model PlatformUser {
+  id                 String       @id @default(uuid())
+  fullName           String
+  email              String       @unique
+  role               PlatformRole @default(SUPPORT)
+  passwordHash       String
+  active             Boolean      @default(true)
+  mustChangePassword Boolean      @default(true)
+  sessionsValidAfter DateTime?
+  totpSecret         String?
+  totpPendingSecret  String?
+  totpEnabledAt      DateTime?
+  totpLastStep       Int?
+  totpRecoveryCodes  String[]     @default([])
+  lastSignInAt       DateTime?
+  createdAt          DateTime     @default(now())
+}
+
+model PlatformAuditLog {
+  id         String   @id @default(uuid())
+  operatorId String?
+  action     String
+  entity     String
+  entityId   String?
+  tenantId   String?
+  data       Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([tenantId, createdAt])
+}
+
+/// Platform-wide settings (a single row, id 1).
+model PlatformSetting {
+  id           Int      @id @default(1)
+  trialDays    Int      @default(30)
+  graceDays    Int      @default(14)
+  /// Added to subscription invoices (Ethiopian VAT is 15%).
+  vatPercent   Decimal  @default(15) @db.Decimal(5, 2)
+  /// Shown to clinics paying by bank transfer: bank, account name and number.
+  bankDetails  String?
+  supportPhone String?
+  supportEmail String?
+  nextInvoice  Int      @default(1)
+  /// Issue each clinic's next invoice by itself, this many days before its trial or paid period ends.
+  autoInvoice        Boolean  @default(true)
+  invoiceDaysBefore  Int      @default(10)
+  /// A cancelled clinic's records can be deleted this many days after cancellation (time to export).
+  dataRetentionDays  Int      @default(60)
+  updatedAt    DateTime @updatedAt
+}
+
+/// HMIS's invoice to a clinic for one subscription period (not the clinic's invoices to patients).
+model PlatformInvoice {
+  id             String                @id @default(uuid())
+  number         String                @unique
+  tenantId       String
+  subscriptionId String
+  subscription   Subscription          @relation(fields: [subscriptionId], references: [id])
+  planName       String
+  cycle          BillingCycle
+  periodStart    DateTime
+  periodEnd      DateTime
+  subtotal       Decimal               @db.Decimal(12, 2)
+  vat            Decimal               @db.Decimal(12, 2)
+  total          Decimal               @db.Decimal(12, 2)
+  status         PlatformInvoiceStatus @default(OPEN)
+  dueDate        DateTime
+  issuedAt       DateTime              @default(now())
+  paidAt         DateTime?
+  voidedAt       DateTime?
+  voidReason     String?
+  createdById    String?
+  payments       PlatformPayment[]
+
+  @@index([tenantId, issuedAt])
+  @@index([status, dueDate])
+}
+
+model PlatformPayment {
+  id           String                @id @default(uuid())
+  invoiceId    String
+  invoice      PlatformInvoice       @relation(fields: [invoiceId], references: [id])
+  tenantId     String
+  amount       Decimal               @db.Decimal(12, 2)
+  method       PlatformPaymentMethod
+  status       PlatformPaymentStatus @default(PENDING)
+  /// Bank transaction number, Chapa tx_ref, Telebirr order id...
+  reference    String?
+  paidAt       DateTime
+  /// The clinic staff member who reported it (PENDING), or the operator who recorded it.
+  reportedById String?
+  reviewedById String?
+  reviewedAt   DateTime?
+  rejectReason String?
+  provider     Json?
+  createdAt    DateTime              @default(now())
+
+  @@unique([method, reference])
+  @@index([tenantId, createdAt])
+  @@index([status])
+}
+
+enum CheckoutStatus {
+  CREATED // the clinic was sent to the provider's payment page
+  PAID // the provider confirmed it; a PlatformPayment is recorded
+  FAILED // the provider says it failed or was cancelled
+  EXPIRED // never completed
+}
+
+/// An online payment of an invoice (Chapa or Telebirr), from the clinic leaving for the payment page
+/// until the provider confirms it. Only ever marked paid after asking the provider ourselves.
+model PlatformCheckout {
+  id           String                @id @default(uuid())
+  /// Our reference at the provider: Chapa tx_ref, Telebirr merch_order_id.
+  reference    String                @unique
+  provider     PlatformPaymentMethod
+  invoiceId    String
+  tenantId     String
+  amount       Decimal               @db.Decimal(12, 2)
+  status       CheckoutStatus        @default(CREATED)
+  checkoutUrl  String?
+  createdById  String?
+  createdAt    DateTime              @default(now())
+  checkedAt    DateTime?
+  completedAt  DateTime?
+  paymentId    String?
+  lastError    String?
+
+  @@index([status, createdAt])
+  @@index([tenantId, createdAt])
+}
+
+/// The HMIS licence installed on a clinic server or own-server install (never on the HMIS cloud,
+/// which keeps the subscriptions themselves). Signed by HMIS: see apps/api/src/licence.
+model InstalledLicence {
+  tenantId    String   @id
+  /// The signed licence text, exactly as issued (payload.signature).
+  licence     String
+  licenceId   String
+  issuedAt    DateTime
+  /// "sync" (fetched from the HMIS cloud) or "upload" (a file from HMIS).
+  source      String
+  installedAt DateTime @default(now())
 }

@@ -21,20 +21,19 @@ The clinic is created in the cloud first (as for any clinic), then moved onto it
 1. **On the cloud server**, issue the clinic server's token. From now on the clinic's cloud copy is
    read-only, so do this when the clinic is ready to switch:
    ```sh
-   node apps/api/dist/sync/cli.js token create <clinic id> "Clinic server, Bahir Dar"
+   sudo deploy/hmis sync token create <clinic id> "Clinic server, Bahir Dar"
    ```
    It prints `SYNC_TOKEN=…` once. Send it to the technician over a private channel.
-2. **On the clinic server** (a PC with a second disk and a UPS; database and backups as in
-   [docs/backup](../backup/README.md)), set in the API's environment:
+2. **On the clinic server** (a PC with a second disk and a UPS), install HMIS
+   ([installing a server](../install/README.md)) and answer "no" when it offers to create the
+   clinic. Then set in `deploy/.env`, and run `sudo deploy/hmis up`:
    ```sh
-   SYNC_CLOUD_URL=https://cloud.example.et   # the cloud API
+   SYNC_CLOUD_URL=https://cloud.example.et   # the cloud server
    SYNC_TOKEN=…                              # from step 1
    ```
-   Run the migrations (`pnpm db:migrate` / `prisma migrate deploy`, and `pnpm db:app-role`), but
-   **not** the seed.
-3. Copy the clinic down from the cloud, then start the API and web app:
+3. Copy the clinic down from the cloud:
    ```sh
-   node apps/api/dist/sync/cli.js bootstrap
+   sudo deploy/hmis sync bootstrap
    ```
    It copies every record of the clinic (staff, patients, prices, history) and turns capture on.
 4. Check **Settings → Cloud sync** on the clinic server ("Connected") and in the cloud (the copy
@@ -43,14 +42,14 @@ The clinic is created in the cloud first (as for any clinic), then moved onto it
 A clinic that has been running on a server without sync (no cloud copy yet): on the cloud,
 `token create <its clinic id> "<server name>" --new` (the id is in the clinic server's `Tenant`
 table); then on the clinic server set `SYNC_CLOUD_URL`/`SYNC_TOKEN` and run
-`node apps/api/dist/sync/cli.js enable --snapshot`, which sends everything it has.
+`sudo deploy/hmis sync enable --snapshot`, which sends everything it has.
 
 ## Everyday
 
 - **Settings → Cloud sync** on the clinic server shows when it last sent, how many changes are
   waiting and why, if they are. Admins see a banner when the server has been offline for over an
   hour. Nothing needs doing: it catches up when the internet is back.
-- `node apps/api/dist/sync/cli.js status` shows the same on the command line;
+- `sudo deploy/hmis sync status` shows the same on the command line;
   `token list` on the cloud shows every clinic server and when it last called in.
 - **Upgrades**: update the cloud first, then the clinic servers. A clinic server that is newer
   than the cloud keeps its changes waiting until the cloud is updated.

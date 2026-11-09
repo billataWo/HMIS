@@ -2,7 +2,8 @@
 
 How HMIS protects patient data, what was checked in the security review, and what the person
 installing a server must still do. Related: [backups](../backup/README.md),
-[clinic servers](../sync/README.md), [offline mode](../offline/README.md).
+[clinic servers](../sync/README.md), [offline mode](../offline/README.md),
+[installing a server](../install/README.md), [HMIS as a service](../saas/README.md).
 
 ## How it is protected
 
@@ -17,6 +18,9 @@ installing a server must still do. Related: [backups](../backup/README.md),
 | Disks | Full-disk encryption on clinic servers (LUKS, unlocked by the TPM after a power cut) and PCs (BitLocker). The server check (`deploy/host-check.sh`) reports to Settings → Backups. See [disk encryption](disk-encryption.md). |
 | Audit | Sign-ins (with address), failed attempts, lockouts and every change are in the audit log; the application cannot alter backup records. |
 | Web pages | Content Security Policy (scripts, connections and frames only from the site itself), no framing by other sites, `nosniff`, `same-origin` referrers, HSTS over HTTPS. No raw HTML is ever inserted into pages; redirects stay on the site. |
+| Server | Only HTTPS (Caddy, ports 80/443) is reachable; the web app, API and database are on a private network inside the server. The API connects as `hmis_owner` (owns the tables, not a superuser) and `hmis_app` (row-level security); the superuser's password is given only to the database and the backup worker. Secrets are generated at install, in a file only root can read. |
+| Platform console (HMIS cloud) | HMIS staff (operators) sign in separately from clinics, with a session key of their own and two-step sign-in required; roles Owner / Billing / Support; every action in History. Operators see subscriptions and counts, never patients. A clinic sees only its own invoices. |
+| Data export and deletion | A patient's record (Export record) and the whole clinic (Settings → Your data, password again) for data portability, audited, without staff sign-in secrets. Exports and deletions run only under row-level security and refuse otherwise. A cancelled clinic's records are deleted only after its export period, by an owner, confirmed by name. |
 | Database queries | Parameterised everywhere; the few built from table names take them from the database catalogue, never from a request. |
 | Backups | AES-256 encrypted, off-site copy write-once (object lock), restore tests weekly, archive key kept offline. |
 | Clinic servers | Each has its own 256-bit token (stored hashed, revocable) that can only ever write its own clinic (row-level security). |
@@ -37,27 +41,24 @@ Fixed:
 
 ## Before a server goes live (checklist)
 
-- [ ] **HTTPS only**, through a reverse proxy (e.g. Caddy) that *replaces* `X-Forwarded-For` with
-      the real client address. The sign-in cookie, offline mode and HSTS all require HTTPS, and
-      the password limits per address rely on that header.
-- [ ] **Strong secrets**: `JWT_SECRET` of 48+ random characters (`openssl rand -base64 48`), unique
-      database passwords, and the backup encryption key printed and stored away from the server.
-- [ ] **Database roles**: the API must not connect as the PostgreSQL superuser. Use a separate
-      owner role for migrations and the API's few cross-clinic lookups, keep the superuser for
-      backups and administration only. (To be done in the server installation setup.)
-- [ ] **Only the web app and `/sync/*` reachable from outside**: the API, PostgreSQL and backup
-      storage stay on the server's private network.
+- [ ] **Installed with `deploy/hmis install`** ([guide](../install/README.md)). This gives HTTPS
+      through Caddy (which replaces `X-Forwarded-For` with the real address), random secrets,
+      the database roles, and only ports 80/443 open. Never run the API or web app on their own
+      ports in production.
+- [ ] **HTTPS without warnings** on every PC and tablet: on a clinic server, each device trusts
+      the server's certificate authority after checking its fingerprint. Staff never click past
+      a certificate warning.
+- [ ] **The backup encryption key** printed and stored away from the server, and the server's
+      certificate authority copied to the keys USB stick.
 - [ ] **Full-disk encryption** on clinic servers and on PCs used for offline mode
       ([how](disk-encryption.md)), checked daily with `deploy/host-check.sh`.
 - [ ] **Two-step sign-in** set up by every admin (HMIS requires it at their first sign-in), and
       the recovery codes printed and kept safe.
 - [ ] **The waiting-room screen** connected through Settings → Screens (never signed in as staff).
-- [ ] Set `TRUSTED_PROXIES` when the web app runs on a different machine or container than the API.
 
 ## Still to do
 
-- Separate database owner role (above), as part of the server installation.
-- Patient and clinic data export for data-portability requests (Proclamation 1321/2024 art. 32).
+- Nothing open from the review. Before selling HMIS as a service: see [HMIS as a service](../saas/README.md#still-to-do-before-selling).
 
 ## Reporting a problem
 
