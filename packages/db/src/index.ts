@@ -73,6 +73,9 @@ function tenantScoped(base: PrismaClient, currentTenant: () => string | undefine
  */
 export function createPrismaClient(databaseUrl = process.env.DATABASE_URL, opts: { tenant?: () => string | undefined } = {}): Db {
   if (!databaseUrl) throw new Error("DATABASE_URL is not set");
-  const client = new PrismaClient({ adapter: new PrismaPg({ connectionString: databaseUrl }) });
+  // DB_POOL_MAX: connections per client (pg's default is 10). The API holds two clients, so a
+  // database with few connections (AletCloud's free plan allows 10) needs a smaller number.
+  const max = Number(process.env.DB_POOL_MAX) || undefined;
+  const client = new PrismaClient({ adapter: new PrismaPg({ connectionString: databaseUrl, ...(max && { max }) }) });
   return opts.tenant ? tenantScoped(client, opts.tenant) : client;
 }
