@@ -17,6 +17,6 @@
     "backup:status": "docker compose -f deploy/compose.yml exec backup hmis-backup status",
     "backup:now": "docker compose -f deploy/compose.yml exec backup hmis-backup now",
     "backup:test": "docker compose -f deploy/compose.yml exec backup hmis-backup restore-test",
-    "start": "pnpm --filter api start"
+    "start": "npx pnpm --filter api start"
   }
 }
