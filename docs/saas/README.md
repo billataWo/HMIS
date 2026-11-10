@@ -21,9 +21,11 @@ instead. Saving them rebuilds the app:
 - `HMIS_PLATFORM=1`: turns on the console, the plans, `/request` and the front page.
 - `HMIS_PUBLIC_URL=https://hmis.app.aletcloud.com`: where payers come back to.
 - `HMIS_FIRST_OPERATOR_EMAIL` (and `HMIS_FIRST_OPERATOR_NAME`): at the next start, if there are no
-  operators yet, this one is created as owner. Its temporary password appears once in the app
-  logs. Sign in straight away, then remove the variable.
-- `HMIS_LICENCE_PRIVATE_KEY`: see Licences.
+  operators yet, this one is created as owner. Its temporary password is in the app logs under
+  "FIRST SIGN-IN". Until that owner has signed in, every start logs a new one (an older one stops
+  working), so restart the app if you missed it. Sign in, then remove the variable.
+- `HMIS_LICENCE_PRIVATE_KEY`: the whole key as `keygen` prints it, from `-----BEGIN PRIVATE KEY-----`
+  to `-----END PRIVATE KEY-----`, with the `\n`s, without the quotes. See Licences.
 
 Then:
 
@@ -146,7 +148,7 @@ the cloud applies a subscription: trial, active, overdue, then read-only. It wor
 internet until its dates run out. A changed or forged licence is refused, and so is an older
 licence than the one installed.
 
-**The licence keys** (created 2026-11-10): HMIS's public key is built into
+**The licence keys** (created 2026-11-11): HMIS's public key is built into
 `apps/api/src/licence/public-key.ts`, so every server checks licences against it. The private
 key is only in the HMIS cloud's environment, as `HMIS_LICENCE_PRIVATE_KEY` on one line (as
 `keygen` prints it), with a printed copy in the safe: whoever has it can issue licences.

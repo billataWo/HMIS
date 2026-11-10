@@ -7,6 +7,6 @@
  * HMIS_LICENCE_PUBLIC_KEY in the environment overrides it (tests).
  */
 export const BUILT_IN_LICENCE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAALB7G1gzLoyODbq+H4KMyN8GItkpe2x7PIrUqCNhoOk=
+MCowBQYDK2VwAyEAKhSxDl5w2lm+7IHegslLfK2J8c0KXsHe2s9HWnlbn0k=
 -----END PUBLIC KEY-----
 `;
