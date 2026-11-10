@@ -37,7 +37,7 @@ async function add() {
   const op = await owner.platformUser.create({ data: { fullName, email, role, passwordHash: await bcrypt.hash(password, 10) } });
   await owner.platformAuditLog.create({ data: { action: 'operator.created', entity: 'PlatformUser', entityId: op.id, data: { by: 'server command line', email, role } } });
   console.log(`Operator ${fullName} (${role}).`);
-  console.log(`  Sign in at:         https://<this server>/platform/login`);
+  console.log(`  Sign in at:         ${process.env.HMIS_PUBLIC_URL?.replace(/\/+$/, '') || 'https://<this server>'}/platform/login`);
   console.log(`  Email:              ${email}`);
   console.log(`  Temporary password: ${password}`);
   console.log('At the first sign-in they choose a password (12+ characters) and set up two-step sign-in.');

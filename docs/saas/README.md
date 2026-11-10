@@ -16,6 +16,17 @@ The cloud server is installed like any server ([installing a server](../install/
 When the installer asks whether this is the cloud, answer **yes**. It then sets
 `HMIS_PLATFORM=1` and creates the first operator (you), owner of the console. Then:
 
+**On AletCloud** (no installer and no shell), set these in the app's environment variables
+instead. Saving them rebuilds the app:
+- `HMIS_PLATFORM=1`: turns on the console, the plans, `/request` and the front page.
+- `HMIS_PUBLIC_URL=https://hmis.app.aletcloud.com`: where payers come back to.
+- `HMIS_FIRST_OPERATOR_EMAIL` (and `HMIS_FIRST_OPERATOR_NAME`): at the next start, if there are no
+  operators yet, this one is created as owner. Its temporary password appears once in the app
+  logs. Sign in straight away, then remove the variable.
+- `HMIS_LICENCE_PRIVATE_KEY`: see Licences.
+
+Then:
+
 1. Sign in at `https://<cloud address>/platform/login` with the temporary password. Choose your
    own password (12+ characters) and set up two-step sign-in: every operator must.
 2. **Settings**: the free trial length, the grace period, VAT, the bank account clinics pay into
