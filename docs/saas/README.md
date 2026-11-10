@@ -27,7 +27,17 @@ When the installer asks whether this is the cloud, answer **yes**. It then sets
    - **Billing** also handles subscriptions, invoices and payments;
    - **Owner** can do everything, including plans, prices, operators and settings.
 
-The public request page is `https://<cloud address>/request`, also linked from the sign-in page.
+The public pages:
+- `https://<cloud address>/welcome`, the front page for clinics that do not use HMIS yet: what it
+  does, how it runs, privacy, the plans and prices (from **Plans**, with the trial length, VAT and
+  support contacts from **Settings**), and common questions. Visitors who are not signed in and
+  open the cloud's address arrive here. Browsers that clinic staff have signed in on go straight
+  to the sign-in instead.
+- `https://<cloud address>/request`, the request form. Each plan's button on the front page opens
+  it with that plan chosen (`/request?plan=STANDARD`).
+
+The front page describes only what HMIS does now; keep it that way when its text changes
+(`apps/web/src/app/welcome/page.tsx`).
 
 ## A clinic, from request to paying customer
 
@@ -86,8 +96,8 @@ end date. Nothing changed for them until HMIS agrees a plan with them.
 
 ## Online payment (Chapa and telebirr)
 
-Turned on in `deploy/.env` on the cloud server (the keys never go in the database), then
-`sudo deploy/hmis up`. Settings in the console shows which are on.
+Turned on in the cloud's environment (the keys never go in the database): `deploy/.env` and then
+`sudo deploy/hmis up` on its own server, or the app's environment variables on AletCloud. Settings in the console shows which are on.
 
 - `HMIS_PUBLIC_URL`: the cloud's address, e.g. `https://hmis.example.et` (the installer sets it).
   Payers and payment reports come back there.
@@ -125,14 +135,21 @@ the cloud applies a subscription: trial, active, overdue, then read-only. It wor
 internet until its dates run out. A changed or forged licence is refused, and so is an older
 licence than the one installed.
 
-**Once, before the first licence:**
-1. On an offline computer, `node apps/api/dist/licence/cli.js keygen`.
-2. Put the **public key** in `apps/api/src/licence/public-key.ts`, commit it, and update the
-   servers. Every server can then check licences.
-3. Put the **private key** only into the HMIS cloud's `deploy/.env`
-   (`HMIS_LICENCE_PRIVATE_KEY`). Keep a printed copy in the safe: whoever has it can issue
-   licences.
-4. Console → Settings shows "Licences: can be issued".
+**The licence keys** (created 2026-11-10): HMIS's public key is built into
+`apps/api/src/licence/public-key.ts`, so every server checks licences against it. The private
+key is only in the HMIS cloud's environment, as `HMIS_LICENCE_PRIVATE_KEY` on one line (as
+`keygen` prints it), with a printed copy in the safe: whoever has it can issue licences.
+- On the cloud's own server: in `deploy/.env`, then `sudo deploy/hmis up`.
+- On AletCloud: in the app's environment variables (saving them rebuilds the app).
+
+Console → Settings then shows "Licences: can be issued". If the private key is not the pair of
+the built-in public key, it says so and issues no licence, since every server would refuse it.
+
+If the private key is lost or leaked: run `node apps/api/dist/licence/cli.js keygen` on an
+offline computer, put the new public key into `public-key.ts` and the new private key into the
+cloud, and update every server. An updated server no longer accepts licences signed with the old
+key, so issue new ones: clinic servers fetch theirs within the hour; own-server installs need a
+new file.
 
 **A clinic server synced to the cloud** fetches a fresh licence every hour with its sync token. A
 payment in the cloud, a plan change or a suspension reaches it within the hour. The clinic's
@@ -219,7 +236,6 @@ Tell the clinic so in the data processing agreement.
 
 ## Still to do before selling
 
-- Run `licence keygen` and commit the public key (see Licences).
 - Pay one invoice in telebirr's sandbox (see Online payment).
 - Terms of service and a data processing agreement for clinics (who is controller and processor,
   where the data is kept, backups and deletion), with a lawyer.

@@ -1,6 +1,8 @@
 "use server";
 
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
+import { clientAddress } from "@/lib/client-address";
+import { STAFF_BROWSER_COOKIE, STAFF_BROWSER_COOKIE_OPTIONS } from "@/lib/staff-browser";
 import { redirect } from "next/navigation";
 import QRCode from "qrcode";
 import { api, API_URL, ApiError, TOKEN_COOKIE } from "@/lib/api";
@@ -12,6 +14,7 @@ const cookieBase = { httpOnly: true, sameSite: "lax" as const, secure: process.e
 
 async function setSession(token: string) {
   (await cookies()).set(TOKEN_COOKIE, token, { ...cookieBase, maxAge: 12 * 60 * 60 });
+  (await cookies()).set(STAFF_BROWSER_COOKIE, "1", { ...STAFF_BROWSER_COOKIE_OPTIONS, secure: cookieBase.secure });
 }
 
 export async function setChallenge(challenge: string) {
@@ -25,7 +28,7 @@ export async function verifyTwoStep(_: TwoStepState, form: FormData): Promise<Tw
   const store = await cookies();
   const challenge = store.get(CHALLENGE_COOKIE)?.value;
   if (!challenge) return { error: "The sign-in took too long. Enter your phone number and password again.", expired: true };
-  const forwarded = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim();
+  const forwarded = await clientAddress();
   let res: Response;
   try {
     res = await fetch(`${API_URL}/auth/login/two-step`, {

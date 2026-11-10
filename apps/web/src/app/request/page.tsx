@@ -9,8 +9,8 @@ import { RequestForm } from "./request-form";
 
 export const metadata: Metadata = { title: "Use HMIS in your clinic" };
 
-async function Content() {
-  const offer = await publicPlans();
+async function Content({ searchParams }: { searchParams: Promise<{ plan?: string | string[] }> }) {
+  const [offer, { plan }] = await Promise.all([publicPlans(), searchParams]);
   if (!offer) {
     return <p className="text-sm text-slate-500">Requests are made on the HMIS cloud. Ask the HMIS team for its address.</p>;
   }
@@ -55,14 +55,17 @@ async function Content() {
           We review each request and call you to agree on the details.
           {(offer.supportPhone || offer.supportEmail) && ` Questions: ${[offer.supportPhone, offer.supportEmail].filter(Boolean).join(" · ")}.`}
         </p>
-        <RequestForm plans={offer.plans.map((p) => ({ code: p.code, name: p.name }))} />
+        <RequestForm
+          plans={offer.plans.map((p) => ({ code: p.code, name: p.name }))}
+          plan={offer.plans.find((p) => p.code === plan)?.code ?? ""}
+        />
       </section>
     </div>
   );
 }
 
 /** The public page of the HMIS cloud where a clinic asks to use HMIS (reviewed by HMIS). */
-export default function RequestPage() {
+export default function RequestPage({ searchParams }: PageProps<"/request">) {
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-10 sm:px-6">
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
@@ -75,12 +78,17 @@ export default function RequestPage() {
             <p className="text-sm text-slate-500">Queue, consultation, lab, pharmacy and billing in one place</p>
           </div>
         </div>
-        <Link href="/login" className="text-sm font-medium text-brand-700 hover:underline dark:text-brand-400">
-          Already using HMIS? Sign in
-        </Link>
+        <div className="flex gap-4 text-sm font-medium">
+          <Link href="/welcome" className="text-brand-700 hover:underline dark:text-brand-400">
+            About HMIS
+          </Link>
+          <Link href="/login" className="text-brand-700 hover:underline dark:text-brand-400">
+            Already using HMIS? Sign in
+          </Link>
+        </div>
       </div>
       <Suspense fallback={<Skeleton className="h-96" />}>
-        <Content />
+        <Content searchParams={searchParams} />
       </Suspense>
     </main>
   );

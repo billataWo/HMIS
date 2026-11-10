@@ -1,7 +1,9 @@
 "use server";
 
 import { refresh } from "next/cache";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
+import { clientAddress } from "@/lib/client-address";
+import { STAFF_BROWSER_COOKIE, STAFF_BROWSER_COOKIE_OPTIONS } from "@/lib/staff-browser";
 import { redirect } from "next/navigation";
 import { LANG_COOKIE } from "@/lib/i18n";
 import { setChallenge } from "./two-step-actions";
@@ -49,13 +51,14 @@ async function setTokenCookie(token: string) {
     maxAge: 12 * 60 * 60,
     path: "/",
   });
+  (await cookies()).set(STAFF_BROWSER_COOKIE, "1", { ...STAFF_BROWSER_COOKIE_OPTIONS, secure: process.env.NODE_ENV === "production" });
 }
 
 export async function login(_: FormState, form: FormData): Promise<FormState> {
   const phone = text(form, "phone");
   // The API limits wrong passwords per address too: tell it the user's address (set by the
   // reverse proxy, or by Next.js from the connection), not this web server's.
-  const forwarded = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim();
+  const forwarded = await clientAddress();
   let res: Response;
   try {
     res = await fetch(`${API_URL}/auth/login`, {

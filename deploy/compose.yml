@@ -138,6 +138,8 @@ services:
     environment:
       TZ: ${TZ:-Africa/Addis_Ababa}
       API_URL: http://api:4000
+      # The HMIS cloud: signed-out visitors to "/" see the page for new clinics.
+      HMIS_PLATFORM: ${HMIS_PLATFORM:-0}
 
   # HTTPS: the only way in from the network (deploy/caddy/Caddyfile).
   caddy:

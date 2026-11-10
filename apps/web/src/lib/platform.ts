@@ -213,6 +213,7 @@ export interface PlatformSettings {
   publicUrl?: string | null;
   /** This cloud has the licence-signing key. */
   licences?: boolean;
+  licenceProblem?: string | null;
   trialDays: number;
   graceDays: number;
   vatPercent: string;

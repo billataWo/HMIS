@@ -105,13 +105,6 @@ export class SyncController {
     res.end(`${JSON.stringify({ type: 'end', rows })}\n`);
   }
 
-  /**
-   * How this clinic's data moves, for any signed-in user (the app shows a notice on read-only
-   * cloud copies); the details for admins.
-   *  - clinic-server: this server is where the clinic works, and sends its changes to the cloud
-   *  - cloud-copy: this is the cloud's read-only copy of a clinic that works on its clinic server
-   *  - off: neither (a cloud-only clinic, or no sync set up)
-   */
   /** The clinic server's HMIS licence, fresh from its subscription (fetched every hour). */
   @Public()
   @Get('licence')
@@ -124,6 +117,13 @@ export class SyncController {
     return { licence: text };
   }
 
+  /**
+   * How this clinic's data moves, for any signed-in user (the app shows a notice on read-only
+   * cloud copies); the details for admins.
+   *  - clinic-server: this server is where the clinic works, and sends its changes to the cloud
+   *  - cloud-copy: this is the cloud's read-only copy of a clinic that works on its clinic server
+   *  - off: neither (a cloud-only clinic, or no sync set up)
+   */
   @Get('status')
   async status(@CurrentUser() me: AuthUser) {
     const admin = me.role === 'ADMIN';

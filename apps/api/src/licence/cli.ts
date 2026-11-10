@@ -3,7 +3,7 @@
  *
  *   keygen                HMIS only, once, on an offline computer: the licence-signing key pair.
  *                         The public key goes into apps/api/src/licence/public-key.ts; the private
- *                         key only into the HMIS cloud's deploy/.env (HMIS_LICENCE_PRIVATE_KEY).
+ *                         key only into the HMIS cloud's environment (HMIS_LICENCE_PRIVATE_KEY).
  *   status                the licence installed on this server, and what it allows
  *   install <file>        installs a licence file from HMIS (an own-server install); - reads it
  *                         from standard input (deploy/hmis licence install <file> does that)
@@ -25,7 +25,7 @@ if (cmd === 'keygen') {
   const { publicKey, privateKey } = generateKeyPairSync('ed25519', { publicKeyEncoding: { type: 'spki', format: 'pem' }, privateKeyEncoding: { type: 'pkcs8', format: 'pem' } });
   console.log('Public key: into apps/api/src/licence/public-key.ts (BUILT_IN_LICENCE_PUBLIC_KEY), then rebuild:\n');
   console.log(publicKey);
-  console.log('Private key: ONLY into the HMIS cloud\'s deploy/.env, on one line, and a printed copy in the safe:\n');
+  console.log('Private key: ONLY into the HMIS cloud\'s environment (deploy/.env, or the app\'s environment variables on AletCloud), on one line, and a printed copy in the safe:\n');
   console.log(`HMIS_LICENCE_PRIVATE_KEY="${privateKey.trim().replace(/\n/g, '\\n')}"`);
   process.exit(0);
 }

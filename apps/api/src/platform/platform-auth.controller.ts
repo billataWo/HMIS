@@ -152,7 +152,14 @@ export class PlatformAuthController {
   @PlatformAllowPending()
   async password(@Req() req: Request, @CurrentOperator() me: Operator, @Body(new ZodPipe(PasswordSchema)) body: z.infer<typeof PasswordSchema>) {
     const op = await this.prisma.system.platformUser.findUniqueOrThrow({ where: { id: me.sub } });
-    if (!(await bcrypt.compare(body.current, op.passwordHash))) throw new ConflictException('The current password is not right');
+    // Someone with a stolen session must not be able to guess the password from here.
+    const key = `password:${op.id}`;
+    if (locked([key])) throw TOO_MANY();
+    if (!(await bcrypt.compare(body.current, op.passwordHash))) {
+      fail([[key, 5]]);
+      await this.audit(op.id, 'platform.password_check_failed', {}, clientIp(req));
+      throw new ConflictException('The current password is not right');
+    }
     await this.prisma.system.platformUser.update({
       where: { id: op.id },
       data: { passwordHash: await bcrypt.hash(body.next, 10), mustChangePassword: false, sessionsValidAfter: new Date() },
@@ -167,10 +174,18 @@ export class PlatformAuthController {
   @HttpCode(200)
   @UseGuards(PlatformGuard)
   @PlatformAllowPending()
-  async setup(@CurrentOperator() me: Operator, @Body() body: { password?: string }) {
+  async setup(@Req() req: Request, @CurrentOperator() me: Operator, @Body() body: { password?: string }) {
     const op = await this.prisma.system.platformUser.findUniqueOrThrow({ where: { id: me.sub } });
-    if (op.totpEnabledAt && !(typeof body?.password === 'string' && (await bcrypt.compare(body.password, op.passwordHash)))) {
-      throw new ConflictException('Enter your password to move two-step sign-in to another phone');
+    if (op.totpEnabledAt) {
+      const key = `password:${op.id}`;
+      if (locked([key])) throw TOO_MANY();
+      if (!(typeof body?.password === 'string' && (await bcrypt.compare(body.password, op.passwordHash)))) {
+        if (typeof body?.password === 'string' && body.password) {
+          fail([[key, 5]]);
+          await this.audit(op.id, 'platform.password_check_failed', { for: 'two-step setup' }, clientIp(req));
+        }
+        throw new ConflictException('Enter your password to move two-step sign-in to another phone');
+      }
     }
     const secret = newSecret();
     await this.prisma.system.platformUser.update({ where: { id: op.id }, data: { totpPendingSecret: secret } });

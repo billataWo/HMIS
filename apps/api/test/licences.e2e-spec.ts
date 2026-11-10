@@ -1,7 +1,8 @@
 import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { newSecret, base32Decode, currentStep, hotp } from '../src/auth/totp.js';
-import { type Licence, readLicence, signLicence } from '../src/licence/licence.js';
+import { type Licence, licenceSigningProblem, readLicence, signLicence } from '../src/licence/licence.js';
+import { BUILT_IN_LICENCE_PUBLIC_KEY } from '../src/licence/public-key.js';
 import { refreshLicence } from '../src/licence/licence.agent.js';
 import { forgetSubscription } from '../src/platform/subscription.guard.js';
 import { hashToken } from '../src/sync/engine.js';
@@ -167,5 +168,27 @@ describe('on a server that needs a licence', () => {
     const me = (await api.get('/auth/me').set(bearer(otherAdmin.token)).expect(200)).body;
     expect(me.subscription).toBeNull();
     await api.post('/displays').set(bearer(otherAdmin.token)).send({ name: 'TV' }).expect(201);
+  });
+});
+
+describe('the licence keys', () => {
+  it('only signs with the private key that pairs with the public key', () => {
+    expect(licenceSigningProblem()).toBeNull();
+    const own = process.env.HMIS_LICENCE_PRIVATE_KEY;
+    try {
+      process.env.HMIS_LICENCE_PRIVATE_KEY = stranger.privateKey;
+      expect(licenceSigningProblem()).toMatch(/not the pair/);
+      process.env.HMIS_LICENCE_PRIVATE_KEY = 'not a key';
+      expect(licenceSigningProblem()).toMatch(/cannot be read/);
+      delete process.env.HMIS_LICENCE_PRIVATE_KEY;
+      expect(licenceSigningProblem()).toMatch(/not set/);
+    } finally {
+      process.env.HMIS_LICENCE_PRIVATE_KEY = own;
+    }
+  });
+
+  it("has HMIS's public key built in", () => {
+    expect(readLicence('HMIS-LICENCE-1.e30.AAAA', BUILT_IN_LICENCE_PUBLIC_KEY)).toEqual({ ok: false, reason: expect.stringMatching(/not issued by HMIS/) });
+    expect(BUILT_IN_LICENCE_PUBLIC_KEY).toContain('BEGIN PUBLIC KEY');
   });
 });

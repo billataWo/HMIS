@@ -34,6 +34,25 @@ export const licencePublicKey = () => {
   return key ? pem(key) : null;
 };
 export const licencePrivateKey = () => (process.env.HMIS_LICENCE_PRIVATE_KEY ? pem(process.env.HMIS_LICENCE_PRIVATE_KEY) : null);
+
+/**
+ * Why this server cannot issue licences, or null if it can. The private key must be the pair of
+ * the public key the servers check against: a key from another pair signs licences that every
+ * server refuses.
+ */
+export function licenceSigningProblem(): string | null {
+  const privateKey = licencePrivateKey();
+  if (!privateKey) return 'HMIS_LICENCE_PRIVATE_KEY is not set';
+  const publicKey = licencePublicKey();
+  if (!publicKey) return 'this server has no licence public key';
+  try {
+    const derived = createPublicKey(createPrivateKey(privateKey)).export({ type: 'spki', format: 'der' });
+    const expected = createPublicKey(publicKey).export({ type: 'spki', format: 'der' });
+    return derived.equals(expected) ? null : 'HMIS_LICENCE_PRIVATE_KEY is not the pair of the licence public key';
+  } catch {
+    return 'HMIS_LICENCE_PRIVATE_KEY cannot be read';
+  }
+}
 /** Servers installed as clinic servers or own-server installs must have a licence. */
 export const licenceRequired = () => process.env.HMIS_LICENCE === 'required';
 
@@ -85,8 +104,9 @@ export const licenceState = (l: Licence, now = new Date()) => subscriptionState(
  * fetches a new one every hour; an own-server install gets the file from the platform console.
  */
 export async function issueLicence(db: Db, tenantId: string, now = new Date()) {
-  const key = licencePrivateKey();
-  if (!key) throw new ConflictException('Licences cannot be issued: HMIS_LICENCE_PRIVATE_KEY is not set on this server.');
+  const problem = licenceSigningProblem();
+  if (problem) throw new ConflictException(`Licences cannot be issued: ${problem}.`);
+  const key = licencePrivateKey() as string;
   const sub = await db.subscription.findUnique({ where: { tenantId }, include: { plan: true, tenant: { select: { name: true } } } });
   if (!sub) throw new ConflictException('This clinic has no subscription');
   const ends = (sub.status === 'TRIAL' ? sub.trialEndsAt : sub.paidUntil) ?? new Date(now.getTime() + 365 * DAY);

@@ -14,7 +14,7 @@ import { CurrentOperator, forgetOperator, type Operator, PlatformGuard, Platform
 import { FEATURES, type SubState, subscriptionState } from './subscription-state.js';
 import { forgetSubscription } from './subscription.guard.js';
 import { onlineMethods, publicUrl } from './payments/checkout.js';
-import { issueLicence, licencePrivateKey } from '../licence/licence.js';
+import { issueLicence, licenceSigningProblem } from '../licence/licence.js';
 import { deleteClinicData } from '../exports/clinic-data.js';
 
 const uuid = z.uuid();
@@ -535,7 +535,7 @@ export class PlatformController {
   async settings() {
     const settings = await this.db.platformSetting.findUniqueOrThrow({ where: { id: 1 } });
     // Online payments are set on the server (deploy/.env), never here: the keys stay out of the database.
-    return { ...settings, online: onlineMethods(), publicUrl: publicUrl(), licences: !!licencePrivateKey() };
+    return { ...settings, online: onlineMethods(), publicUrl: publicUrl(), licences: !licenceSigningProblem(), licenceProblem: licenceSigningProblem() };
   }
 
   @Patch('settings')

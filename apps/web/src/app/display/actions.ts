@@ -1,6 +1,7 @@
 "use server";
 
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
+import { clientAddress } from "@/lib/client-address";
 import { redirect } from "next/navigation";
 import { API_URL } from "@/lib/api";
 
@@ -11,7 +12,7 @@ export type PairState = { error?: string };
 
 /** On the TV: the 6-digit code from Settings → Screens, entered once. */
 export async function pairDisplay(_: PairState, form: FormData): Promise<PairState> {
-  const forwarded = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim();
+  const forwarded = await clientAddress();
   let res: Response;
   try {
     res = await fetch(`${API_URL}/display/pair`, {

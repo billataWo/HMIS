@@ -13,7 +13,7 @@ import {
   exportClinicLines,
   importClinicLines,
 } from '../src/exports/clinic-data.js';
-import { hashToken } from '../src/sync/engine.js';
+import { hashToken, loadTables } from '../src/sync/engine.js';
 import {
   api,
   appPrisma,
@@ -277,6 +277,13 @@ describe("the whole clinic's data", () => {
       'row-level security',
     );
     expect(await db.patient.count({ where: { tenantId: c.tenantId } })).toBe(1);
+  });
+
+  it('stops if a clinic table has no row-level security (a new table someone forgot)', async () => {
+    const fake = { $queryRawUnsafe: async () => [{ name: 'Patient', rls: true, columns: ['id'], pk: ['id'], deps: [] }, { name: 'Forgotten', rls: false, columns: ['id', 'tenantId'], pk: ['id'], deps: [] }] };
+    await expect(loadTables(fake as never)).rejects.toThrow('Forgotten');
+    // The real database: every clinic table has it.
+    await expect(loadTables(db)).resolves.toBeInstanceOf(Map);
   });
 });
 

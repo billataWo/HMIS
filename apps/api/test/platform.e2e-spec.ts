@@ -113,6 +113,18 @@ describe('the HMIS platform (SaaS)', () => {
       await api.get('/patients').set(bearer(ownerToken)).expect(401);
     });
 
+    it('limits wrong current passwords, so a stolen session cannot guess the password', async () => {
+      const op = await makeOperator('SUPPORT');
+      const token = await opLogin(op);
+      for (let i = 0; i < 5; i++) {
+        await api.post('/platform/auth/password').set(bearer(token)).send({ current: `wrong-${i}`, next: 'another-long-password' }).expect(409);
+      }
+      // Now even the right one waits, and so does moving two-step sign-in to another phone.
+      await api.post('/platform/auth/password').set(bearer(token)).send({ current: PASSWORD, next: 'another-long-password' }).expect(429);
+      await api.post('/platform/auth/two-step/setup').set(bearer(token)).send({ password: PASSWORD }).expect(429);
+      expect(await db.platformAuditLog.count({ where: { operatorId: op.id, action: 'platform.password_check_failed' } })).toBe(5);
+    });
+
     it('must change the temporary password and set up two-step sign-in first', async () => {
       const op = await makeOperator('SUPPORT', { twoStep: false });
       await db.platformUser.update({ where: { id: op.id }, data: { mustChangePassword: true } });

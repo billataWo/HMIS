@@ -21,8 +21,8 @@ async function RequestLink() {
   return (
     <p className="mt-3 text-sm text-slate-500">
       New clinic?{" "}
-      <Link href="/request" className="font-medium text-brand-700 hover:underline dark:text-brand-400">
-        Request HMIS
+      <Link href="/welcome" className="font-medium text-brand-700 hover:underline dark:text-brand-400">
+        See plans and request HMIS
       </Link>
     </p>
   );

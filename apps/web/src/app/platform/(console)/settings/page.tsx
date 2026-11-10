@@ -19,8 +19,8 @@ async function Content() {
           Chapa: {settings.online?.CHAPA ? "on" : "off"} · telebirr: {settings.online?.TELEBIRR ? "on" : "off"}
           {settings.publicUrl ? ` · payers come back to ${settings.publicUrl}` : " · HMIS_PUBLIC_URL is not set"}
         </p>
-        <p className="mt-1 text-slate-600 dark:text-slate-300">Licences for clinic servers: {settings.licences ? "can be issued" : "cannot be issued (HMIS_LICENCE_PRIVATE_KEY is not set)"}</p>
-        <p className="mt-1 text-xs text-slate-500">Set on the cloud server in deploy/.env (the keys never go in the database): see docs/saas/README.md.</p>
+        <p className="mt-1 text-slate-600 dark:text-slate-300">Licences for clinic servers: {settings.licences ? "can be issued" : `cannot be issued (${settings.licenceProblem ?? "HMIS_LICENCE_PRIVATE_KEY is not set"})`}</p>
+        <p className="mt-1 text-xs text-slate-500">Set in the cloud&apos;s environment (deploy/.env, or the app&apos;s environment variables on AletCloud; the keys never go in the database): see docs/saas/README.md.</p>
       </div>
     </Card>
   );

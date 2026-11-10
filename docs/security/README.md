@@ -39,6 +39,46 @@ Fixed:
 - **Offline data.** Patient data stayed in the browser after the sign-in expired. It is now deleted.
 - **Software banners.** The API and web app announced their server software. They no longer do.
 
+## Review of HMIS as a service, November 2026
+
+Of everything added for the service: the platform console, requests, subscriptions, online
+payments, licences, data export and deletion, and hosting on AletCloud.
+
+Fixed:
+- **Visitor addresses on AletCloud.** The web app passed on the *first* address in
+  `X-Forwarded-For`. Caddy replaces that header, but AletCloud's router adds to it, so a visitor
+  could write any address there and get round the per-address limits on sign-in, two-step codes
+  and requests. The web app now takes the address the nearest proxy added (the last one;
+  `HMIS_PROXY_HOPS` if more than one proxy adds to it).
+- **Payments and clinic servers on AletCloud.** With no Caddy in front, `/sync/*` and
+  `/public/payments/*` reached the web app and failed, so clinic servers could not sync and
+  Chapa's and telebirr's notifications were lost. The web app now passes them to the API
+  unchanged, without the visitor's cookies.
+- **Console passwords.** With a stolen console session, the current password (asked for to change
+  it or to move two-step sign-in to another phone) could be guessed without limit. It now locks
+  after 5 wrong tries, and each one is in History.
+- **Tables without row-level security.** Exports, deletions and a new clinic server's first copy
+  read every clinic table under row-level security. A future table added without it would have
+  put every clinic's rows in one clinic's export. They now refuse to run if any such table exists.
+- **Licence keys.** A private key that is not the pair of the built-in public key would have
+  signed licences that every server refuses. The cloud now refuses to issue them, and Settings in
+  the console says why.
+
+Checked, and sound: operators' sessions (own key, two-step, ended by password change or
+deactivation); roles on every console action; approvals and payments recorded once even when two
+people act at once; payments counted only from the provider's own answer, in birr; webhook
+signatures compared in constant time; clinics see only their own invoices and checkouts; the
+application role cannot read the console's tables (operators, requests, checkouts, licences);
+read-only clinics cannot change anything, offline replays included; exports leave out sign-in
+secrets.
+
+Accepted:
+- **Own-server licences.** Whoever runs the server can change its clock or its database, so a
+  licence there is an agreement more than a lock. Synced clinic servers get theirs from the cloud
+  every hour.
+- **Signing out of the console** ends the session in that browser; the session itself stays valid
+  until it expires (8 hours). Changing the password ends every session.
+
 ## Before a server goes live (checklist)
 
 - [ ] **Installed with `deploy/hmis install`** ([guide](../install/README.md)). This gives HTTPS
@@ -55,10 +95,15 @@ Fixed:
 - [ ] **Two-step sign-in** set up by every admin (HMIS requires it at their first sign-in), and
       the recovery codes printed and kept safe.
 - [ ] **The waiting-room screen** connected through Settings → Screens (never signed in as staff).
+- [ ] **On a hosting platform instead of our own server** (AletCloud): HTTPS by the platform, and
+      `HMIS_PROXY_HOPS` set if more than one proxy there adds to `X-Forwarded-For` (default 1).
 
 ## Still to do
 
-- Nothing open from the review. Before selling HMIS as a service: see [HMIS as a service](../saas/README.md#still-to-do-before-selling).
+- Clinic staff: the current password, asked for to change it and for two-step sign-in, can be
+  guessed without limit by someone holding a stolen session (fixed for the console; the same
+  limit is still to add for clinics).
+- Before selling HMIS as a service: see [HMIS as a service](../saas/README.md#still-to-do-before-selling).
 
 ## Reporting a problem
 

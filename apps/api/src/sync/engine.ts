@@ -38,8 +38,8 @@ export class SyncError extends Error {
 const q = (ident: string) => `"${ident.replace(/"/g, '""')}"`;
 
 export async function loadTables(db: Raw): Promise<Tables> {
-  const rows = await db.$queryRawUnsafe<{ name: string; columns: string[]; pk: string[] | null; deps: string[] | null }[]>(`
-    SELECT c.relname AS name,
+  const rows = await db.$queryRawUnsafe<{ name: string; rls: boolean; columns: string[]; pk: string[] | null; deps: string[] | null }[]>(`
+    SELECT c.relname AS name, c.relrowsecurity AS rls,
       (SELECT array_agg(a.attname::text ORDER BY a.attnum) FROM pg_attribute a
         WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped) AS columns,
       (SELECT array_agg(a.attname::text ORDER BY array_position(i.indkey, a.attnum)) FROM pg_index i
@@ -50,10 +50,16 @@ export async function loadTables(db: Raw): Promise<Tables> {
     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public' AND c.relkind = 'r'`);
   const tables: Tables = new Map();
+  const unprotected: string[] = [];
   for (const r of rows) {
     if (NOT_SYNCED.has(r.name) || !r.pk) continue;
+    if (!r.rls) unprotected.push(r.name);
     tables.set(r.name, { name: r.name, columns: new Set(r.columns), pk: r.pk, deps: (r.deps ?? []).filter((d) => !NOT_SYNCED.has(d)) });
   }
+  // Every clinic table is read under row-level security (exports, a new clinic server's copy) and
+  // deleted under it. One without it would give one clinic every clinic's rows: stop instead. A
+  // new table either gets row-level security in its migration or goes in NOT_SYNCED.
+  if (unprotected.length) throw new SyncError(`These tables have no row-level security: ${unprotected.join(', ')}. Add it, or list them in NOT_SYNCED.`, 'TABLE_NOT_PROTECTED');
   return tables;
 }
 

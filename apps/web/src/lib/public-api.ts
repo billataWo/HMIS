@@ -1,5 +1,5 @@
 import "server-only";
-import { headers } from "next/headers";
+import { clientAddress } from "./client-address";
 import { API_URL } from "./api";
 
 export interface PublicPlans {
@@ -23,7 +23,7 @@ export async function publicPlans(): Promise<PublicPlans | null> {
 
 /** Calls a public API endpoint, passing on the visitor's address (for its per-address limits). */
 export async function publicPost<T>(path: string, body: unknown): Promise<{ ok: true; data: T } | { ok: false; status: number; message: string; errors?: { field: string; message: string }[] }> {
-  const forwarded = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim();
+  const forwarded = await clientAddress();
   let res: Response;
   try {
     res = await fetch(`${API_URL}${path}`, {

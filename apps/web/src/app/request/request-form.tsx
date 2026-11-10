@@ -28,7 +28,7 @@ const DEPLOYMENTS = [
   { value: "ON_PREMISE", label: "Our own server only", hint: "Everything stays at the clinic." },
 ];
 
-export function RequestForm({ plans }: { plans: { code: string; name: string }[] }) {
+export function RequestForm({ plans, plan = "" }: { plans: { code: string; name: string }[]; plan?: string }) {
   const [state, action, pending] = useActionState<RequestState, FormData>(sendRequest, {});
   const err = (name: string) => state.fields?.[name];
 
@@ -114,7 +114,7 @@ export function RequestForm({ plans }: { plans: { code: string; name: string }[]
         <legend className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">What you would like</legend>
         {plans.length > 0 && (
           <Field label="Plan">
-            <select name="planCode" className={inputClass} defaultValue="">
+            <select name="planCode" className={inputClass} defaultValue={plan}>
               <option value="">Not sure yet</option>
               {plans.map((p) => (
                 <option key={p.code} value={p.code}>

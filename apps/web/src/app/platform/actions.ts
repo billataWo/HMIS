@@ -1,7 +1,8 @@
 "use server";
 
 import { refresh } from "next/cache";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
+import { clientAddress } from "@/lib/client-address";
 import { redirect } from "next/navigation";
 import QRCode from "qrcode";
 import { API_URL, ApiError } from "@/lib/api";
@@ -23,7 +24,7 @@ const failure = (e: unknown): FormState => {
 
 /** Calls the API before anyone is signed in (the two sign-in steps), passing on the address. */
 async function signInCall(path: string, body: unknown) {
-  const forwarded = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim();
+  const forwarded = await clientAddress();
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
     cache: "no-store",
