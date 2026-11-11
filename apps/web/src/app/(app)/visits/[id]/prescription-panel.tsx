@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { cancelPrescription, createPrescription, searchDrugs, type RxDraftItem } from "@/app/actions";
 import { Alert, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
 import type { DrugOption, Frequency, Prescription, RxAlert } from "@/lib/api";
+import { ConfirmCancel } from "@/components/confirm-cancel";
 
 const FREQUENCIES: { value: Frequency; label: string; perDay: number | null }[] = [
   { value: "OD", label: "OD · once daily", perDay: 1 },
@@ -117,9 +118,7 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
               {RX_STATUS[p.status]} · Dr. {p.prescriber.fullName}
             </span>
             {editable && p.status === "PENDING" && (
-              <button type="button" disabled={pending} onClick={() => start(() => cancelPrescription(p.id))} className="text-xs text-red-700 hover:underline dark:text-red-400">
-                Cancel
-              </button>
+              <ConfirmCancel disabled={pending} onConfirm={() => start(() => cancelPrescription(p.id))} question="Cancel this prescription?" />
             )}
           </div>
           <ul className="space-y-0.5">

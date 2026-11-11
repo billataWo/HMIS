@@ -1,32 +1,27 @@
 import {
   ArrowRight,
-  CalendarDays,
-  ChartColumn,
   CloudOff,
   Download,
   FileSpreadsheet,
-  FlaskConical,
-  HeartPulse,
   KeyRound,
   Languages,
-  ListOrdered,
   Monitor,
   Phone,
-  Pill,
-  Receipt,
   ScrollText,
   Server,
   ShieldCheck,
   Smartphone,
-  Stethoscope,
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { FadeIn } from "@/components/enter";
-import { buttonClass, Skeleton } from "@/components/ui";
+import { FOCUS_ON_DARK, LIGHT_CTA, NEXT_STEPS, OUTLINE_CTA, SiteFrame } from "@/components/site";
+import { Skeleton } from "@/components/ui";
 import { publicPlans } from "@/lib/public-api";
 import { Plans } from "./plans";
+import { Bento } from "./bento";
+import { ProductStage } from "./product-stage";
 import { VisitFlow } from "./visit-flow";
 
 export const metadata: Metadata = {
@@ -34,11 +29,7 @@ export const metadata: Metadata = {
   description: "Queue, consultation, lab, pharmacy and billing for clinics in Ethiopia. Free trial, then a monthly or yearly plan.",
 };
 
-/** Keyboard focus that is always visible (on light and on the dark brand sections). */
-const FOCUS = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600";
-const FOCUS_ON_DARK = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white";
-const LIGHT_CTA = "inline-flex min-h-11 items-center gap-2 rounded-lg bg-white px-5 text-sm font-semibold text-brand-900 shadow-sm transition-colors hover:bg-brand-50";
-const OUTLINE_CTA = "inline-flex min-h-11 items-center rounded-lg px-5 text-sm font-semibold text-white ring-1 ring-white/30 transition-colors hover:bg-white/10";
+
 
 /** Facts only: each one is something HMIS does today. */
 const PROOF = [
@@ -48,17 +39,6 @@ const PROOF = [
   { icon: FileSpreadsheet, title: "MoH report built in", text: "The monthly report as a spreadsheet" },
 ];
 
-
-const MODULES = [
-  { icon: ListOrdered, title: "Queue and waiting room", text: "Live queue for each department, and a TV screen that calls the next number." },
-  { icon: CalendarDays, title: "Appointments", text: "Book visits ahead and see who is coming each day." },
-  { icon: Stethoscope, title: "Consultation records", text: "History, allergies, vitals, notes, ICD-11 diagnoses and prescriptions per visit." },
-  { icon: FlaskConical, title: "Laboratory", text: "Test orders, result entry with reference ranges, and printable lab reports." },
-  { icon: Pill, title: "Pharmacy and stock", text: "Dispensing, stock by batch, expiry warnings, and purchase orders where the plan includes them." },
-  { icon: Receipt, title: "Billing", text: "Price list, invoices and receipts. Credit and insurance accounts where the plan includes them." },
-  { icon: ChartColumn, title: "Reports", text: "Daily takings, visits and the monthly MoH report as a spreadsheet." },
-  { icon: ScrollText, title: "Audit log", text: "Who changed what, and when, for every record." },
-];
 
 const WAYS = [
   {
@@ -85,12 +65,7 @@ const PRIVACY = [
   { icon: Download, text: "Your data is yours: export one patient's record or the whole clinic whenever you want." },
 ];
 
-const STEPS = [
-  { title: "Ask for HMIS", text: "Five minutes on the request page: the clinic, a contact and a plan." },
-  { title: "We call you", text: "Within two working days, to check the details and answer questions." },
-  { title: "Free trial", text: "Your admin signs in, adds the staff, and starts with a ready-made price list." },
-  { title: "Pay to continue", text: "When the trial ends, pay by telebirr, Chapa or bank transfer." },
-];
+const STEPS = NEXT_STEPS;
 
 const QUESTIONS = [
   {
@@ -119,7 +94,7 @@ async function PlansSection() {
   const offer = await publicPlans();
   if (!offer || offer.plans.length === 0) {
     return (
-      <p className="text-center text-sm text-slate-500">
+      <p className="text-center text-sm text-(--l-muted)">
         Ask us for prices:{" "}
         <Link href="/request" className="font-medium text-brand-700 hover:underline dark:text-brand-400">
           request HMIS
@@ -130,7 +105,7 @@ async function PlansSection() {
   }
   return (
     <>
-      <p className="mx-auto -mt-6 mb-8 max-w-xl text-center text-slate-600 dark:text-slate-300">
+      <p className="mx-auto -mt-6 mb-8 max-w-xl text-center text-(--l-muted)">
         Every plan starts with a {offer.trialDays}-day free trial. Prices are per clinic, plus {Number(offer.vatPercent)}% VAT.
       </p>
       <Plans plans={offer.plans} features={offer.features} trialDays={offer.trialDays} />
@@ -152,12 +127,12 @@ async function Contact() {
 
 function Heading({ id, eyebrow, title, children }: { id?: string; eyebrow: string; title: string; children?: React.ReactNode }) {
   return (
-    <div className="land-reveal mx-auto mb-10 max-w-2xl text-center">
-      <p className="text-sm font-semibold text-brand-700 dark:text-brand-400">{eyebrow}</p>
-      <h2 id={id} className="mt-2 scroll-mt-28 text-3xl font-semibold tracking-tight text-balance text-slate-900 dark:text-white">
+    <div className="land-reveal mx-auto mb-12 max-w-2xl text-center">
+      <p className="text-xs font-semibold tracking-[0.16em] text-(--l-accent) uppercase">{eyebrow}</p>
+      <h2 id={id} className="land-display mt-3 scroll-mt-28 text-4xl leading-[1.05] text-balance text-(--l-ink) sm:text-5xl">
         {title}
       </h2>
-      {children && <p className="mt-3 text-slate-600 dark:text-slate-300">{children}</p>}
+      {children && <p className="mx-auto mt-4 max-w-xl leading-relaxed text-pretty text-(--l-muted)">{children}</p>}
     </div>
   );
 }
@@ -165,54 +140,15 @@ function Heading({ id, eyebrow, title, children }: { id?: string; eyebrow: strin
 /** The HMIS cloud's front page, for clinics that do not use HMIS yet. */
 export default function WelcomePage() {
   return (
-    <div className="flex flex-1 flex-col scroll-smooth motion-reduce:scroll-auto">
-      <a
-        href="#main"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:text-slate-900 focus:shadow"
-      >
-        Skip to content
-      </a>
-      <header className="land-header sticky top-0 z-20 border-b border-slate-200/70 bg-white/85 backdrop-blur dark:border-slate-800 dark:bg-slate-950/85">
-        <nav aria-label="Main" className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-4 sm:px-6">
-          <Link href="/welcome" className={`flex items-center gap-2.5 rounded-lg font-semibold text-slate-900 dark:text-white ${FOCUS}`}>
-            <span className="grid size-8 place-items-center rounded-lg bg-brand-700 text-white">
-              <HeartPulse aria-hidden className="size-4" />
-            </span>
-            HMIS
-          </Link>
-          <div className="hidden items-center gap-1 text-sm text-slate-600 md:flex dark:text-slate-300">
-            {[
-              ["#modules", "What it does"],
-              ["#ways", "How it runs"],
-              ["#plans", "Plans"],
-              ["#questions", "Questions"],
-            ].map(([href, label]) => (
-              <a key={href} href={href} className={`rounded-lg px-3 py-2 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white ${FOCUS}`}>
-                {label}
-              </a>
-            ))}
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <Link href="/login" className={`flex min-h-10 items-center rounded-lg px-3 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 ${FOCUS}`}>
-              Sign in
-            </Link>
-            <Link href="/request" className={buttonClass}>
-              <span className="sm:hidden">Request</span>
-              <span className="hidden sm:inline">Request HMIS</span>
-            </Link>
-          </div>
-        </nav>
-      </header>
-
-      <main id="main" className="flex-1">
+    <SiteFrame home>
         {/* Hero */}
-        <section className="relative overflow-hidden bg-brand-900 text-white">
+        <section className="relative overflow-hidden bg-(--l-deep) text-white">
           <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
             <div className="land-drift absolute -top-1/3 -left-1/4 size-[70vmax] rounded-full bg-[radial-gradient(circle,rgb(34_211_238/0.28),transparent_60%)]" />
             <div className="land-drift-slow absolute -right-1/4 -bottom-1/2 size-[65vmax] rounded-full bg-[radial-gradient(circle,rgb(16_185_129/0.22),transparent_60%)]" />
           </div>
           <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.07] bg-[linear-gradient(white_1px,transparent_1px),linear-gradient(90deg,white_1px,transparent_1px)] bg-size-[32px_32px]" />
-          <div className="relative mx-auto grid max-w-6xl gap-12 px-4 py-20 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:items-center lg:py-24">
+          <div className="relative mx-auto grid max-w-6xl gap-14 px-4 pt-16 pb-20 sm:px-6 lg:grid-cols-[1fr_1.05fr] lg:items-center lg:gap-10 lg:pt-24 lg:pb-28">
             <div>
               <FadeIn y={12}>
                 <p className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-brand-50 ring-1 ring-white/15">
@@ -221,9 +157,8 @@ export default function WelcomePage() {
                 </p>
               </FadeIn>
               <FadeIn delay={0.08} y={16}>
-                <h1 className="mt-5 text-4xl leading-[1.1] font-semibold tracking-tight text-balance sm:text-5xl">
-                  Run your clinic&apos;s day, from check&#8209;in to{" "}
-                  <span className="bg-linear-to-r from-cyan-200 to-emerald-200 bg-clip-text text-transparent">receipt.</span>
+                <h1 className="land-display mt-6 text-[2.75rem] leading-[1.02] tracking-[-0.015em] text-balance sm:text-6xl lg:text-[4.25rem]">
+                  Run your clinic&apos;s day, from check&#8209;in to <em className="text-brand-200">receipt.</em>
                 </h1>
               </FadeIn>
               <FadeIn delay={0.16} y={12}>
@@ -246,14 +181,14 @@ export default function WelcomePage() {
               </FadeIn>
             </div>
 
-            <FadeIn delay={0.2} y={20}>
-              <VisitFlow />
+            <FadeIn delay={0.2} y={24}>
+              <ProductStage />
             </FadeIn>
           </div>
         </section>
 
         {/* Proof: what HMIS really does for an Ethiopian clinic */}
-        <section aria-label="Why clinics choose HMIS" className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+        <section aria-label="Why clinics choose HMIS" className="border-b border-(--l-line) bg-(--l-paper)">
           <ul className="land-stagger mx-auto grid max-w-6xl grid-cols-1 gap-x-6 gap-y-5 px-4 py-8 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
             {PROOF.map((p) => (
               <li key={p.title} className="flex items-start gap-3">
@@ -261,8 +196,8 @@ export default function WelcomePage() {
                   <p.icon aria-hidden className="size-4.5" />
                 </span>
                 <span className="text-sm">
-                  <span className="block font-semibold text-slate-900 dark:text-white">{p.title}</span>
-                  <span className="block text-slate-600 dark:text-slate-400">{p.text}</span>
+                  <span className="block font-semibold text-(--l-ink)">{p.title}</span>
+                  <span className="block text-(--l-muted)">{p.text}</span>
                 </span>
               </li>
             ))}
@@ -274,21 +209,31 @@ export default function WelcomePage() {
           <Heading id="modules" eyebrow="What it does" title="Everything a clinic does in a day, in one place">
             Each member of staff signs in with their phone number and sees the screens for their role: reception, nurse, doctor, lab, pharmacy, cashier or admin.
           </Heading>
-          <div className="land-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {MODULES.map((m) => (
-              <div key={m.title} className="surface land-lift group p-5 hover:border-brand-200 dark:hover:border-brand-800">
-                <span className="grid size-10 place-items-center rounded-xl bg-brand-50 text-brand-700 transition-colors duration-200 group-hover:bg-brand-700 group-hover:text-white dark:bg-brand-950 dark:text-brand-300">
-                  <m.icon aria-hidden className="size-5" />
-                </span>
-                <h3 className="mt-4 font-semibold text-slate-900 dark:text-white">{m.title}</h3>
-                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{m.text}</p>
-              </div>
-            ))}
+          <Bento />
+        </section>
+
+        {/* A visit, step by step */}
+        <section aria-labelledby="visit" className="relative overflow-hidden bg-(--l-deep) text-white">
+          <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+            <div className="land-drift-slow absolute -top-1/2 right-0 size-[60vmax] rounded-full bg-[radial-gradient(circle,rgb(34_211_238/0.18),transparent_60%)]" />
+          </div>
+          <div className="relative mx-auto grid max-w-6xl gap-12 px-4 py-20 sm:px-6 lg:grid-cols-[1fr_1.1fr] lg:items-center">
+            <div className="land-reveal">
+              <p className="text-xs font-semibold tracking-[0.16em] text-brand-200 uppercase">One system, every step</p>
+              <h2 id="visit" className="land-display mt-3 scroll-mt-28 text-4xl leading-[1.05] text-balance sm:text-5xl">
+                A patient&apos;s visit, without the paper trail
+              </h2>
+              <p className="mt-4 max-w-md leading-relaxed text-pretty text-brand-50/80">
+                Each desk sees the patient arrive on its own screen: the cashier before the doctor if you want payment first, the lab when tests are
+                ordered, the pharmacy when a prescription is written. Nobody carries a card between rooms.
+              </p>
+            </div>
+            <VisitFlow />
           </div>
         </section>
 
         {/* Ways to run it */}
-        <section aria-labelledby="ways" className="scroll-mt-16 border-y border-slate-200 bg-slate-50 py-20 dark:border-slate-800 dark:bg-slate-900/40">
+        <section aria-labelledby="ways" className="scroll-mt-16 border-y border-(--l-line) bg-(--l-paper) py-20">
           <div className="mx-auto max-w-6xl px-4 sm:px-6">
             <Heading id="ways" eyebrow="How it runs" title="On the cloud, or at your clinic">
               The same HMIS and the same price either way. Choose when you ask for it, and change later if you need to.
@@ -297,8 +242,8 @@ export default function WelcomePage() {
               {WAYS.map((w) => (
                 <div key={w.title} className="surface land-lift p-6">
                   <w.icon aria-hidden className="size-6 text-brand-700 dark:text-brand-400" />
-                  <h3 className="mt-4 font-semibold text-slate-900 dark:text-white">{w.title}</h3>
-                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{w.text}</p>
+                  <h3 className="mt-4 font-semibold text-(--l-ink)">{w.title}</h3>
+                  <p className="mt-2 text-sm text-(--l-muted)">{w.text}</p>
                 </div>
               ))}
             </div>
@@ -313,17 +258,17 @@ export default function WelcomePage() {
         <section aria-labelledby="privacy" className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
           <div className="grid gap-10 lg:grid-cols-[1fr_1.2fr] lg:items-center">
             <div className="land-reveal">
-              <p className="text-sm font-semibold text-brand-700 dark:text-brand-400">Your patients&apos; privacy</p>
-              <h2 id="privacy" className="mt-2 scroll-mt-28 text-3xl font-semibold tracking-tight text-balance text-slate-900 dark:text-white">
+              <p className="text-xs font-semibold tracking-[0.16em] text-(--l-accent) uppercase">Your patients&apos; privacy</p>
+              <h2 id="privacy" className="land-display mt-3 scroll-mt-28 text-4xl leading-[1.05] text-balance text-(--l-ink) sm:text-5xl">
                 Medical records deserve better than a shared spreadsheet
               </h2>
-              <p className="mt-3 text-slate-600 dark:text-slate-300">
+              <p className="mt-3 text-(--l-muted)">
                 HMIS is built for health data: each clinic&apos;s records are separate, each person signs in on their own, and the audit log shows who did what.
               </p>
             </div>
             <ul className="land-stagger grid gap-3 sm:grid-cols-2">
               {PRIVACY.map((p) => (
-                <li key={p.text} className="surface land-lift flex gap-3 p-4 text-sm text-slate-700 dark:text-slate-200">
+                <li key={p.text} className="surface land-lift flex gap-3 p-4 text-sm text-(--l-ink-2)">
                   <p.icon aria-hidden className="mt-0.5 size-5 shrink-0 text-emerald-600" />
                   {p.text}
                 </li>
@@ -333,7 +278,7 @@ export default function WelcomePage() {
         </section>
 
         {/* Plans */}
-        <section aria-labelledby="plans" className="scroll-mt-16 border-y border-slate-200 bg-slate-50 py-20 dark:border-slate-800 dark:bg-slate-900/40">
+        <section aria-labelledby="plans" className="scroll-mt-16 border-y border-(--l-line) bg-(--l-paper) py-20">
           <div className="mx-auto max-w-6xl px-4 sm:px-6">
             <Heading id="plans" eyebrow="Plans" title="Priced by the size of your clinic" />
             <Suspense fallback={<Skeleton className="h-96" />}>
@@ -352,8 +297,8 @@ export default function WelcomePage() {
             {STEPS.map((s, i) => (
               <li key={s.title} className="surface land-lift p-5">
                 <span className="relative grid size-8 place-items-center rounded-full bg-brand-700 text-sm font-semibold text-white tabular-nums ring-4 ring-white dark:ring-slate-950">{i + 1}</span>
-                <h3 className="mt-4 font-semibold text-slate-900 dark:text-white">{s.title}</h3>
-                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{s.text}</p>
+                <h3 className="mt-4 font-semibold text-(--l-ink)">{s.title}</h3>
+                <p className="mt-1 text-sm text-(--l-muted)">{s.text}</p>
               </li>
             ))}
           </ol>
@@ -361,17 +306,17 @@ export default function WelcomePage() {
         </section>
 
         {/* Questions */}
-        <section aria-labelledby="questions" className="scroll-mt-16 border-t border-slate-200 py-20 dark:border-slate-800">
+        <section aria-labelledby="questions" className="scroll-mt-16 border-t border-(--l-line) py-20">
           <div className="mx-auto max-w-3xl px-4 sm:px-6">
             <Heading id="questions" eyebrow="Questions" title="What clinics ask us" />
             <div className="land-reveal divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
               {QUESTIONS.map((x) => (
                 <details key={x.q} className="land-faq group px-5 py-4">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-medium text-slate-900 dark:text-white [&::-webkit-details-marker]:hidden">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-medium text-(--l-ink) [&::-webkit-details-marker]:hidden">
                     {x.q}
-                    <span aria-hidden className="grid size-7 shrink-0 place-items-center rounded-full bg-slate-100 text-lg leading-none text-slate-500 transition-[transform,background-color,color] duration-200 group-open:rotate-45 group-open:bg-brand-700 group-open:text-white dark:bg-slate-800">+</span>
+                    <span aria-hidden className="grid size-7 shrink-0 place-items-center rounded-full bg-slate-100 text-lg leading-none text-(--l-muted) transition-[transform,background-color,color] duration-200 group-open:rotate-45 group-open:bg-brand-700 group-open:text-white dark:bg-slate-800">+</span>
                   </summary>
-                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{x.a}</p>
+                  <p className="mt-2 text-sm text-(--l-muted)">{x.a}</p>
                 </details>
               ))}
             </div>
@@ -379,12 +324,12 @@ export default function WelcomePage() {
         </section>
 
         {/* Call to action */}
-        <section className="relative overflow-hidden bg-brand-900 text-white">
+        <section className="relative overflow-hidden bg-(--l-deep) text-white">
           <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
             <div className="land-drift absolute -bottom-2/3 left-1/4 size-[60vmax] rounded-full bg-[radial-gradient(circle,rgb(34_211_238/0.3),transparent_60%)]" />
           </div>
           <div className="land-reveal relative mx-auto max-w-3xl px-4 py-20 text-center sm:px-6">
-            <h2 className="text-3xl font-semibold tracking-tight text-balance">Try HMIS in your clinic</h2>
+            <h2 className="land-display text-4xl leading-[1.05] text-balance sm:text-5xl">Try HMIS in your clinic</h2>
             <p className="mt-3 text-brand-100/80">Ask today; we call you within two working days.</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <Link href="/request" className={`${LIGHT_CTA} ${FOCUS_ON_DARK}`}>
@@ -399,39 +344,6 @@ export default function WelcomePage() {
             </Suspense>
           </div>
         </section>
-      </main>
-
-      <footer className="border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
-        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10 sm:flex-row sm:items-start sm:justify-between sm:px-6">
-          <div>
-            <p className="flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
-              <span className="grid size-7 place-items-center rounded-md bg-brand-700 text-white">
-                <HeartPulse aria-hidden className="size-3.5" />
-              </span>
-              HMIS
-            </p>
-            <p className="mt-2 max-w-xs text-sm text-slate-500">Clinic management for Ethiopia: queue, consultation, lab, pharmacy and billing.</p>
-          </div>
-          <nav aria-label="Footer" className="grid grid-cols-2 gap-x-10 gap-y-2 text-sm">
-            {[
-              ["#plans", "Plans and prices"],
-              ["/request", "Request HMIS"],
-              ["#questions", "Questions"],
-              ["/login", "Sign in"],
-            ].map(([href, label]) =>
-              href.startsWith("#") ? (
-                <a key={href} href={href} className={`rounded text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white ${FOCUS}`}>
-                  {label}
-                </a>
-              ) : (
-                <Link key={href} href={href} className={`rounded text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white ${FOCUS}`}>
-                  {label}
-                </Link>
-              ),
-            )}
-          </nav>
-        </div>
-      </footer>
-    </div>
+    </SiteFrame>
   );
 }

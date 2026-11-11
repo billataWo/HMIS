@@ -75,9 +75,9 @@ export function Plans({ plans, features, trialDays }: { plans: Plan[]; features:
                     {etb(yearly ? p.priceYearly : p.priceMonthly)}
                   </motion.span>
                 </AnimatePresence>
-                <span className="ml-1 text-sm font-normal tracking-normal text-slate-500">/ {yearly ? "year" : "month"}</span>
+                <span className="ml-1 text-sm font-normal tracking-normal text-(--l-muted)">/ {yearly ? "year" : "month"}</span>
               </p>
-              <p className="mt-1 h-5 text-xs text-slate-500">
+              <p className="mt-1 h-5 text-xs text-(--l-muted)">
                 {yearly ? (saving(p) > 0 ? `${etb(saving(p))} less than paying monthly` : "") : `or ${etb(p.priceYearly)} a year`}
               </p>
               <ul className="mt-5 flex-1 space-y-2 text-sm text-slate-700 dark:text-slate-200">

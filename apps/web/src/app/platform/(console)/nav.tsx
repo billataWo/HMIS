@@ -42,7 +42,7 @@ export function ConsoleNav({ owner, waiting, ready }: { owner: boolean; waiting:
         <l.icon aria-hidden className={`size-4 shrink-0 ${current ? "text-brand-700 dark:text-brand-300" : "text-slate-400"}`} />
         {l.label}
         {count > 0 && (
-          <span className="ml-auto rounded-full bg-amber-500 px-1.5 py-0.5 text-[11px] leading-none font-semibold text-white tabular-nums">
+          <span className="ml-auto rounded-full bg-amber-700 px-1.5 py-0.5 text-[11px] leading-none font-semibold text-white tabular-nums">
             {count}
             <span className="sr-only"> waiting</span>
           </span>

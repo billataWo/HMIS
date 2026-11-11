@@ -11,7 +11,8 @@ import { PayerForm, SettlementForm } from "../payer-forms";
 
 function InvoiceTable({ rows }: { rows: StatementInvoice[] }) {
   return (
-    <table className="w-full text-left text-sm">
+    <div className="overflow-x-auto">
+    <table className="w-full min-w-[36rem] text-left text-sm">
       <thead className="text-slate-500">
         <tr>
           <th className="py-2 pr-3">Date</th>
@@ -46,6 +47,7 @@ function InvoiceTable({ rows }: { rows: StatementInvoice[] }) {
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 

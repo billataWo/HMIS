@@ -73,7 +73,7 @@ async function SetupChecklist() {
           <li key={s.title}>
             <Link href={s.href} className="group flex items-start gap-3 rounded-lg py-3 hover:bg-slate-50 dark:hover:bg-slate-900/60">
               {s.done ? (
-                <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-emerald-500 text-white">
+                <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-emerald-600 text-white">
                   <Check aria-hidden className="size-3.5" />
                   <span className="sr-only">Done:</span>
                 </span>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState, useTransition } from "react";
-import { Alert, buttonClass, dangerButtonClass, Field, Input, inputClass, Notice, secondaryButtonClass } from "@/components/ui";
+import { Alert, buttonClass, dangerButtonClass, dangerQuietButtonClass, Field, Input, inputClass, Notice, secondaryButtonClass } from "@/components/ui";
 import type { ClinicDetail, OperatorRow, Plan, PlatformSettings } from "@/lib/platform";
 import {
   addOperator,
@@ -172,11 +172,11 @@ export function ApproveForm({ id, plans, defaults }: { id: string; plans: Plan[]
     );
   }
   return (
-    <form action={action} className="space-y-3">
+    <form action={action} className="@container space-y-3">
       <Result state={state} />
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 @md:grid-cols-2 @2xl:grid-cols-3">
         <Field label="Plan">
-          <select name="planCode" required className={inputClass} defaultValue={defaults.planCode ?? plans[0]?.code}>
+          <select name="planCode" required className={`${inputClass} w-full`} defaultValue={defaults.planCode ?? plans[0]?.code}>
             {plans.map((p) => (
               <option key={p.id} value={p.code}>
                 {p.name}
@@ -186,28 +186,28 @@ export function ApproveForm({ id, plans, defaults }: { id: string; plans: Plan[]
           </select>
         </Field>
         <Field label="Runs on">
-          <select name="deployment" className={inputClass} defaultValue={defaults.deployment}>
+          <select name="deployment" className={`${inputClass} w-full`} defaultValue={defaults.deployment}>
             <option value="CLOUD">HMIS cloud</option>
             <option value="CLINIC_SERVER">Clinic server + cloud</option>
             <option value="ON_PREMISE">Own server only</option>
           </select>
         </Field>
         <Field label="Free trial (days)">
-          <Input name="trialDays" type="number" min={0} max={365} required defaultValue={defaults.trialDays} />
+          <Input name="trialDays" type="number" min={0} max={365} required defaultValue={defaults.trialDays} className="w-full" />
         </Field>
       </div>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 @md:grid-cols-2 @2xl:grid-cols-3">
         <Field label="Clinic name">
-          <Input name="clinicName" required defaultValue={defaults.clinicName} />
+          <Input name="clinicName" required defaultValue={defaults.clinicName} className="w-full" />
         </Field>
         <Field label="First admin">
-          <Input name="adminName" required defaultValue={defaults.adminName} />
+          <Input name="adminName" required defaultValue={defaults.adminName} className="w-full" />
         </Field>
         <Field label="Admin's mobile">
-          <Input name="adminPhone" required defaultValue={defaults.adminPhone} />
+          <Input name="adminPhone" required defaultValue={defaults.adminPhone} className="w-full" inputMode="tel" />
         </Field>
       </div>
-      <button disabled={pending} className={buttonClass}>
+      <button disabled={pending} className={`${buttonClass} w-full @2xl:w-auto`}>
         {pending ? "Creating the clinic…" : "Approve and create the clinic"}
       </button>
     </form>
@@ -221,7 +221,7 @@ export function ReasonForm({ action: run, label, placeholder, danger }: { action
   if (state.ok) return null;
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className={danger ? dangerButtonClass : secondaryButtonClass}>
+      <button type="button" onClick={() => setOpen(true)} className={danger ? dangerQuietButtonClass : secondaryButtonClass}>
         {label}
       </button>
     );
@@ -368,7 +368,7 @@ export function DeleteClinicData({ tenantId, name }: { tenantId: string; name: s
   if (state.ok) return <Notice tone="success">{state.message}</Notice>;
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className={dangerButtonClass}>
+      <button type="button" onClick={() => setOpen(true)} className={dangerQuietButtonClass}>
         Delete the clinic&apos;s records
       </button>
     );
@@ -560,7 +560,7 @@ export function OperatorActions({ op, self }: { op: OperatorRow; self: boolean }
           Reset two-step
         </button>
         {!self && (
-          <button type="button" disabled={pending} onClick={() => run({ active: !op.active })} className={op.active ? dangerButtonClass : buttonClass}>
+          <button type="button" disabled={pending} onClick={() => run({ active: !op.active })} className={op.active ? dangerQuietButtonClass : buttonClass}>
             {op.active ? "Deactivate" : "Reactivate"}
           </button>
         )}

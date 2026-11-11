@@ -56,11 +56,11 @@ async function Report({ params }: { params: Promise<{ id: string }> }) {
         <table className="w-full border-collapse">
           <thead>
             <tr className="border-y border-black text-left">
-              <th className="py-1 pr-2">Test</th>
-              <th className="py-1 pr-2">Result</th>
-              <th className="py-1 pr-2">Flag</th>
-              <th className="py-1 pr-2">Reference</th>
-              <th className="py-1">Sample</th>
+              <th className="py-1 pr-2 text-slate-800">Test</th>
+              <th className="py-1 pr-2 text-slate-800">Result</th>
+              <th className="py-1 pr-2 text-slate-800">Flag</th>
+              <th className="py-1 pr-2 text-slate-800">Reference</th>
+              <th className="py-1 text-slate-800">Sample</th>
             </tr>
           </thead>
           <tbody>

@@ -44,8 +44,8 @@ async function Drug({ params }: { params: Promise<{ id: string }> }) {
           </div>
         }
       />
-      <div className="grid gap-8 lg:grid-cols-[1fr_22rem]">
-        <div className="space-y-8">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="min-w-0 space-y-8">
           <section>
             <h2 className="mb-2 font-medium">Batches</h2>
             {s.batches.length === 0 ? (
@@ -64,7 +64,7 @@ async function Drug({ params }: { params: Promise<{ id: string }> }) {
                   </thead>
                   <tbody>
                     {s.batches.map((b) => (
-                      <tr key={b.id} className={`border-t border-slate-200 dark:border-slate-800 ${b.quantity === 0 ? "text-slate-400" : ""}`}>
+                      <tr key={b.id} className={`border-t border-slate-200 dark:border-slate-800 ${b.quantity === 0 ? "text-slate-500" : ""}`}>
                         <td className="px-4 py-3 font-mono text-xs">{b.batchNo}</td>
                         <td className={`px-3 py-2 ${b.expired && b.quantity > 0 ? "font-medium text-red-700 dark:text-red-400" : ""}`}>
                           {formatDualDate(b.expiryDate)}
@@ -111,7 +111,7 @@ async function Drug({ params }: { params: Promise<{ id: string }> }) {
           </section>
         </div>
 
-        <aside className="space-y-8">
+        <aside className="min-w-0 space-y-8">
           <section className="surface p-4 dark:border-slate-800">
             <h2 className="mb-3 font-medium">Adjust stock</h2>
             <AdjustForm batches={s.batches} unit={d.unit} />

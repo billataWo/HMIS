@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { moveVisit } from "@/app/actions";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { CheckInForm } from "@/components/check-in-form";
+import { ConfirmCancel } from "@/components/confirm-cancel";
 import { Flash } from "@/components/flash";
 import { StaggerItem, StaggerList } from "@/components/enter";
 import { StatusBadge } from "@/components/status-badge";
@@ -89,7 +90,7 @@ function VisitRow({ v, role, returnTo, prepayment, lang }: { v: QueueVisit; role
           </span>
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-500">
-          <StatusBadge status={v.status} lang={lang} />
+          {v.status !== "WAITING" && <StatusBadge status={v.status} lang={lang} />}
           {v.carriedOver && <Badge tone="warning">Open since {formatDualDate(v.checkedInAt)}</Badge>}
           {unpaid && <Badge tone="danger">{tr(lang, "Awaiting payment")}</Badge>}
           {(v.status === "AWAITING_LAB" || v.status === "AWAITING_PHARMACY") && v.labReady && (
@@ -130,9 +131,13 @@ function VisitRow({ v, role, returnTo, prepayment, lang }: { v: QueueVisit; role
           </form>
         ))}
         {canCancel && (
-          <form action={moveVisit.bind(null, v.id, "CANCELLED", returnTo)}>
-            <button className={`${secondaryButtonClass} ${small} text-red-700 hover:text-red-800 dark:text-red-400`}>{tr(lang, "Cancel")}</button>
-          </form>
+          <ConfirmCancel
+            action={moveVisit.bind(null, v.id, "CANCELLED", returnTo)}
+            label={tr(lang, "Cancel")}
+            question={tr(lang, "Cancel this visit?")}
+            yes={tr(lang, "Yes, cancel")}
+            no={tr(lang, "Keep")}
+          />
         )}
       </div>
     </StaggerItem>
@@ -269,7 +274,19 @@ async function Queue({ searchParams }: { searchParams: Promise<Search> }) {
       <AutoRefresh seconds={15} />
       <Flash params={params} />
 
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <p className="mb-5 flex flex-wrap gap-x-3 gap-y-1 text-sm text-slate-600 sm:hidden dark:text-slate-300">
+        <span>
+          <strong className="text-slate-900 tabular-nums dark:text-white">{waiting.length}</strong> {tr(lang, "Waiting").toLowerCase()}
+          {longest && ` · longest ${formatDuration(longest)}`}
+        </span>
+        <span>
+          <strong className="text-slate-900 tabular-nums dark:text-white">{active.length}</strong> {tr(lang, "In progress").toLowerCase()}
+        </span>
+        <span>
+          <strong className="text-slate-900 tabular-nums dark:text-white">{done.filter((v) => v.status === "COMPLETED").length}</strong> {tr(lang, "Finished").toLowerCase()}
+        </span>
+      </p>
+      <div className="mb-6 hidden grid-cols-2 gap-3 sm:grid lg:grid-cols-4">
         <StatCard
           label={tr(lang, "Patients today")}
           value={visits.filter((v) => !v.carriedOver).length}

@@ -50,7 +50,7 @@ async function List({ searchParams }: { searchParams: Promise<{ q?: string; stat
                 aria-current={on ? "page" : undefined}
                 className={`flex min-h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium ring-1 transition-colors ring-inset ${
                   on
-                    ? "bg-brand-700 text-white ring-brand-700 dark:bg-brand-600 dark:ring-brand-600"
+                    ? "bg-brand-700 text-white ring-brand-700 dark:bg-brand-700 dark:ring-brand-700"
                     : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700 dark:hover:bg-slate-800"
                 }`}
               >
@@ -135,7 +135,7 @@ async function List({ searchParams }: { searchParams: Promise<{ q?: string; stat
                           <p className="text-xs text-slate-500">{DEPLOYMENT_LABEL[c.subscription.deployment]}</p>
                         </>
                       ) : (
-                        <span className="text-slate-400">Not billed</span>
+                        <span className="text-slate-500">Not billed</span>
                       )}
                     </td>
                     <td className="px-3 py-3 align-top">{c.subscription && <StateBadge state={c.subscription.state} />}</td>
@@ -150,7 +150,7 @@ async function List({ searchParams }: { searchParams: Promise<{ q?: string; stat
                     <td className="px-3 py-3 text-right align-top tabular-nums">{c.staff}</td>
                     <td className="px-3 py-3 text-right align-top tabular-nums">{c.patients}</td>
                     <td className="px-3 py-3 align-top whitespace-nowrap text-slate-600 dark:text-slate-300">{c.lastActivityAt ? formatAgo(c.lastActivityAt) : "Never"}</td>
-                    <td className="px-3 py-3 align-top text-slate-400">
+                    <td className="px-3 py-3 align-top text-slate-500">
                       <ChevronRight aria-hidden className="size-4" />
                     </td>
                   </tr>

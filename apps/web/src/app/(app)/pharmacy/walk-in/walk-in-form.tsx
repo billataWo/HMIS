@@ -48,7 +48,7 @@ export function WalkInForm() {
             <p className="flex items-center gap-2 text-sm">
               <span className="font-medium">{fullName(patient)}</span>
               <span className="text-slate-500">{patient.mrn}</span>
-              <button type="button" onClick={() => setPatient(null)} aria-label="Remove customer" className="rounded p-1 text-slate-400 hover:text-red-700">
+              <button type="button" onClick={() => setPatient(null)} aria-label="Remove customer" className="rounded p-1 text-slate-500 hover:text-red-700">
                 <X aria-hidden className="size-4" />
               </button>
             </p>
@@ -137,7 +137,7 @@ export function WalkInForm() {
                   </td>
                   <td className="py-2 pr-3 text-right tabular-nums">{etb(Number(l.drug.sellPrice) * l.qty)}</td>
                   <td className="py-2 text-right">
-                    <button type="button" onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))} aria-label={`Remove ${l.drug.genericName}`} className="rounded p-1 text-slate-400 hover:text-red-700">
+                    <button type="button" onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))} aria-label={`Remove ${l.drug.genericName}`} className="rounded p-1 text-slate-500 hover:text-red-700">
                       <X aria-hidden className="size-4" />
                     </button>
                   </td>

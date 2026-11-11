@@ -6,6 +6,7 @@ import { cancelLabOrder, orderLabTests } from "@/app/actions";
 import { LAB_STATUS, LabValue, rangeText } from "@/components/lab-result";
 import { Alert, buttonClass } from "@/components/ui";
 import type { LabOrder, LabTest } from "@/lib/api";
+import { ConfirmCancel } from "@/components/confirm-cancel";
 
 export function LabPanel({ visitId, orders, tests, editable }: { visitId: string; orders: LabOrder[]; tests: LabTest[]; editable: boolean }) {
   const [picked, setPicked] = useState<string[]>([]);
@@ -54,9 +55,7 @@ export function LabPanel({ visitId, orders, tests, editable }: { visitId: string
                 )}
               </span>
               {editable && o.status === "ORDERED" && (
-                <button type="button" disabled={pending} onClick={() => start(() => cancelLabOrder(o.id))} className="text-xs text-red-700 hover:underline dark:text-red-400">
-                  Cancel
-                </button>
+                <ConfirmCancel disabled={pending} onConfirm={() => start(() => cancelLabOrder(o.id))} question="Cancel this test?" />
               )}
             </li>
           ))}

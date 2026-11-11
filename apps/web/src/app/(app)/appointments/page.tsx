@@ -7,6 +7,7 @@ import { Flash } from "@/components/flash";
 import { Badge, type BadgeTone, EmptyState, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { api, type Appointment, type Doctor, type Me, type Role, type Service } from "@/lib/api";
 import { clinicToday, formatDualDate, formatTime, fullName, shiftDay } from "@/lib/format";
+import { ConfirmCancel } from "@/components/confirm-cancel";
 
 type Search = { day?: string; error?: string; booked?: string };
 
@@ -97,9 +98,7 @@ async function Day({ searchParams }: { searchParams: Promise<Search> }) {
                             <button className={`${secondaryButtonClass} px-3 py-1 text-xs`}>No-show</button>
                           </form>
                         )}
-                        <form action={setAppointmentStatus.bind(null, a.id, "CANCELLED", returnTo)}>
-                          <button className={`${secondaryButtonClass} px-3 py-1 text-xs text-red-700 dark:text-red-400`}>Cancel</button>
-                        </form>
+                        <ConfirmCancel action={setAppointmentStatus.bind(null, a.id, "CANCELLED", returnTo)} question="Cancel this appointment?" />
                       </div>
                     )}
                   </div>

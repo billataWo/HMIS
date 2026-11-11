@@ -23,7 +23,7 @@ export default function AppError({ error, retry }: { error: unknown; retry: () =
         <RotateCw aria-hidden />
         Try again
       </button>
-      {digest && <p className="mt-4 font-mono text-xs text-slate-400">Error reference {digest}</p>}
+      {digest && <p className="mt-4 font-mono text-xs text-slate-500">Error reference {digest}</p>}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { MonitorPlay } from "lucide-react";
 import { useActionState } from "react";
 import { Alert, Badge, buttonClass, Card, Field, Input, secondaryButtonClass } from "@/components/ui";
 import { addScreen, type PairingState, removeScreen, repairScreen } from "./screen-actions";
+import { ConfirmCancel } from "@/components/confirm-cancel";
 
 export type Screen = { id: string; name: string; paired: boolean; waitingForCode: boolean; lastSeenAt: string | null; revokedAt: string | null };
 
@@ -64,9 +65,7 @@ export function ScreenRow({ screen }: { screen: Screen }) {
           </button>
         </form>
         {!removed && (
-          <form action={removeScreen.bind(null, screen.id)}>
-            <button className={`${secondaryButtonClass} btn-size`}>Remove</button>
-          </form>
+          <ConfirmCancel action={removeScreen.bind(null, screen.id)} label="Remove" question="Remove this screen? It stops showing the queue." yes="Yes, remove" />
         )}
       </div>
       {state.error && <Alert>{state.error}</Alert>}

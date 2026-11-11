@@ -16,7 +16,7 @@ function Status({ state, pending }: { state: FormState; pending: boolean }) {
 export function ServiceRow({ s }: { s?: CatalogService }) {
   const [state, action, pending] = useActionState<FormState, FormData>(saveService, {});
   return (
-    <form action={action} className="grid grid-cols-[6rem_1fr_7rem_9rem_auto_auto] items-center gap-2 py-2 text-sm">
+    <form action={action} className="grid grid-cols-2 items-center gap-2 py-2 text-sm sm:grid-cols-[6rem_1fr_7rem_9rem_auto_auto]">
       {s ? (
         <>
           <input type="hidden" name="id" value={s.id} />
@@ -67,7 +67,7 @@ export function LabTestRow({ t }: { t?: CatalogLabTest }) {
           defaultValue={t?.resultOptions.join(", ")}
           placeholder="Answer choices, comma-separated (for tests without a numeric range)"
           aria-label="Answer choices"
-          className={`${inputClass} min-w-64 flex-1`}
+          className={`${inputClass} w-full min-w-0 flex-1 sm:min-w-64`}
         />
         <input name="loincCode" defaultValue={t?.loincCode ?? ""} placeholder="LOINC" aria-label="LOINC code" className={`${inputClass} w-28`} />
         <PanelComponents t={t} />

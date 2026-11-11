@@ -115,7 +115,7 @@ function NavLinks({ me, lang, layoutGroup, onNavigate }: { me: Me; lang: Lang; l
         if (items.length === 0) return null;
         return (
           <div key={g.title ?? gi}>
-            {g.title && <p className="mb-1.5 px-3 text-[11px] font-semibold tracking-wider text-slate-400 uppercase">{tr(lang, g.title)}</p>}
+            {g.title && <p className="mb-1.5 px-3 text-[11px] font-semibold tracking-wider text-slate-500 uppercase">{tr(lang, g.title)}</p>}
             <ul className="space-y-0.5">
               {items.map((item) => {
                 const active = item.href === current;
@@ -144,7 +144,7 @@ function NavLinks({ me, lang, layoutGroup, onNavigate }: { me: Me; lang: Lang; l
                         className={`relative size-4.5 shrink-0 ${active ? "text-brand-700 dark:text-brand-300" : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300"}`}
                       />
                       <span className="relative flex-1 truncate">{lang === "am" ? item.labelAm : item.label}</span>
-                      <span className="relative text-xs font-normal text-slate-400">{lang === "am" ? item.label : item.labelAm}</span>
+                      <span className="relative text-xs font-normal text-slate-500">{lang === "am" ? item.label : item.labelAm}</span>
                     </Link>
                   </li>
                 );
@@ -170,7 +170,7 @@ function LanguageSwitch({ lang }: { lang: Lang }) {
   );
   return (
     <div className="mb-2 flex items-center justify-between px-1" aria-label="Language">
-      <span className="text-xs text-slate-400">{tr(lang, "Language")}</span>
+      <span className="text-xs text-slate-500">{tr(lang, "Language")}</span>
       <div className="flex gap-1">
         {option("en", "English")}
         {option("am", "አማርኛ")}

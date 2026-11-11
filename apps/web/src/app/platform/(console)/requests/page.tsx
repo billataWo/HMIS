@@ -38,7 +38,7 @@ async function Requests({ searchParams }: { searchParams: Promise<{ status?: str
               {t.label}
               <span
                 className={`rounded-full px-1.5 py-0.5 text-[11px] leading-none tabular-nums ${
-                  t.value === "PENDING" && count(t.value) > 0 ? "bg-amber-500 text-white" : "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+                  t.value === "PENDING" && count(t.value) > 0 ? "bg-amber-700 text-white" : "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
                 }`}
               >
                 {count(t.value)}
@@ -136,7 +136,7 @@ async function Requests({ searchParams }: { searchParams: Promise<{ status?: str
                     <td className="px-3 py-3 align-top">
                       <Badge tone={STATUS[r.status].tone}>{STATUS[r.status].label}</Badge>
                     </td>
-                    <td className="px-3 py-3 align-top text-slate-400">
+                    <td className="px-3 py-3 align-top text-slate-500">
                       <ChevronRight aria-hidden className="size-4" />
                     </td>
                   </tr>

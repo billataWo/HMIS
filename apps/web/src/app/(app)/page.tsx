@@ -99,7 +99,7 @@ async function HomeContent() {
                 <ArrowRight aria-hidden className="size-4 -translate-x-1 text-slate-300 opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:text-brand-600 group-hover:opacity-100" />
               </div>
               <h3 className="mt-4 font-semibold text-slate-900 dark:text-white">
-                {lang === "am" ? m.nameAm : m.name} <span className="text-sm font-normal text-slate-400">{lang === "am" ? m.name : m.nameAm}</span>
+                {lang === "am" ? m.nameAm : m.name} <span className="text-sm font-normal text-slate-500">{lang === "am" ? m.name : m.nameAm}</span>
               </h3>
               <p className="mt-1 text-sm leading-relaxed text-slate-500 dark:text-slate-400">{m.desc}</p>
             </Link>

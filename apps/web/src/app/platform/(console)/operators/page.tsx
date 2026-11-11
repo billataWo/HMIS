@@ -14,9 +14,18 @@ async function Content() {
         <ul className="-my-3 divide-y divide-slate-100 dark:divide-slate-800">
           {ops.map((o) => (
             <li key={o.id} className="space-y-2 py-3">
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="font-medium text-slate-900 dark:text-white">{o.fullName}</span>
-                <span className="text-slate-500">{o.email}</span>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+                <span aria-hidden className="grid size-9 place-items-center rounded-full bg-brand-100 text-xs font-semibold text-brand-800 dark:bg-brand-900 dark:text-brand-100">
+                  {o.fullName.split(/s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("")}
+                </span>
+                <span className="min-w-0">
+                  <span className="block font-medium text-slate-900 dark:text-white">
+                    {o.fullName}
+                    {o.id === me.id && <span className="font-normal text-slate-500"> (you)</span>}
+                  </span>
+                  <span className="block truncate text-slate-500">{o.email}</span>
+                </span>
+                <Badge tone={o.role === "OWNER" ? "violet" : o.role === "BILLING" ? "info" : "neutral"}>{o.role.charAt(0) + o.role.slice(1).toLowerCase()}</Badge>
                 {!o.active && <Badge tone="neutral">inactive</Badge>}
                 {!o.totpEnabledAt && <Badge tone="warning">two-step not set up</Badge>}
                 <span className="ml-auto text-xs text-slate-500">last sign-in {o.lastSignInAt ? formatAgo(o.lastSignInAt) : "never"}</span>
@@ -36,7 +45,7 @@ async function Content() {
 export default function OperatorsPage() {
   return (
     <>
-      <PageHeader title="Operators" subtitle="the HMIS team's access to this console" />
+      <PageHeader title="Operators" subtitle="The HMIS team's access to this console: owners do everything, billing handles money, support handles requests." />
       <Suspense fallback={<Skeleton className="h-64" />}>
         <Content />
       </Suspense>

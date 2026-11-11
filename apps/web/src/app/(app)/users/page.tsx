@@ -35,7 +35,7 @@ async function Staff() {
           </thead>
           <tbody>
             {users.map((u) => (
-              <tr key={u.id} className={`border-t border-slate-200 dark:border-slate-800 ${u.active ? "" : "text-slate-400"}`}>
+              <tr key={u.id} className={`border-t border-slate-200 dark:border-slate-800 ${u.active ? "" : "text-slate-500"}`}>
                 <td className="px-4 py-3">{u.fullName}</td>
                 <td className="px-4 py-3">{ROLE_LABELS[u.role]}</td>
                 <td className="px-4 py-3">{u.phone}</td>

@@ -36,7 +36,7 @@ async function Content() {
 export default function PlansPage() {
   return (
     <>
-      <PageHeader title="Plans" subtitle="prices, staff limits and modules" />
+      <PageHeader title="Plans" subtitle="Prices, staff limits and modules. The active plans are shown on the front page." />
       <Suspense fallback={<Skeleton className="h-96" />}>
         <Content />
       </Suspense>

@@ -12,11 +12,14 @@ export const inputClass =
 const buttonBase =
   "btn-size inline-flex select-none items-center justify-center gap-2 rounded-lg font-medium whitespace-nowrap transition-[background-color,border-color,color,box-shadow,transform] duration-150 ease-out active:scale-[0.98] disabled:pointer-events-none disabled:opacity-55 [&_svg]:size-4 [&_svg]:shrink-0";
 
-export const buttonClass = `${buttonBase} bg-brand-700 text-white shadow-sm shadow-brand-900/10 hover:bg-brand-800 dark:bg-brand-600 dark:hover:bg-brand-500`;
+export const buttonClass = `${buttonBase} bg-brand-700 text-white shadow-sm shadow-brand-900/10 hover:bg-brand-800 dark:bg-brand-700 dark:hover:bg-brand-800`;
 
 export const secondaryButtonClass = `${buttonBase} border border-slate-300 bg-white text-slate-700 shadow-xs hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-800`;
 
 export const dangerButtonClass = `${buttonBase} bg-red-600 text-white shadow-sm hover:bg-red-700`;
+
+/** A destructive action's first step (it opens a confirmation): red, but not the loudest button. */
+export const dangerQuietButtonClass = `${buttonBase} border border-red-300 bg-white text-red-700 shadow-xs hover:border-red-400 hover:bg-red-50 dark:border-red-900 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-950/50`;
 
 export const ghostButtonClass = `${buttonBase} text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white`;
 
@@ -24,7 +27,7 @@ export const ghostButtonClass = `${buttonBase} text-slate-600 hover:bg-slate-100
 export function pillClass(on: boolean) {
   return `rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors duration-150 ${
     on
-      ? "bg-brand-700 text-white shadow-sm dark:bg-brand-600"
+      ? "bg-brand-700 text-white shadow-sm dark:bg-brand-700"
       : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50 hover:text-slate-900 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-800"
   }`;
 }

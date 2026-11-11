@@ -55,7 +55,7 @@ async function InvoiceView({ params }: { params: Promise<{ id: string }> }) {
             <table className="w-full text-sm">
               <tbody>
                 {inv.charges.map((c) => (
-                  <tr key={c.id} className={`border-t border-slate-100 align-top dark:border-slate-800 ${c.voidedAt ? "text-slate-400" : ""}`}>
+                  <tr key={c.id} className={`border-t border-slate-100 align-top dark:border-slate-800 ${c.voidedAt ? "text-slate-500" : ""}`}>
                     <td className="py-1.5">
                       {c.voidedAt ? <s>{c.description}</s> : c.description}
                       {c.voidedAt && <span className="block text-xs">Removed and refunded: {c.voidReason}</span>}

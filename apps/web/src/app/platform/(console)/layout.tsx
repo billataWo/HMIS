@@ -58,8 +58,8 @@ export default function ConsoleLayout({ children }: { children: ReactNode }) {
               HMIS team only
             </span>
           </Link>
-          <div className="ml-auto flex items-center gap-1 text-sm">
-            <Suspense fallback={<span className="h-8 w-28 rounded-lg bg-slate-100 dark:bg-slate-800" />}>
+          <div className="ml-auto flex items-center justify-end gap-1 text-sm sm:min-w-56">
+            <Suspense fallback={<span aria-hidden className="h-10 w-10 rounded-lg sm:w-44" />}>
               <Operator />
             </Suspense>
             <a

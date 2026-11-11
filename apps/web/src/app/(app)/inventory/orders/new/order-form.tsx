@@ -119,7 +119,7 @@ export function OrderForm({ suppliers, lowStock }: { suppliers: Supplier[]; lowS
                   <Input name={`cost_${l.id}`} type="number" min={0} step="0.01" defaultValue={state.values?.[`cost_${l.id}`]} aria-label={`Unit cost of ${l.label}`} className="w-28" />
                 </td>
                 <td className="px-2 py-2 text-right">
-                  <button type="button" onClick={() => setLines((ls) => ls.filter((x) => x.id !== l.id))} aria-label={`Remove ${l.label}`} className="rounded p-1 text-slate-400 hover:text-red-700">
+                  <button type="button" onClick={() => setLines((ls) => ls.filter((x) => x.id !== l.id))} aria-label={`Remove ${l.label}`} className="rounded p-1 text-slate-500 hover:text-red-700">
                     <X aria-hidden className="size-4" />
                   </button>
                 </td>

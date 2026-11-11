@@ -237,7 +237,7 @@ function Outbox({ pending, failed }: { pending: Op[]; failed: Op[] }) {
           <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-sm text-slate-600 dark:text-slate-400">
             {pending.map((op) => (
               <li key={op.id}>
-                <span className="mr-2 font-mono text-xs text-slate-400">{time(op.at)}</span>
+                <span className="mr-2 font-mono text-xs text-slate-500">{time(op.at)}</span>
                 {op.label}
               </li>
             ))}
@@ -272,7 +272,7 @@ function Failed({ op }: { op: Op }) {
   return (
     <li className="py-2.5 text-sm">
       <p className="font-medium text-slate-900 dark:text-white">
-        <span className="mr-2 font-mono text-xs text-slate-400">{time(op.at)}</span>
+        <span className="mr-2 font-mono text-xs text-slate-500">{time(op.at)}</span>
         {op.label}
       </p>
       <p className="mt-0.5 text-red-700 dark:text-red-300">{op.error}</p>

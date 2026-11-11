@@ -1,6 +1,7 @@
+import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
-import { Badge, Card, EmptyState, Notice, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
+import { Badge, Card, EmptyState, Notice, Skeleton } from "@/components/ui";
 import { clinicToday, etb } from "@/lib/format";
 import { type ClinicDetail, DEPLOYMENT_LABEL, type Plan, platformApi } from "@/lib/platform";
 import { ClinicActions, DeleteClinicData, DownloadLicence, InvoiceActions, IssueInvoice, PaymentReview, SubscriptionForm } from "../../../forms";
@@ -17,15 +18,37 @@ async function Content({ params }: { params: Promise<{ id: string }> }) {
   const paidOn = (invoiceId: string) => c.payments.filter((p) => p.invoiceId === invoiceId && p.status === "CONFIRMED").reduce((sum, p) => sum + Number(p.amount), 0);
   return (
     <div className="space-y-6">
-      <PageHeader
-        title={c.tenant.name}
-        subtitle={[c.tenant.nameAm, c.tenant.address, `since ${date(c.tenant.createdAt)}`].filter(Boolean).join(" · ")}
-        actions={
-          <Link href="/platform/clinics" className={secondaryButtonClass}>
-            All clinics
+      <div>
+        <nav aria-label="Breadcrumb" className="mb-2 flex items-center gap-1 text-sm text-slate-500">
+          <Link href="/platform/clinics" className="hover:text-slate-900 hover:underline dark:hover:text-white">
+            Clinics
           </Link>
-        }
-      />
+          <ChevronRight aria-hidden className="size-4" />
+          <span className="truncate">{c.tenant.name}</span>
+        </nav>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">{c.tenant.name}</h1>
+          {s && <StateBadge state={s.state} />}
+        </div>
+        <p className="mt-1 text-sm text-slate-500">{[c.tenant.nameAm, c.tenant.address, `with HMIS since ${date(c.tenant.createdAt)}`].filter(Boolean).join(" · ")}</p>
+        <dl className="mt-5 grid grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-white sm:grid-cols-3 lg:grid-cols-5 dark:border-slate-800 dark:bg-slate-900">
+          {(
+            [
+              ["Plan", s ? s.plan.name : "Not billed", s ? DEPLOYMENT_LABEL[s.deployment] : null],
+              [s?.status === "TRIAL" ? "Trial ends" : "Paid until", s?.endsAt ? date(s.endsAt) : "No end date", s?.daysLeft != null && s.daysLeft >= 0 ? `${s.daysLeft} day${s.daysLeft === 1 ? "" : "s"} left` : null],
+              ["Staff", String(c.counts.staff), null],
+              ["Patients", String(c.counts.patients), null],
+              ["Visits", String(c.counts.visits), null],
+            ] as const
+          ).map(([label, value, hint]) => (
+            <div key={label} className="border-slate-100 p-4 not-last:border-r dark:border-slate-800">
+              <dt className="text-xs font-medium text-slate-500">{label}</dt>
+              <dd className="mt-1 text-lg font-semibold text-slate-900 tabular-nums dark:text-white">{value}</dd>
+              {hint && <dd className={`text-xs ${label !== "Plan" && s?.daysLeft != null && s.daysLeft <= 7 ? "font-medium text-amber-700 dark:text-amber-300" : "text-slate-500"}`}>{hint}</dd>}
+            </div>
+          ))}
+        </dl>
+      </div>
 
       <div className="grid items-start gap-6 lg:grid-cols-[1fr_20rem]">
         <Card
@@ -66,27 +89,14 @@ async function Content({ params }: { params: Promise<{ id: string }> }) {
         </Card>
 
         <div className="space-y-6">
-          <Card title="Use">
-            <dl className="grid grid-cols-3 gap-3 text-center text-sm">
-              {(
-                [
-                  ["Staff", c.counts.staff],
-                  ["Patients", c.counts.patients],
-                  ["Visits", c.counts.visits],
-                ] as const
-              ).map(([label, n]) => (
-                <div key={label}>
-                  <dd className="text-xl font-semibold text-slate-900 tabular-nums dark:text-white">{n}</dd>
-                  <dt className="text-slate-500">{label}</dt>
-                </div>
-              ))}
-            </dl>
-          </Card>
           <Card title="Admins">
             <ul className="space-y-2 text-sm">
               {c.admins.map((a) => (
                 <li key={a.id}>
-                  {a.fullName} <span className="text-slate-500">{a.phone}</span>
+                  <span className="font-medium">{a.fullName}</span>{" "}
+                  <a href={`tel:${a.phone}`} className="text-brand-700 tabular-nums hover:underline dark:text-brand-400">
+                    {a.phone}
+                  </a>
                   <p className="text-xs text-slate-500">
                     {a.active ? "active" : "inactive"} · two-step {a.totpEnabledAt ? "on" : "not set up yet"}
                   </p>

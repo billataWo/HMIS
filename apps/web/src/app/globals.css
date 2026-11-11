@@ -19,6 +19,10 @@
   --color-brand-900: #164e63;
   --color-brand-950: #083344;
 
+  /* Muted text: a touch darker than Tailwind's slate-500 (4.5:1 was missed on the off-white
+     canvas and on slate-50). Passes WCAG AA on every light surface (5.0-5.5:1). */
+  --color-slate-500: #5b6a7f;
+
   --font-sans: var(--font-inter), var(--font-ethiopic), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-mono-face), ui-monospace, SFMono-Regular, monospace;
 
@@ -120,6 +124,12 @@
     text-transform: uppercase;
     color: var(--color-slate-500);
     white-space: nowrap;
+  }
+  /* Dark surfaces: slate-500 is too dim for header text (3.2:1); slate-400 reads at 5.7:1 or more. */
+  @media (prefers-color-scheme: dark) {
+    thead th {
+      color: var(--color-slate-400);
+    }
   }
   tbody tr {
     transition: background-color 120ms ease-out;
@@ -267,6 +277,92 @@
   }
 }
 
+/*
+ * Front page tokens: semantic names, so light and dark (and a re-brand) change in one place.
+ * Ink on paper with one accent; the deep teal is the brand's darkest step, used for the hero.
+ */
+.land {
+  --l-canvas: #f6f7f4;
+  --l-paper: #ffffff;
+  --l-ink: #0b1220;
+  --l-ink-2: #334155;
+  --l-muted: #5b6676;
+  --l-line: #e3e6e1;
+  --l-accent: var(--color-brand-700);
+  --l-accent-soft: #e4f3f5;
+  --l-ok: #0f7a52;
+  --l-warn: #a35a00;
+  --l-deep: #082f38;
+  --l-shadow: 0 1px 1px rgb(11 18 32 / 0.04), 0 8px 24px -12px rgb(11 18 32 / 0.18);
+}
+@media (prefers-color-scheme: dark) {
+  .land {
+    --l-canvas: #0a0f17;
+    --l-paper: #101826;
+    --l-ink: #e8edf3;
+    --l-ink-2: #c3ccd8;
+    --l-muted: #93a0b2;
+    --l-line: #1e2a3a;
+    --l-accent: var(--color-brand-400);
+    --l-accent-soft: #0b2a33;
+    --l-ok: #4ade80;
+    --l-warn: #fbbf24;
+    --l-deep: #061f27;
+    --l-shadow: 0 1px 1px rgb(0 0 0 / 0.3), 0 10px 30px -14px rgb(0 0 0 / 0.6);
+  }
+}
+
+/*
+ * The hero's product scene: the queue screen in 3D, with notes floating in front at different
+ * depths. The pointer tilts it (product-stage.tsx writes --rx and --ry); at rest it sits at a
+ * three-quarter angle. Only transforms change, so it never causes layout shift.
+ */
+.stage {
+  perspective: 1600px;
+  perspective-origin: 50% 40%;
+}
+.stage-tilt {
+  transform-style: preserve-3d;
+  transform: rotateX(var(--rx, 7deg)) rotateY(var(--ry, -14deg)) rotateZ(1deg);
+  will-change: transform;
+}
+.stage-layer {
+  transform: translateZ(var(--z, 0px));
+  transform-style: preserve-3d;
+}
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes stage-bob {
+    50% {
+      transform: translate3d(0, -6px, 0);
+    }
+  }
+  .stage-bob {
+    animation: stage-bob 6s ease-in-out infinite;
+  }
+  .stage-bob-2 {
+    animation: stage-bob 7.5s ease-in-out -2s infinite;
+  }
+  .stage-bob-3 {
+    animation: stage-bob 9s ease-in-out -4s infinite;
+  }
+}
+/* Narrow screens: a flatter angle, so the screen stays readable. */
+@media (max-width: 640px) {
+  .stage-tilt {
+    transform: rotateX(4deg) rotateY(-6deg);
+  }
+}
+
+/*
+ * Dark mode: muted text in slate-500 is too dim on the dark surfaces (about 3.8:1). Wherever an
+ * element does not choose its own dark colour, it reads in slate-400 (5.7-7.3:1).
+ */
+@media (prefers-color-scheme: dark) {
+  .text-slate-500:not([class*="dark:text-"]) {
+    color: var(--color-slate-400);
+  }
+}
+
 /* Loading placeholders: a soft sweep instead of a blink. */
 @keyframes shimmer {
   from {
@@ -305,4 +401,11 @@
   .surface {
     box-shadow: none;
   }
+}
+
+/* Front page headlines: the display face (welcome/page.tsx loads it), Georgia until it arrives. */
+.land-display {
+  font-family: var(--font-display), Georgia, "Times New Roman", serif;
+  font-weight: 400;
+  font-feature-settings: "liga", "kern";
 }

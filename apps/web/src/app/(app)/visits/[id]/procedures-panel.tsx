@@ -43,7 +43,7 @@ export function ProceduresPanel({ visitId, items, procedures, editable }: { visi
                       disabled={removing}
                       onClick={() => start(() => removeProcedure(visitId, c.id))}
                       aria-label={`Remove ${c.description}`}
-                      className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-red-700 dark:hover:bg-slate-800"
+                      className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-red-700 dark:hover:bg-slate-800"
                     >
                       <X aria-hidden className="size-4" />
                     </button>

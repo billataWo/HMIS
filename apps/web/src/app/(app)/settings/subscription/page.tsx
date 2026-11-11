@@ -30,7 +30,7 @@ function Status({ s }: { s: Extract<ClinicSubscription, { managed: true }> & { p
   const price = !s.plan.priceMonthly ? null : s.billingCycle === "YEARLY" ? `${etb(s.plan.priceYearly!)} a year` : `${etb(s.plan.priceMonthly)} a month`;
   return (
     <Card title="Your plan" actions={<Badge tone={st.tone} dot>{st.label}</Badge>}>
-      <dl className="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
+      <dl className="grid grid-cols-[minmax(0,1fr)] gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
         <div>
           <dt className="text-slate-500">Plan</dt>
           <dd className="font-medium text-slate-900 dark:text-white">
@@ -57,13 +57,15 @@ function Status({ s }: { s: Extract<ClinicSubscription, { managed: true }> & { p
         </div>
         <div className="sm:col-span-2">
           <dt className="text-slate-500">Included</dt>
-          <dd className="mt-1 flex flex-wrap gap-2">
-            <Badge tone="brand">Registration, queue, consultation, lab, pharmacy, billing, reports</Badge>
-            {s.plan.features.map((f) => (
-              <Badge key={f.code} tone="brand">
-                <Check aria-hidden className="size-3" /> {f.name}
-              </Badge>
-            ))}
+          <dd className="mt-1.5">
+            <ul className="grid gap-x-6 gap-y-1.5 text-slate-700 sm:grid-cols-2 dark:text-slate-200">
+              {["Registration, queue and consultation", "Laboratory and pharmacy", "Billing and reports", ...s.plan.features.map((f) => f.name)].map((name) => (
+                <li key={name} className="flex gap-2">
+                  <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+                  {name}
+                </li>
+              ))}
+            </ul>
           </dd>
         </div>
       </dl>

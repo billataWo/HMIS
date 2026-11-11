@@ -29,7 +29,7 @@ async function Suppliers() {
             </thead>
             <tbody>
               {suppliers.map((s) => (
-                <tr key={s.id} className={`border-t border-slate-200 dark:border-slate-800 ${s.active ? "" : "text-slate-400"}`}>
+                <tr key={s.id} className={`border-t border-slate-200 dark:border-slate-800 ${s.active ? "" : "text-slate-500"}`}>
                   <td className="px-4 py-3">
                     {s.name}
                     {s.contactPerson && <span className="block text-xs text-slate-500">{s.contactPerson}</span>}

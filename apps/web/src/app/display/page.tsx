@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { CallPop } from "@/components/motion";
 import { API_URL } from "@/lib/api";
-import { formatDualDate } from "@/lib/format";
+import { formatDualDate, formatTime } from "@/lib/format";
 import { PairForm } from "./pair-form";
 
 export const metadata: Metadata = { title: "Queue display" };
@@ -43,13 +43,27 @@ async function Screen() {
           <p className="text-3xl font-semibold">{clinic.name}</p>
           {clinic.nameAm && <p className="text-xl text-slate-400">{clinic.nameAm}</p>}
         </div>
-        <p className="text-xl text-slate-400">{formatDualDate(`${day}T12:00:00+03:00`)}</p>
+        <div className="text-right">
+          <p className="text-4xl font-semibold tabular-nums">{formatTime(new Date().toISOString())}</p>
+          <p className="text-xl text-slate-400">{formatDualDate(`${day}T12:00:00+03:00`)}</p>
+        </div>
       </header>
 
+      {serving.length === 0 && next.length === 0 && (
+        <section className="flex min-h-[60vh] flex-col items-center justify-center text-center">
+          <p className="text-6xl font-semibold tracking-tight">Welcome</p>
+          <p className="mt-2 text-5xl text-slate-300">እንኳን ደህና መጡ</p>
+          <p className="mt-10 max-w-3xl text-3xl leading-snug text-slate-400">Please take a seat. Your number appears here when it is your turn.</p>
+          <p className="mt-3 max-w-3xl text-3xl leading-snug text-slate-400">እባክዎ ይቀመጡ። ተራዎ ሲደርስ ቁጥርዎ እዚህ ይታያል።</p>
+        </section>
+      )}
+
+      {(serving.length > 0 || next.length > 0) && (
+      <>
       <section className="py-8">
         <h2 className="mb-4 text-2xl text-slate-400">Now serving · አሁን የሚስተናገዱ</h2>
         {serving.length === 0 ? (
-          <p className="text-3xl text-slate-500">—</p>
+          <p className="text-3xl text-slate-400">Nobody called yet · እስካሁን አልተጠራም</p>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {serving.map((v) => (
@@ -65,7 +79,7 @@ async function Screen() {
       <section className="border-t border-white/10 py-8">
         <h2 className="mb-4 text-2xl text-slate-400">Next · ቀጣይ</h2>
         {next.length === 0 ? (
-          <p className="text-3xl text-slate-500">—</p>
+          <p className="text-3xl text-slate-400">Nobody waiting · የሚጠብቅ የለም</p>
         ) : (
           <div className="flex flex-wrap gap-4">
             {next.map((v) => (
@@ -76,6 +90,8 @@ async function Screen() {
           </div>
         )}
       </section>
+      </>
+      )}
     </>
   );
 }

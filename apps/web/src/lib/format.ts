@@ -52,10 +52,17 @@ export function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: CLINIC_TZ });
 }
 
-/** Minutes between two instants, as "5 min" or "1 h 20 min". */
+/**
+ * Time between two instants, in the unit people would say: "5 min", "1 h 20 min", and from a day
+ * on "1 day 3 h" or "5 days" (a visit left open overnight, not "136 h 45 min").
+ */
 export function formatDuration(fromIso: string, to: Date | string = new Date()) {
   const mins = Math.max(0, Math.round((new Date(to).getTime() - new Date(fromIso).getTime()) / 60000));
-  return mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)} h ${mins % 60} min`;
+  if (mins < 60) return `${mins} min`;
+  if (mins < 24 * 60) return `${Math.floor(mins / 60)} h ${mins % 60} min`;
+  const days = Math.floor(mins / (24 * 60));
+  const hours = Math.floor((mins % (24 * 60)) / 60);
+  return days >= 3 || hours === 0 ? `${days} day${days === 1 ? "" : "s"}` : `${days} day${days === 1 ? "" : "s"} ${hours} h`;
 }
 
 /** Moves a YYYY-MM-DD string by a number of days. */

@@ -70,7 +70,8 @@ async function Order({ params, searchParams }: { params: Promise<{ id: string }>
           </div>
         </div>
         {po.note && <p>Note: {po.note}</p>}
-        <table className="w-full text-left">
+        <div className="-mx-1 overflow-x-auto px-1">
+        <table className="w-full min-w-[34rem] text-left">
           <thead className="text-slate-500">
             <tr>
               <th className="py-2 pr-3">Drug</th>
@@ -103,6 +104,7 @@ async function Order({ params, searchParams }: { params: Promise<{ id: string }>
             </tr>
           </tfoot>
         </table>
+        </div>
         <p className="hidden pt-8 text-xs print:block">Ordered by: ____________________ Signature and stamp: ____________________</p>
       </div>
     </>
