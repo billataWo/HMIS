@@ -1,57 +1,94 @@
-import { Building2 } from "lucide-react";
+import { LogOut, ShieldCheck } from "lucide-react";
 import Link from "next/link";
-import { Suspense, type ReactNode } from "react";
-import { platformApi, type OperatorMe } from "@/lib/platform";
+import { cache, Suspense, type ReactNode } from "react";
+import { type ClinicRequest, platformApi, type OperatorMe } from "@/lib/platform";
+import { ConsoleNav } from "./nav";
 
-const LINKS = [
-  { href: "/platform", label: "Overview" },
-  { href: "/platform/requests", label: "Requests" },
-  { href: "/platform/clinics", label: "Clinics" },
-  { href: "/platform/plans", label: "Plans" },
-  { href: "/platform/operators", label: "Operators", owner: true },
-  { href: "/platform/settings", label: "Settings" },
-  { href: "/platform/history", label: "History" },
-];
-
-async function Bar() {
+/** Once per request, however many parts of the frame need it. */
+const loadFrame = cache(async () => {
   const me = await platformApi<OperatorMe>("/platform/auth/me");
   const ready = !me.mustChangePassword && me.twoStep.enabled;
+  const waiting = ready ? (await platformApi<ClinicRequest[]>("/platform/requests?status=PENDING")).length : 0;
+  return { me, ready, waiting };
+});
+
+async function Operator() {
+  const { me } = await loadFrame();
+  const initials = me.fullName
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase())
+    .join("");
   return (
-    <header className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
-        <Link href="/platform" className="flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
-          <Building2 aria-hidden className="size-5" /> HMIS platform
-        </Link>
-        {ready && (
-          <nav aria-label="Platform" className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-            {LINKS.filter((l) => !l.owner || me.role === "OWNER").map((l) => (
-              <Link key={l.href} href={l.href} className="text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">
-                {l.label}
-              </Link>
-            ))}
-          </nav>
-        )}
-        <div className="ml-auto flex items-center gap-3 text-sm">
-          <Link href="/platform/account" className="text-slate-600 hover:underline dark:text-slate-300">
-            {me.fullName} · {me.role.toLowerCase()}
-          </Link>
-          <a href="/platform/signout" className="text-slate-500 hover:underline">
-            Sign out
-          </a>
-        </div>
-      </div>
-    </header>
+    <Link href="/platform/account" className="flex min-h-10 items-center gap-2 rounded-lg px-2 hover:bg-slate-100 dark:hover:bg-slate-800" title="Your account">
+      <span aria-hidden className="grid size-7 place-items-center rounded-full bg-brand-100 text-xs font-semibold text-brand-800 dark:bg-brand-900 dark:text-brand-100">
+        {initials || "?"}
+      </span>
+      <span className="hidden text-left leading-tight sm:block">
+        <span className="block font-medium text-slate-900 dark:text-white">{me.fullName}</span>
+        <span className="block text-xs text-slate-500 capitalize">{me.role.toLowerCase()}</span>
+      </span>
+    </Link>
   );
+}
+
+async function Nav() {
+  const { me, ready, waiting } = await loadFrame();
+  return <ConsoleNav owner={me.role === "OWNER"} waiting={waiting} ready={ready} />;
 }
 
 /** The platform console: HMIS staff only, separate from every clinic's screens. */
 export default function ConsoleLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-1 flex-col">
-      <Suspense fallback={<div className="h-14 border-b border-slate-200 dark:border-slate-800" />}>
-        <Bar />
-      </Suspense>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 lg:py-8">{children}</main>
+    <div className="flex flex-1 flex-col bg-slate-50/60 dark:bg-transparent">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:text-slate-900 focus:shadow"
+      >
+        Skip to content
+      </a>
+      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
+        <div className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-4 sm:px-6">
+          <Link href="/platform" className="flex items-center gap-2.5 font-semibold text-slate-900 dark:text-white">
+            <span className="grid size-8 place-items-center rounded-lg bg-slate-900 text-white dark:bg-white dark:text-slate-900">
+              <ShieldCheck aria-hidden className="size-4" />
+            </span>
+            HMIS platform
+            <span className="hidden rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600 sm:inline dark:bg-slate-800 dark:text-slate-300">
+              HMIS team only
+            </span>
+          </Link>
+          <div className="ml-auto flex items-center gap-1 text-sm">
+            <Suspense fallback={<span className="h-8 w-28 rounded-lg bg-slate-100 dark:bg-slate-800" />}>
+              <Operator />
+            </Suspense>
+            <a
+              href="/platform/signout"
+              className="flex min-h-10 items-center gap-1.5 rounded-lg px-2.5 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              <LogOut aria-hidden className="size-4" />
+              <span className="sr-only sm:not-sr-only">Sign out</span>
+            </a>
+          </div>
+        </div>
+      </header>
+      <div className="lg:hidden">
+        <Suspense fallback={<div className="h-14 border-b border-slate-200 dark:border-slate-800" />}>
+          <Nav />
+        </Suspense>
+      </div>
+      <div className="mx-auto flex w-full max-w-7xl flex-1 gap-8 px-4 py-6 sm:px-6 lg:py-8">
+        <aside className="hidden lg:block">
+          <div className="sticky top-22">
+            <Suspense fallback={<div className="w-56" />}>
+              <Nav />
+            </Suspense>
+          </div>
+        </aside>
+        <main id="main" className="min-w-0 flex-1">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

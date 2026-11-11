@@ -5,9 +5,11 @@ import {
   ClipboardCheck,
   CloudOff,
   Download,
+  FileSpreadsheet,
   FlaskConical,
   HeartPulse,
   KeyRound,
+  Languages,
   ListOrdered,
   Monitor,
   Phone,
@@ -32,6 +34,20 @@ export const metadata: Metadata = {
   title: "HMIS for Ethiopian clinics",
   description: "Queue, consultation, lab, pharmacy and billing for clinics in Ethiopia. Free trial, then a monthly or yearly plan.",
 };
+
+/** Keyboard focus that is always visible (on light and on the dark brand sections). */
+const FOCUS = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600";
+const FOCUS_ON_DARK = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white";
+const LIGHT_CTA = "inline-flex min-h-11 items-center gap-2 rounded-lg bg-white px-5 text-sm font-semibold text-brand-900 shadow-sm transition-colors hover:bg-brand-50";
+const OUTLINE_CTA = "inline-flex min-h-11 items-center rounded-lg px-5 text-sm font-semibold text-white ring-1 ring-white/30 transition-colors hover:bg-white/10";
+
+/** Facts only: each one is something HMIS does today. */
+const PROOF = [
+  { icon: Smartphone, title: "Ethiopian payments", text: "Cash, telebirr and Chapa at the till" },
+  { icon: CloudOff, title: "Keeps working offline", text: "On your own server, or for open screens" },
+  { icon: Languages, title: "English or Amharic", text: "Each person picks their language" },
+  { icon: FileSpreadsheet, title: "MoH report built in", text: "The monthly report as a spreadsheet" },
+];
 
 /** A patient's visit, as the clinic's staff see it in HMIS. */
 const DAY = [
@@ -159,37 +175,50 @@ function Heading({ id, eyebrow, title, children }: { id?: string; eyebrow: strin
 /** The HMIS cloud's front page, for clinics that do not use HMIS yet. */
 export default function WelcomePage() {
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex flex-1 flex-col scroll-smooth motion-reduce:scroll-auto">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:text-slate-900 focus:shadow"
+      >
+        Skip to content
+      </a>
       <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/85 backdrop-blur dark:border-slate-800 dark:bg-slate-950/85">
         <nav aria-label="Main" className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-4 sm:px-6">
-          <Link href="/welcome" className="flex items-center gap-2.5 font-semibold text-slate-900 dark:text-white">
+          <Link href="/welcome" className={`flex items-center gap-2.5 rounded-lg font-semibold text-slate-900 dark:text-white ${FOCUS}`}>
             <span className="grid size-8 place-items-center rounded-lg bg-brand-700 text-white">
               <HeartPulse aria-hidden className="size-4" />
             </span>
             HMIS
           </Link>
-          <div className="hidden items-center gap-6 text-sm text-slate-600 md:flex dark:text-slate-300">
-            <a href="#modules" className="hover:text-slate-900 dark:hover:text-white">What it does</a>
-            <a href="#ways" className="hover:text-slate-900 dark:hover:text-white">How it runs</a>
-            <a href="#plans" className="hover:text-slate-900 dark:hover:text-white">Plans</a>
-            <a href="#questions" className="hover:text-slate-900 dark:hover:text-white">Questions</a>
+          <div className="hidden items-center gap-1 text-sm text-slate-600 md:flex dark:text-slate-300">
+            {[
+              ["#modules", "What it does"],
+              ["#ways", "How it runs"],
+              ["#plans", "Plans"],
+              ["#questions", "Questions"],
+            ].map(([href, label]) => (
+              <a key={href} href={href} className={`rounded-lg px-3 py-2 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white ${FOCUS}`}>
+                {label}
+              </a>
+            ))}
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <Link href="/login" className="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800">
+            <Link href="/login" className={`flex min-h-10 items-center rounded-lg px-3 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 ${FOCUS}`}>
               Sign in
             </Link>
-            <Link href="/request" className={`${buttonClass} hidden sm:inline-flex`}>
-              Request HMIS
+            <Link href="/request" className={buttonClass}>
+              <span className="sm:hidden">Request</span>
+              <span className="hidden sm:inline">Request HMIS</span>
             </Link>
           </div>
         </nav>
       </header>
 
-      <main className="flex-1">
+      <main id="main" className="flex-1">
         {/* Hero */}
         <section className="relative overflow-hidden bg-brand-900 text-white">
           <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_0%,rgb(34_211_238/0.25),transparent_45%),radial-gradient(circle_at_95%_100%,rgb(16_185_129/0.2),transparent_40%)]" />
-          <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.07] [background-image:linear-gradient(white_1px,transparent_1px),linear-gradient(90deg,white_1px,transparent_1px)] [background-size:32px_32px]" />
+          <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.07] bg-[linear-gradient(white_1px,transparent_1px),linear-gradient(90deg,white_1px,transparent_1px)] bg-size-[32px_32px]" />
           <div className="relative mx-auto grid max-w-6xl gap-12 px-4 py-20 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:items-center lg:py-24">
             <FadeIn>
               <p className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-brand-50 ring-1 ring-white/15">
@@ -202,22 +231,23 @@ export default function WelcomePage() {
                 the internet does not.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
-                <Link href="/request" className="inline-flex items-center gap-2 rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-brand-900 shadow-sm hover:bg-brand-50">
+                <Link href="/request" className={`${LIGHT_CTA} ${FOCUS_ON_DARK}`}>
                   Start a free trial <ArrowRight aria-hidden className="size-4" />
                 </Link>
-                <a href="#plans" className="inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold text-white ring-1 ring-white/30 hover:bg-white/10">
+                <a href="#plans" className={`${OUTLINE_CTA} ${FOCUS_ON_DARK}`}>
                   See plans and prices
                 </a>
               </div>
+              <p className="mt-4 text-sm text-brand-100/70">No card needed. We call you before anything starts.</p>
             </FadeIn>
 
             <FadeIn delay={0.08}>
-              <ol aria-label="A patient's visit in HMIS" className="relative rounded-2xl bg-white/[0.06] p-5 ring-1 ring-white/15 backdrop-blur-sm sm:p-6">
+              <ol aria-label="A patient's visit in HMIS" className="relative rounded-2xl bg-white/6 p-5 ring-1 ring-white/15 backdrop-blur-sm sm:p-6">
                 {DAY.map((s, i) => (
                   <li key={s.title} className="relative flex gap-4 pb-5 last:pb-0">
-                    {i < DAY.length - 1 && <span aria-hidden className="absolute top-10 bottom-0 left-[1.1875rem] w-px bg-white/20" />}
+                    {i < DAY.length - 1 && <span aria-hidden className="absolute top-10 bottom-0 left-4.75 w-px bg-white/20" />}
                     <span className="relative grid size-10 shrink-0 place-items-center rounded-xl bg-white/10 ring-1 ring-white/20">
-                      <s.icon aria-hidden className="size-[1.125rem]" />
+                      <s.icon aria-hidden className="size-4.5" />
                     </span>
                     <div className="pt-0.5">
                       <p className="font-medium">{s.title}</p>
@@ -228,6 +258,23 @@ export default function WelcomePage() {
               </ol>
             </FadeIn>
           </div>
+        </section>
+
+        {/* Proof: what HMIS really does for an Ethiopian clinic */}
+        <section aria-label="Why clinics choose HMIS" className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+          <ul className="mx-auto grid max-w-6xl grid-cols-1 gap-x-6 gap-y-5 px-4 py-8 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
+            {PROOF.map((p) => (
+              <li key={p.title} className="flex items-start gap-3">
+                <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300">
+                  <p.icon aria-hidden className="size-4.5" />
+                </span>
+                <span className="text-sm">
+                  <span className="block font-semibold text-slate-900 dark:text-white">{p.title}</span>
+                  <span className="block text-slate-600 dark:text-slate-400">{p.text}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
         </section>
 
         {/* Modules */}
@@ -342,10 +389,10 @@ export default function WelcomePage() {
             <h2 className="text-3xl font-semibold tracking-tight text-balance">Try HMIS in your clinic</h2>
             <p className="mt-3 text-brand-100/80">Ask today; we call you within two working days.</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <Link href="/request" className="inline-flex items-center gap-2 rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-brand-900 shadow-sm hover:bg-brand-50">
+              <Link href="/request" className={`${LIGHT_CTA} ${FOCUS_ON_DARK}`}>
                 Request HMIS <ArrowRight aria-hidden className="size-4" />
               </Link>
-              <Link href="/login" className="inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold text-white ring-1 ring-white/30 hover:bg-white/10">
+              <Link href="/login" className={`${OUTLINE_CTA} ${FOCUS_ON_DARK}`}>
                 Already using HMIS? Sign in
               </Link>
             </div>
@@ -356,8 +403,36 @@ export default function WelcomePage() {
         </section>
       </main>
 
-      <footer className="border-t border-slate-200 py-8 text-center text-xs text-slate-500 dark:border-slate-800">
-        HMIS · Clinic management for Ethiopia
+      <footer className="border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10 sm:flex-row sm:items-start sm:justify-between sm:px-6">
+          <div>
+            <p className="flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
+              <span className="grid size-7 place-items-center rounded-md bg-brand-700 text-white">
+                <HeartPulse aria-hidden className="size-3.5" />
+              </span>
+              HMIS
+            </p>
+            <p className="mt-2 max-w-xs text-sm text-slate-500">Clinic management for Ethiopia: queue, consultation, lab, pharmacy and billing.</p>
+          </div>
+          <nav aria-label="Footer" className="grid grid-cols-2 gap-x-10 gap-y-2 text-sm">
+            {[
+              ["#plans", "Plans and prices"],
+              ["/request", "Request HMIS"],
+              ["#questions", "Questions"],
+              ["/login", "Sign in"],
+            ].map(([href, label]) =>
+              href.startsWith("#") ? (
+                <a key={href} href={href} className={`rounded text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white ${FOCUS}`}>
+                  {label}
+                </a>
+              ) : (
+                <Link key={href} href={href} className={`rounded text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white ${FOCUS}`}>
+                  {label}
+                </Link>
+              ),
+            )}
+          </nav>
+        </div>
       </footer>
     </div>
   );

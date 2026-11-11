@@ -21,6 +21,8 @@ export function Plans({ plans, features, trialDays }: { plans: Plan[]; features:
   const [yearly, setYearly] = useState(false);
   const saving = (p: Plan) => Math.max(0, Number(p.priceMonthly) * 12 - Number(p.priceYearly));
   const anySaving = plans.some((p) => saving(p) > 0);
+  // The best yearly discount, as a whole percentage, for the switch's label.
+  const bestPercent = Math.max(0, ...plans.map((p) => (Number(p.priceMonthly) > 0 ? Math.floor((saving(p) / (Number(p.priceMonthly) * 12)) * 100) : 0)));
   const featured = plans.length === 3 ? plans[1].code : null;
 
   return (
@@ -28,7 +30,7 @@ export function Plans({ plans, features, trialDays }: { plans: Plan[]; features:
       <div role="radiogroup" aria-label="Billing period" className="mx-auto flex w-fit rounded-xl bg-slate-100 p-1 text-sm dark:bg-slate-800">
         {[
           { value: false, label: "Monthly" },
-          { value: true, label: anySaving ? "Yearly · save" : "Yearly" },
+          { value: true, label: anySaving && bestPercent > 0 ? `Yearly · save up to ${bestPercent}%` : "Yearly" },
         ].map((o) => (
           <button
             key={o.label}
@@ -36,7 +38,7 @@ export function Plans({ plans, features, trialDays }: { plans: Plan[]; features:
             role="radio"
             aria-checked={yearly === o.value}
             onClick={() => setYearly(o.value)}
-            className={`rounded-lg px-4 py-1.5 font-medium transition-colors ${
+            className={`min-h-10 rounded-lg px-4 font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
               yearly === o.value ? "bg-white text-slate-900 shadow-sm dark:bg-slate-950 dark:text-white" : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
             }`}
           >
