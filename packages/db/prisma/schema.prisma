@@ -75,6 +75,8 @@ model User {
   active             Boolean   @default(true)
   // Set when an admin creates the account or resets the password: the user must pick their own.
   mustChangePassword Boolean   @default(false)
+  /// A temporary password (set by an admin, mustChangePassword) stops working after this.
+  temporaryPasswordExpiresAt DateTime?
   /// Sign-ins (tokens) issued before this are no longer accepted: set on a password change or
   /// reset, so a stolen or old sign-in stops working.
   sessionsValidAfter DateTime?
@@ -936,6 +938,8 @@ model PlatformUser {
   passwordHash       String
   active             Boolean      @default(true)
   mustChangePassword Boolean      @default(true)
+  /// A temporary password stops working after this.
+  temporaryPasswordExpiresAt DateTime?
   sessionsValidAfter DateTime?
   totpSecret         String?
   totpPendingSecret  String?

@@ -1,5 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
-import { type AuthUser, CurrentUser } from '../auth/auth.decorators.js';
+import { type AuthUser, CurrentUser, AllStaff } from '../auth/auth.decorators.js';
 import { clinicDay, dayRange } from '../common/clinic-day.js';
 import { ICD11_COMMON } from '../consultation/icd11-common.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -15,6 +15,7 @@ const PRESCRIBERS = new Set(['ADMIN', 'DOCTOR', 'NURSE', 'PHARMACIST']);
 export class OfflineController {
   constructor(private readonly prisma: PrismaService) {}
 
+  @AllStaff()
   @Get('reference')
   async reference(@CurrentUser() me: AuthUser) {
     if (!PRESCRIBERS.has(me.role)) return { icd: ICD11_COMMON, drugs: [] };

@@ -1,12 +1,12 @@
+import { currentPasswordMatches } from '../common/password-check.js';
 import { Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Post, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { AuditService } from '../common/audit.service.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AllowWhileSuspended } from '../platform/subscription.guard.js';
-import { AllowTwoStepSetup, type AuthUser, CurrentUser } from './auth.decorators.js';
+import { AllowTwoStepSetup, type AuthUser, CurrentUser, AllStaff } from './auth.decorators.js';
 import { forgetAccount } from './auth.guard.js';
 import { hashRecoveryCode, newRecoveryCodes, newSecret, otpauthUri, verifyTotp } from './totp.js';
 
@@ -35,6 +35,7 @@ export class TwoStepController {
     return user;
   }
 
+  @AllStaff()
   @Get()
   @AllowTwoStepSetup()
   async status(@CurrentUser() me: AuthUser) {
@@ -46,12 +47,13 @@ export class TwoStepController {
    * A new secret for the authenticator app (shown as a QR code). Moving to a new phone when it is
    * already on needs the password: a stolen session must not be able to move it to another phone.
    */
+  @AllStaff()
   @Post('setup')
   @HttpCode(200)
   @AllowTwoStepSetup()
   async setup(@CurrentUser() me: AuthUser, @Body(new ZodPipe(SetupSchema)) body: z.infer<typeof SetupSchema>) {
     const user = await this.user(me);
-    if (user.totpEnabledAt && !(body.password && (await bcrypt.compare(body.password, user.passwordHash)))) {
+    if (user.totpEnabledAt && !(await currentPasswordMatches(user.id, body.password, user.passwordHash))) {
       throw new UnauthorizedException('Enter your password to move two-step sign-in to a new phone');
     }
     const secret = newSecret();
@@ -63,6 +65,7 @@ export class TwoStepController {
    * The first code from the app confirms it is set up. Returns the recovery codes (shown once) and
    * a fresh sign-in: every other sign-in of the account ends now.
    */
+  @AllStaff()
   @Post('enable')
   @HttpCode(200)
   @AllowTwoStepSetup()
@@ -90,6 +93,7 @@ export class TwoStepController {
   }
 
   /** New recovery codes (the old ones stop working); needs a current code from the app. */
+  @AllStaff()
   @Post('recovery-codes')
   @HttpCode(200)
   async recoveryCodes(@CurrentUser() me: AuthUser, @Body(new ZodPipe(CodeSchema)) body: z.infer<typeof CodeSchema>) {
@@ -104,12 +108,13 @@ export class TwoStepController {
   }
 
   /** Turning it off needs the password, and is not possible for admins (they must use it). */
+  @AllStaff()
   @Post('disable')
   @HttpCode(200)
   async disable(@CurrentUser() me: AuthUser, @Body(new ZodPipe(PasswordSchema)) body: z.infer<typeof PasswordSchema>) {
     const user = await this.user(me);
     if (user.role === 'ADMIN') throw new ForbiddenException('Admins must use two-step sign-in');
-    if (!(await bcrypt.compare(body.password, user.passwordHash))) throw new UnauthorizedException('Your password is not correct');
+    if (!(await currentPasswordMatches(user.id, body.password, user.passwordHash))) throw new UnauthorizedException('Your password is not correct');
     await this.prisma.client.user.update({
       where: { id: user.id },
       data: { totpSecret: null, totpPendingSecret: null, totpEnabledAt: null, totpLastStep: null, totpRecoveryCodes: [] },

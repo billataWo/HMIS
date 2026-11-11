@@ -1,5 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
-import { type AuthUser, CurrentUser } from '../auth/auth.decorators.js';
+import { type AuthUser, CurrentUser, AllStaff } from '../auth/auth.decorators.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 /** Small read-only lists that any signed-in user needs for dropdowns. */
@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 export class LookupsController {
   constructor(private readonly prisma: PrismaService) {}
 
+  @AllStaff()
   @Get('doctors')
   doctors(@CurrentUser() me: AuthUser) {
     return this.prisma.client.user.findMany({
@@ -16,6 +17,7 @@ export class LookupsController {
     });
   }
 
+  @AllStaff()
   @Get('services')
   services(@CurrentUser() me: AuthUser) {
     return this.prisma.client.serviceItem.findMany({

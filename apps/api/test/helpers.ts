@@ -48,6 +48,11 @@ export function appUrl() {
   return `http://127.0.0.1:${address.port}`;
 }
 
+/** The running Nest application (to inspect its routes). */
+export function nestApp() {
+  return app;
+}
+
 /** The running app's database service (restricted `client` and owner `system`). */
 export function appPrisma() {
   return app.get(PrismaService);

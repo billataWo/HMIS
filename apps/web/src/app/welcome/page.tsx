@@ -2,7 +2,6 @@ import {
   ArrowRight,
   CalendarDays,
   ChartColumn,
-  ClipboardCheck,
   CloudOff,
   Download,
   FileSpreadsheet,
@@ -20,7 +19,6 @@ import {
   ShieldCheck,
   Smartphone,
   Stethoscope,
-  UserPlus,
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -29,6 +27,7 @@ import { FadeIn } from "@/components/enter";
 import { buttonClass, Skeleton } from "@/components/ui";
 import { publicPlans } from "@/lib/public-api";
 import { Plans } from "./plans";
+import { VisitFlow } from "./visit-flow";
 
 export const metadata: Metadata = {
   title: "HMIS for Ethiopian clinics",
@@ -49,15 +48,6 @@ const PROOF = [
   { icon: FileSpreadsheet, title: "MoH report built in", text: "The monthly report as a spreadsheet" },
 ];
 
-/** A patient's visit, as the clinic's staff see it in HMIS. */
-const DAY = [
-  { icon: UserPlus, title: "Check-in", text: "Register or find the patient; they get a queue number" },
-  { icon: Receipt, title: "Pay first", text: "Cash, telebirr or Chapa before each service, if you want it" },
-  { icon: Stethoscope, title: "Consultation", text: "Vitals, notes, ICD-11 diagnoses and orders" },
-  { icon: FlaskConical, title: "Lab", text: "Orders arrive at the bench; results go back to the doctor" },
-  { icon: Pill, title: "Pharmacy", text: "Prescriptions dispensed from stock, by batch and expiry" },
-  { icon: ClipboardCheck, title: "Done", text: "Receipt printed, visit closed, follow-up booked" },
-];
 
 const MODULES = [
   { icon: ListOrdered, title: "Queue and waiting room", text: "Live queue for each department, and a TV screen that calls the next number." },
@@ -162,9 +152,9 @@ async function Contact() {
 
 function Heading({ id, eyebrow, title, children }: { id?: string; eyebrow: string; title: string; children?: React.ReactNode }) {
   return (
-    <div className="mx-auto mb-10 max-w-2xl text-center">
+    <div className="land-reveal mx-auto mb-10 max-w-2xl text-center">
       <p className="text-sm font-semibold text-brand-700 dark:text-brand-400">{eyebrow}</p>
-      <h2 id={id} className="mt-2 text-3xl font-semibold tracking-tight text-balance text-slate-900 dark:text-white">
+      <h2 id={id} className="mt-2 scroll-mt-28 text-3xl font-semibold tracking-tight text-balance text-slate-900 dark:text-white">
         {title}
       </h2>
       {children && <p className="mt-3 text-slate-600 dark:text-slate-300">{children}</p>}
@@ -182,7 +172,7 @@ export default function WelcomePage() {
       >
         Skip to content
       </a>
-      <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/85 backdrop-blur dark:border-slate-800 dark:bg-slate-950/85">
+      <header className="land-header sticky top-0 z-20 border-b border-slate-200/70 bg-white/85 backdrop-blur dark:border-slate-800 dark:bg-slate-950/85">
         <nav aria-label="Main" className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-4 sm:px-6">
           <Link href="/welcome" className={`flex items-center gap-2.5 rounded-lg font-semibold text-slate-900 dark:text-white ${FOCUS}`}>
             <span className="grid size-8 place-items-center rounded-lg bg-brand-700 text-white">
@@ -217,52 +207,54 @@ export default function WelcomePage() {
       <main id="main" className="flex-1">
         {/* Hero */}
         <section className="relative overflow-hidden bg-brand-900 text-white">
-          <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_0%,rgb(34_211_238/0.25),transparent_45%),radial-gradient(circle_at_95%_100%,rgb(16_185_129/0.2),transparent_40%)]" />
+          <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+            <div className="land-drift absolute -top-1/3 -left-1/4 size-[70vmax] rounded-full bg-[radial-gradient(circle,rgb(34_211_238/0.28),transparent_60%)]" />
+            <div className="land-drift-slow absolute -right-1/4 -bottom-1/2 size-[65vmax] rounded-full bg-[radial-gradient(circle,rgb(16_185_129/0.22),transparent_60%)]" />
+          </div>
           <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.07] bg-[linear-gradient(white_1px,transparent_1px),linear-gradient(90deg,white_1px,transparent_1px)] bg-size-[32px_32px]" />
           <div className="relative mx-auto grid max-w-6xl gap-12 px-4 py-20 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:items-center lg:py-24">
-            <FadeIn>
-              <p className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-brand-50 ring-1 ring-white/15">
-                Made for clinics in Ethiopia
-              </p>
-              <h1 className="mt-5 text-4xl leading-[1.1] font-semibold tracking-tight text-balance sm:text-5xl">Run your clinic&apos;s day, from check&#8209;in to receipt.</h1>
-              <p className="mt-3 text-lg text-brand-100/80">የክሊኒክዎን የዕለት ሥራ በአንድ ቦታ ያስተዳድሩ</p>
-              <p className="mt-6 max-w-xl text-brand-50/90">
-                Queue, consultation, lab, pharmacy and billing in one system your whole team uses. On the cloud or on your own server, and it keeps going when
-                the internet does not.
-              </p>
+            <div>
+              <FadeIn y={12}>
+                <p className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-brand-50 ring-1 ring-white/15">
+                  <span aria-hidden className="size-1.5 rounded-full bg-emerald-300" />
+                  Made for clinics in Ethiopia
+                </p>
+              </FadeIn>
+              <FadeIn delay={0.08} y={16}>
+                <h1 className="mt-5 text-4xl leading-[1.1] font-semibold tracking-tight text-balance sm:text-5xl">
+                  Run your clinic&apos;s day, from check&#8209;in to{" "}
+                  <span className="bg-linear-to-r from-cyan-200 to-emerald-200 bg-clip-text text-transparent">receipt.</span>
+                </h1>
+              </FadeIn>
+              <FadeIn delay={0.16} y={12}>
+                <p className="mt-3 text-lg text-brand-100/80">የክሊኒክዎን የዕለት ሥራ በአንድ ቦታ ያስተዳድሩ</p>
+                <p className="mt-6 max-w-xl text-brand-50/90">
+                  Queue, consultation, lab, pharmacy and billing in one system your whole team uses. On the cloud or on your own server, and it keeps going when
+                  the internet does not.
+                </p>
+              </FadeIn>
+              <FadeIn delay={0.24} y={12}>
               <div className="mt-8 flex flex-wrap gap-3">
-                <Link href="/request" className={`${LIGHT_CTA} ${FOCUS_ON_DARK}`}>
-                  Start a free trial <ArrowRight aria-hidden className="size-4" />
+                <Link href="/request" className={`group ${LIGHT_CTA} ${FOCUS_ON_DARK}`}>
+                  Start a free trial <ArrowRight aria-hidden className="size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
                 </Link>
                 <a href="#plans" className={`${OUTLINE_CTA} ${FOCUS_ON_DARK}`}>
                   See plans and prices
                 </a>
               </div>
               <p className="mt-4 text-sm text-brand-100/70">No card needed. We call you before anything starts.</p>
-            </FadeIn>
+              </FadeIn>
+            </div>
 
-            <FadeIn delay={0.08}>
-              <ol aria-label="A patient's visit in HMIS" className="relative rounded-2xl bg-white/6 p-5 ring-1 ring-white/15 backdrop-blur-sm sm:p-6">
-                {DAY.map((s, i) => (
-                  <li key={s.title} className="relative flex gap-4 pb-5 last:pb-0">
-                    {i < DAY.length - 1 && <span aria-hidden className="absolute top-10 bottom-0 left-4.75 w-px bg-white/20" />}
-                    <span className="relative grid size-10 shrink-0 place-items-center rounded-xl bg-white/10 ring-1 ring-white/20">
-                      <s.icon aria-hidden className="size-4.5" />
-                    </span>
-                    <div className="pt-0.5">
-                      <p className="font-medium">{s.title}</p>
-                      <p className="text-sm text-brand-100/75">{s.text}</p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
+            <FadeIn delay={0.2} y={20}>
+              <VisitFlow />
             </FadeIn>
           </div>
         </section>
 
         {/* Proof: what HMIS really does for an Ethiopian clinic */}
         <section aria-label="Why clinics choose HMIS" className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
-          <ul className="mx-auto grid max-w-6xl grid-cols-1 gap-x-6 gap-y-5 px-4 py-8 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
+          <ul className="land-stagger mx-auto grid max-w-6xl grid-cols-1 gap-x-6 gap-y-5 px-4 py-8 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
             {PROOF.map((p) => (
               <li key={p.title} className="flex items-start gap-3">
                 <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300">
@@ -282,10 +274,10 @@ export default function WelcomePage() {
           <Heading id="modules" eyebrow="What it does" title="Everything a clinic does in a day, in one place">
             Each member of staff signs in with their phone number and sees the screens for their role: reception, nurse, doctor, lab, pharmacy, cashier or admin.
           </Heading>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="land-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {MODULES.map((m) => (
-              <div key={m.title} className="surface p-5">
-                <span className="grid size-10 place-items-center rounded-xl bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300">
+              <div key={m.title} className="surface land-lift group p-5 hover:border-brand-200 dark:hover:border-brand-800">
+                <span className="grid size-10 place-items-center rounded-xl bg-brand-50 text-brand-700 transition-colors duration-200 group-hover:bg-brand-700 group-hover:text-white dark:bg-brand-950 dark:text-brand-300">
                   <m.icon aria-hidden className="size-5" />
                 </span>
                 <h3 className="mt-4 font-semibold text-slate-900 dark:text-white">{m.title}</h3>
@@ -301,16 +293,16 @@ export default function WelcomePage() {
             <Heading id="ways" eyebrow="How it runs" title="On the cloud, or at your clinic">
               The same HMIS and the same price either way. Choose when you ask for it, and change later if you need to.
             </Heading>
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="land-stagger grid gap-4 md:grid-cols-3">
               {WAYS.map((w) => (
-                <div key={w.title} className="surface p-6">
+                <div key={w.title} className="surface land-lift p-6">
                   <w.icon aria-hidden className="size-6 text-brand-700 dark:text-brand-400" />
                   <h3 className="mt-4 font-semibold text-slate-900 dark:text-white">{w.title}</h3>
                   <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{w.text}</p>
                 </div>
               ))}
             </div>
-            <div className="mt-4 flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+            <div className="land-reveal mt-4 flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
               <Monitor aria-hidden className="mt-0.5 size-5 shrink-0 text-brand-700 dark:text-brand-400" />
               Works on the computers and tablets you already have: any up-to-date browser. Receipts and lab reports print on an ordinary printer.
             </div>
@@ -320,18 +312,18 @@ export default function WelcomePage() {
         {/* Privacy */}
         <section aria-labelledby="privacy" className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
           <div className="grid gap-10 lg:grid-cols-[1fr_1.2fr] lg:items-center">
-            <div>
+            <div className="land-reveal">
               <p className="text-sm font-semibold text-brand-700 dark:text-brand-400">Your patients&apos; privacy</p>
-              <h2 id="privacy" className="mt-2 text-3xl font-semibold tracking-tight text-balance text-slate-900 dark:text-white">
+              <h2 id="privacy" className="mt-2 scroll-mt-28 text-3xl font-semibold tracking-tight text-balance text-slate-900 dark:text-white">
                 Medical records deserve better than a shared spreadsheet
               </h2>
               <p className="mt-3 text-slate-600 dark:text-slate-300">
                 HMIS is built for health data: each clinic&apos;s records are separate, each person signs in on their own, and the audit log shows who did what.
               </p>
             </div>
-            <ul className="grid gap-3 sm:grid-cols-2">
+            <ul className="land-stagger grid gap-3 sm:grid-cols-2">
               {PRIVACY.map((p) => (
-                <li key={p.text} className="surface flex gap-3 p-4 text-sm text-slate-700 dark:text-slate-200">
+                <li key={p.text} className="surface land-lift flex gap-3 p-4 text-sm text-slate-700 dark:text-slate-200">
                   <p.icon aria-hidden className="mt-0.5 size-5 shrink-0 text-emerald-600" />
                   {p.text}
                 </li>
@@ -353,27 +345,31 @@ export default function WelcomePage() {
         {/* How to start */}
         <section aria-labelledby="start" className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
           <Heading id="start" eyebrow="Getting started" title="From request to your first patient" />
-          <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="relative">
+          {/* A line through the step numbers that draws itself as the steps come into view. */}
+          <span aria-hidden className="land-draw absolute top-9 right-[12.5%] left-[12.5%] hidden h-0.5 rounded-full bg-linear-to-r from-brand-600 to-emerald-500 lg:block" />
+          <ol className="land-stagger relative grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {STEPS.map((s, i) => (
-              <li key={s.title} className="surface p-5">
-                <span className="grid size-8 place-items-center rounded-full bg-brand-700 text-sm font-semibold text-white tabular-nums">{i + 1}</span>
+              <li key={s.title} className="surface land-lift p-5">
+                <span className="relative grid size-8 place-items-center rounded-full bg-brand-700 text-sm font-semibold text-white tabular-nums ring-4 ring-white dark:ring-slate-950">{i + 1}</span>
                 <h3 className="mt-4 font-semibold text-slate-900 dark:text-white">{s.title}</h3>
                 <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{s.text}</p>
               </li>
             ))}
           </ol>
+          </div>
         </section>
 
         {/* Questions */}
         <section aria-labelledby="questions" className="scroll-mt-16 border-t border-slate-200 py-20 dark:border-slate-800">
           <div className="mx-auto max-w-3xl px-4 sm:px-6">
             <Heading id="questions" eyebrow="Questions" title="What clinics ask us" />
-            <div className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
+            <div className="land-reveal divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
               {QUESTIONS.map((x) => (
-                <details key={x.q} className="group px-5 py-4">
+                <details key={x.q} className="land-faq group px-5 py-4">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-medium text-slate-900 dark:text-white [&::-webkit-details-marker]:hidden">
                     {x.q}
-                    <span aria-hidden className="text-xl leading-none text-slate-400 transition-transform group-open:rotate-45">+</span>
+                    <span aria-hidden className="grid size-7 shrink-0 place-items-center rounded-full bg-slate-100 text-lg leading-none text-slate-500 transition-[transform,background-color,color] duration-200 group-open:rotate-45 group-open:bg-brand-700 group-open:text-white dark:bg-slate-800">+</span>
                   </summary>
                   <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{x.a}</p>
                 </details>
@@ -384,8 +380,10 @@ export default function WelcomePage() {
 
         {/* Call to action */}
         <section className="relative overflow-hidden bg-brand-900 text-white">
-          <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgb(34_211_238/0.25),transparent_55%)]" />
-          <div className="relative mx-auto max-w-3xl px-4 py-16 text-center sm:px-6">
+          <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+            <div className="land-drift absolute -bottom-2/3 left-1/4 size-[60vmax] rounded-full bg-[radial-gradient(circle,rgb(34_211_238/0.3),transparent_60%)]" />
+          </div>
+          <div className="land-reveal relative mx-auto max-w-3xl px-4 py-20 text-center sm:px-6">
             <h2 className="text-3xl font-semibold tracking-tight text-balance">Try HMIS in your clinic</h2>
             <p className="mt-3 text-brand-100/80">Ask today; we call you within two working days.</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">

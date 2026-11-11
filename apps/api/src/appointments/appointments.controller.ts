@@ -1,6 +1,6 @@
 import { Body, ConflictException, Controller, Get, NotFoundException, Param, Patch, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
-import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
+import { type AuthUser, CurrentUser, Roles, AllStaff } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
 import { clinicDay, DAY_PATTERN, dayRange } from '../common/clinic-day.js';
 import { ZodPipe } from '../common/zod.pipe.js';
@@ -40,6 +40,7 @@ export class AppointmentsController {
   ) {}
 
   /** A day's appointments (default today), or a patient's upcoming ones when patientId is given. */
+  @AllStaff()
   @Get()
   list(@CurrentUser() me: AuthUser, @Query(new ZodPipe(ListSchema)) q: z.infer<typeof ListSchema>) {
     if (q.patientId && !q.day) {

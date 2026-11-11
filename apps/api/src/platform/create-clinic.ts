@@ -1,6 +1,6 @@
+import { hashPassword, temporaryPasswordExpiry } from '../common/passwords.js';
 import { randomInt } from 'node:crypto';
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import bcrypt from 'bcryptjs';
 import { addStarterCatalog, type Db, type DeploymentType, type FacilityType } from '@hmis/db';
 import { normalizePhone } from '../common/phone.js';
 
@@ -47,7 +47,7 @@ export async function createClinic(db: Db, input: NewClinic, now = new Date()) {
   if (input.subscription && !plan) throw new NotFoundException(`No plan with code ${input.subscription.planCode}`);
 
   const password = temporaryPassword();
-  const passwordHash = await bcrypt.hash(password, 10);
+  const passwordHash = await hashPassword(password);
   const tenant = await db.$transaction(async (tx) => {
     const t = await tx.tenant.create({
       data: {
@@ -57,7 +57,7 @@ export async function createClinic(db: Db, input: NewClinic, now = new Date()) {
         type: input.type ?? 'CLINIC',
         phone: input.phone?.trim() || null,
         address: input.address?.trim() || null,
-        users: { create: { fullName: input.adminName.trim(), phone, role: 'ADMIN', passwordHash, mustChangePassword: true } },
+        users: { create: { fullName: input.adminName.trim(), phone, role: 'ADMIN', passwordHash, mustChangePassword: true, temporaryPasswordExpiresAt: temporaryPasswordExpiry(now) } },
       },
     });
     if (input.subscription && plan) {

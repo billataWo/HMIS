@@ -1,3 +1,4 @@
+import { hashPassword, temporaryPasswordExpiry } from '../common/passwords.js';
 /**
  * Clinic setup, run on the server (in the API container: `node dist/clinic/cli.js <command>`,
  * or `deploy/hmis clinic <command>`). Uses the owner connection (DATABASE_URL).
@@ -19,7 +20,6 @@
  *                     exports: each admin gets a new one (reset-admin), then resets the others
  */
 import 'dotenv/config';
-import bcrypt from 'bcryptjs';
 import { createPrismaClient, type FacilityType } from '@hmis/db';
 import { normalizePhone } from '../common/phone.js';
 import {
@@ -191,8 +191,9 @@ async function resetAdmin() {
   await owner.user.update({
     where: { id: admin.id },
     data: {
-      passwordHash: await bcrypt.hash(password, 10),
+      passwordHash: await hashPassword(password),
       mustChangePassword: true,
+      temporaryPasswordExpiresAt: temporaryPasswordExpiry(),
       active: true,
       sessionsValidAfter: new Date(),
       totpSecret: null,

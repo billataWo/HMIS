@@ -10,7 +10,7 @@ installing a server must still do. Related: [backups](../backup/README.md),
 | Area | Protection |
 |---|---|
 | Separating clinics | Every query is filtered by clinic in the API, and PostgreSQL row-level security enforces it again on every clinic table (a test fails if a new table is left out). The API's normal database role cannot see another clinic's rows. |
-| Sign-in | bcrypt-hashed passwords; temporary passwords must be replaced at first sign-in; unknown phone numbers take as long as known ones. **Two-step sign-in** (authenticator app codes, which work offline) is required for admins and optional for everyone else. Each code works once; wrong codes lock. There are one-time recovery codes for a lost phone, and another admin can reset it. |
+| Sign-in | bcrypt-hashed passwords (work factor 12; temporary ones expire after 72 hours); temporary passwords must be replaced at first sign-in; unknown phone numbers take as long as known ones. **Two-step sign-in** (authenticator app codes, which work offline) is required for admins and optional for everyone else. Each code works once; wrong codes lock. There are one-time recovery codes for a lost phone, and another admin can reset it. |
 | Guessing passwords | Wrong passwords are limited per account and address (5), per account from anywhere (20) and per address across accounts (30), each for 15 minutes. One person cannot lock a colleague out, and one password cannot be tried on every staff phone. |
 | Sessions | 12-hour sign-in token in a cookie that scripts cannot read (httpOnly, SameSite, Secure over HTTPS). The account, role and clinic are checked again on every request: deactivating someone takes effect within 15 seconds. Changing or resetting a password ends every other sign-in of that account. |
 | Permissions | Every endpoint has a role check; non-clinical staff see that a visit happened, not its complaint or diagnoses. |
@@ -25,7 +25,7 @@ installing a server must still do. Related: [backups](../backup/README.md),
 | Backups | AES-256 encrypted, off-site copy write-once (object lock), restore tests weekly, archive key kept offline. |
 | Clinic servers | Each has its own 256-bit token (stored hashed, revocable) that can only ever write its own clinic (row-level security). |
 | Offline mode | Only listed requests can be replayed, only from the site itself, each applied once. A browser keeps only the signed-in person's working day, deletes it on sign-out and when the sign-in expires. |
-| Dependencies | `pnpm audit --prod`: no known vulnerabilities (November 2026). |
+| Dependencies | `pnpm audit`: no known vulnerabilities, production and development (November 2026). |
 
 ## Security review, November 2026
 
@@ -79,6 +79,11 @@ Accepted:
 - **Signing out of the console** ends the session in that browser; the session itself stays valid
   until it expires (8 hours). Changing the password ends every session.
 
+## Audit, November 2026
+
+The full checklist audit (authentication, isolation, input, secrets and git history, configuration,
+dependencies), its fixes and test results: [audit-2026-11.md](audit-2026-11.md).
+
 ## Before a server goes live (checklist)
 
 - [ ] **Installed with `deploy/hmis install`** ([guide](../install/README.md)). This gives HTTPS
@@ -100,9 +105,6 @@ Accepted:
 
 ## Still to do
 
-- Clinic staff: the current password, asked for to change it and for two-step sign-in, can be
-  guessed without limit by someone holding a stolen session (fixed for the console; the same
-  limit is still to add for clinics).
 - Before selling HMIS as a service: see [HMIS as a service](../saas/README.md#still-to-do-before-selling).
 
 ## Reporting a problem

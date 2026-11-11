@@ -1,3 +1,4 @@
+import { DUMMY_HASH, hashPassword, needsRehash, temporaryPasswordExpired } from '../common/passwords.js';
 import { Body, ConflictException, Controller, Get, HttpCode, HttpException, Logger, NotFoundException, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
@@ -17,6 +18,8 @@ const PasswordSchema = z
   .object({ current: z.string().min(1), next: z.string().min(12, 'Operators need a password of at least 12 characters').max(200) })
   .refine((b) => b.next !== b.current, { message: 'Choose a password different from the current one', path: ['next'] });
 const CodeSchema = z.object({ code: z.string().trim().min(6).max(6) });
+/** Moving two-step sign-in to another phone needs the password; the first setup does not. */
+const SetupSchema = z.object({ password: z.string().max(200).optional() });
 
 /**
  * Wrong passwords and codes for operators, in memory: 5 per account and 20 per address in 15
@@ -39,7 +42,6 @@ function fail(keys: [string, number][]) {
   }
 }
 const TOO_MANY = () => new HttpException('Too many wrong attempts. Try again in 15 minutes.', 429);
-const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10);
 
 @Controller('platform/auth')
 @Public()
@@ -74,6 +76,13 @@ export class PlatformAuthController {
       fail([[keys[0], 5], [keys[1], 20]]);
       await this.audit(op?.id ?? null, 'platform.login_failed', { email: body.email }, ip);
       throw new UnauthorizedException('Wrong email or password');
+    }
+    if (temporaryPasswordExpired(op)) {
+      await this.audit(op.id, 'platform.temporary_password_expired', {}, ip);
+      throw new UnauthorizedException('This temporary password has expired. Ask an owner for a new one.');
+    }
+    if (needsRehash(op.passwordHash)) {
+      await this.prisma.system.platformUser.update({ where: { id: op.id }, data: { passwordHash: await hashPassword(body.password) } });
     }
     if (op.totpEnabledAt) {
       const challenge = await this.jwt.signAsync({ sub: op.id, kind: 'platform', purpose: 'two-step' }, { secret: platformSecret(), expiresIn: '5m' });
@@ -162,7 +171,7 @@ export class PlatformAuthController {
     }
     await this.prisma.system.platformUser.update({
       where: { id: op.id },
-      data: { passwordHash: await bcrypt.hash(body.next, 10), mustChangePassword: false, sessionsValidAfter: new Date() },
+      data: { passwordHash: await hashPassword(body.next), mustChangePassword: false, temporaryPasswordExpiresAt: null, sessionsValidAfter: new Date() },
     });
     forgetOperator(op.id);
     await this.audit(op.id, 'platform.password_changed', {}, clientIp(req));
@@ -174,7 +183,7 @@ export class PlatformAuthController {
   @HttpCode(200)
   @UseGuards(PlatformGuard)
   @PlatformAllowPending()
-  async setup(@Req() req: Request, @CurrentOperator() me: Operator, @Body() body: { password?: string }) {
+  async setup(@Req() req: Request, @CurrentOperator() me: Operator, @Body(new ZodPipe(SetupSchema)) body: z.infer<typeof SetupSchema>) {
     const op = await this.prisma.system.platformUser.findUniqueOrThrow({ where: { id: me.sub } });
     if (op.totpEnabledAt) {
       const key = `password:${op.id}`;

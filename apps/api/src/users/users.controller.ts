@@ -1,5 +1,5 @@
+import { hashPassword, temporaryPasswordExpiry } from '../common/passwords.js';
 import { Body, ConflictException, Controller, ForbiddenException, Get, NotFoundException, Param, Patch, Post } from '@nestjs/common';
-import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
@@ -68,7 +68,7 @@ export class UsersController {
     const { password, ...rest } = body;
     const user = await this.prisma.client.user.create({
       // The admin chose this password, so it is temporary: the new user replaces it at first sign-in.
-      data: { ...rest, tenantId: me.tenantId, passwordHash: await bcrypt.hash(password, 10), mustChangePassword: true },
+      data: { ...rest, tenantId: me.tenantId, passwordHash: await hashPassword(password), mustChangePassword: true, temporaryPasswordExpiresAt: temporaryPasswordExpiry() },
       select: publicFields,
     });
     await this.audit.log(me, 'user.create', 'User', user.id, { role: user.role });
@@ -97,7 +97,7 @@ export class UsersController {
       where: { id },
       // A password reset by an admin is temporary too.
       // A reset also ends the user's current sign-ins (whoever knew the old password is out).
-      data: { ...rest, ...twoStepReset, ...(password ? { passwordHash: await bcrypt.hash(password, 10), mustChangePassword: true, sessionsValidAfter: new Date() } : {}) },
+      data: { ...rest, ...twoStepReset, ...(password ? { passwordHash: await hashPassword(password), mustChangePassword: true, temporaryPasswordExpiresAt: temporaryPasswordExpiry(), sessionsValidAfter: new Date() } : {}) },
       select: publicFields,
     });
     forgetAccount(id); // deactivation or a new role applies on the user's next request

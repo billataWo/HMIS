@@ -36,6 +36,8 @@ export class SyncError extends Error {
 }
 
 const q = (ident: string) => `"${ident.replace(/"/g, '""')}"`;
+/** A SQL string literal (table and column names in generated statements: from the catalogue, never a request). */
+const lit = (text: string) => `'${text.replace(/'/g, "''")}'`;
 
 export async function loadTables(db: Raw): Promise<Tables> {
   const rows = await db.$queryRawUnsafe<{ name: string; rls: boolean; columns: string[]; pk: string[] | null; deps: string[] | null }[]>(`
@@ -197,9 +199,9 @@ export async function enableCapture(owner: Raw & { $transaction: Function }, { s
       if (snapshot) {
         for (const name of order) {
           const t = tables.get(name)!;
-          const key = `jsonb_build_object(${t.pk.map((c) => `'${c}', t.${q(c)}`).join(', ')})`;
+          const key = `jsonb_build_object(${t.pk.map((c) => `${lit(c)}, t.${q(c)}`).join(', ')})`;
           queued += await tx.$executeRawUnsafe(
-            `INSERT INTO "SyncOutbox" ("tableName", "op", "key", "row") SELECT '${name}', 'U', ${key}, to_jsonb(t) FROM ${q(name)} t`,
+            `INSERT INTO "SyncOutbox" ("tableName", "op", "key", "row") SELECT ${lit(name)}, 'U', ${key}, to_jsonb(t) FROM ${q(name)} t`,
           );
         }
       }

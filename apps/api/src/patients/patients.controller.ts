@@ -1,7 +1,7 @@
 import { Body, ConflictException, Controller, ForbiddenException, Get, NotFoundException, Param, Patch, Post, Query } from '@nestjs/common';
 import type { Prisma } from '@hmis/db';
 import { z } from 'zod';
-import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
+import { type AuthUser, CurrentUser, Roles, AllStaff } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
 import { normalizePhone } from '../common/phone.js';
 import { ZodPipe } from '../common/zod.pipe.js';
@@ -84,6 +84,7 @@ export class PatientsController {
   ) {}
 
   /** Search by MRN, phone, or any part of the name (English or Amharic). Every word must match. */
+  @AllStaff()
   @Get()
   search(@CurrentUser() me: AuthUser, @Query(new ZodPipe(SearchSchema)) { q, take }: z.infer<typeof SearchSchema>) {
     const words = q.split(/\s+/).filter(Boolean);
@@ -108,6 +109,7 @@ export class PatientsController {
     return this.prisma.client.patient.findMany({ where, take, orderBy: { createdAt: 'desc' } });
   }
 
+  @AllStaff()
   @Get(':id')
   async get(@CurrentUser() me: AuthUser, @Param('id') id: string) {
     if (!z.uuid().safeParse(id).success) throw new NotFoundException('Patient not found');

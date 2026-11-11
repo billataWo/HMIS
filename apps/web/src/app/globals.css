@@ -169,6 +169,104 @@
 .stagger > :nth-child(8) { animation-delay: 245ms; }
 .stagger > :nth-child(n + 9) { animation-delay: 280ms; }
 
+/*
+ * The public front page (/welcome). Motion only orients and never hides content:
+ *  - scroll reveals are CSS scroll-driven animations: no JavaScript, and a browser without them
+ *    simply shows everything (they run from slightly faded to fully shown, as `.enter` does);
+ *  - nothing moves at all for people who ask for reduced motion.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes land-rise {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+  }
+  @supports (animation-timeline: view()) {
+    .land-reveal,
+    .land-stagger > * {
+      animation: land-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 70%;
+    }
+    /* Each item a little later than the one before, so a row reads left to right. */
+    .land-stagger > :nth-child(2) { animation-range: entry 6% entry 76%; }
+    .land-stagger > :nth-child(3) { animation-range: entry 12% entry 82%; }
+    .land-stagger > :nth-child(4) { animation-range: entry 18% entry 88%; }
+    .land-stagger > :nth-child(n + 5) { animation-range: entry 24% entry 94%; }
+
+    /* The header gains a shadow once the page scrolls. */
+    @keyframes land-header {
+      to {
+        box-shadow: 0 6px 24px -12px rgb(15 23 42 / 0.25);
+      }
+    }
+    .land-header {
+      animation: land-header linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0 120px;
+    }
+
+    /* The "getting started" line draws itself as the steps come into view. */
+    @keyframes land-draw {
+      from {
+        transform: scaleX(0);
+      }
+    }
+    .land-draw {
+      transform-origin: left;
+      animation: land-draw linear both;
+      animation-timeline: view();
+      animation-range: entry 20% cover 45%;
+    }
+  }
+
+  /* Slow light drifting behind the hero. Transform only, so it costs nothing to draw. */
+  @keyframes land-drift {
+    from {
+      transform: translate3d(-4%, -3%, 0) scale(1);
+    }
+    to {
+      transform: translate3d(5%, 4%, 0) scale(1.12);
+    }
+  }
+  .land-drift {
+    animation: land-drift 18s ease-in-out infinite alternate;
+  }
+  .land-drift-slow {
+    animation: land-drift 26s ease-in-out -9s infinite alternate-reverse;
+  }
+
+  /* Cards lift a little under the pointer. */
+  .land-lift {
+    transition:
+      transform 200ms var(--ease-out-soft),
+      box-shadow 200ms var(--ease-out-soft),
+      border-color 200ms;
+  }
+  @media (hover: hover) {
+    .land-lift:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 14px 30px -18px rgb(14 116 144 / 0.45);
+    }
+  }
+
+  /* Questions open smoothly where the browser can animate to an automatic height. */
+  .land-faq {
+    interpolate-size: allow-keywords;
+  }
+  .land-faq::details-content {
+    height: 0;
+    overflow: clip;
+    transition:
+      height 260ms var(--ease-out-soft),
+      content-visibility 260ms allow-discrete;
+  }
+  .land-faq[open]::details-content {
+    height: auto;
+  }
+}
+
 /* Loading placeholders: a soft sweep instead of a blink. */
 @keyframes shimmer {
   from {

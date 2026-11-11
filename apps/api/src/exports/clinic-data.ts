@@ -25,6 +25,7 @@ const SECRET_USER_FIELDS = {
   totpLastStep: null,
   totpRecoveryCodes: [],
   mustChangePassword: true,
+  temporaryPasswordExpiresAt: null,
 };
 
 export function withoutSecrets(table: string, row: string) {

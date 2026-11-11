@@ -11,3 +11,8 @@ allowBuilds:
   "@nestjs/core": false
   esbuild: true
   workerd: false
+
+# Security fixes in tools only used for development (pnpm audit, November 2026).
+overrides:
+  # GHSA-g3hv-75wg-m249 (ReDoS): eslint plugins pull in minimatch 10.
+  "minimatch@>=7.0.0 <11.0.1": "^11.0.1"

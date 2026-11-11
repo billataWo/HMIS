@@ -1,3 +1,4 @@
+import { hashPassword, temporaryPasswordExpiry } from '../common/passwords.js';
 /**
  * Platform operators (HMIS staff who use the platform console), on the HMIS cloud server:
  * `node dist/platform/cli.js <command>`, or `deploy/hmis platform <command>`.
@@ -14,7 +15,6 @@
  *                     lost). Once they have signed in, it does nothing.
  */
 import 'dotenv/config';
-import bcrypt from 'bcryptjs';
 import { createPrismaClient, type PlatformRole } from '@hmis/db';
 import { temporaryPassword } from './create-clinic.js';
 
@@ -39,7 +39,7 @@ async function add() {
   if (!['OWNER', 'BILLING', 'SUPPORT'].includes(role)) fail('--role must be OWNER, BILLING or SUPPORT');
   if (await owner.platformUser.findUnique({ where: { email } })) fail(`An operator with email ${email} exists (use: reset ${email}).`);
   const password = temporaryPassword();
-  const op = await owner.platformUser.create({ data: { fullName, email, role, passwordHash: await bcrypt.hash(password, 10) } });
+  const op = await owner.platformUser.create({ data: { fullName, email, role, passwordHash: await hashPassword(password), temporaryPasswordExpiresAt: temporaryPasswordExpiry() } });
   await owner.platformAuditLog.create({ data: { action: 'operator.created', entity: 'PlatformUser', entityId: op.id, data: { by: 'server command line', email, role } } });
   console.log(`Operator ${fullName} (${role}).`);
   console.log(`  Sign in at:         ${process.env.HMIS_PUBLIC_URL?.replace(/\/+$/, '') || 'https://<this server>'}/platform/login`);
@@ -58,10 +58,10 @@ async function firstOwner() {
     return;
   }
   const password = temporaryPassword();
-  const passwordHash = await bcrypt.hash(password, 10);
+  const passwordHash = await hashPassword(password);
   const op = existing
-    ? await owner.platformUser.update({ where: { id: existing.id }, data: { passwordHash, mustChangePassword: true, active: true, sessionsValidAfter: new Date() } })
-    : await owner.platformUser.create({ data: { fullName: opt('name') || 'HMIS owner', email, role: 'OWNER', passwordHash } });
+    ? await owner.platformUser.update({ where: { id: existing.id }, data: { passwordHash, mustChangePassword: true, temporaryPasswordExpiresAt: temporaryPasswordExpiry(), active: true, sessionsValidAfter: new Date() } })
+    : await owner.platformUser.create({ data: { fullName: opt('name') || 'HMIS owner', email, role: 'OWNER', passwordHash, temporaryPasswordExpiresAt: temporaryPasswordExpiry() } });
   await owner.platformAuditLog.create({
     data: { action: existing ? 'operator.reset' : 'operator.created', entity: 'PlatformUser', entityId: op.id, data: { by: 'server start (first owner)', email } },
   });
@@ -92,8 +92,9 @@ async function reset() {
   await owner.platformUser.update({
     where: { id: op.id },
     data: {
-      passwordHash: await bcrypt.hash(password, 10),
+      passwordHash: await hashPassword(password),
       mustChangePassword: true,
+      temporaryPasswordExpiresAt: temporaryPasswordExpiry(),
       active: true,
       sessionsValidAfter: new Date(),
       totpSecret: null,

@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { API_URL, TOKEN_COOKIE } from "@/lib/api";
+import { fromThisSite } from "@/lib/same-site";
 
 const ID = "[0-9a-f-]{36}";
 /** The only requests offline work may replay (the same ones the offline workspace queues). */
@@ -19,16 +20,8 @@ const ALLOWED: [string, RegExp][] = [
  * token cookie is not readable by scripts.
  */
 export async function POST(request: Request) {
-  // Only this app's own pages may use it (the sign-in cookie is SameSite=Lax as well).
-  const origin = request.headers.get("origin");
-  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-  if (origin && host) {
-    let sameSite = false;
-    try {
-      sameSite = new URL(origin).host === host;
-    } catch {}
-    if (!sameSite) return Response.json({ message: "Not allowed from another site" }, { status: 403 });
-  }
+  // Only this app's own pages may use it (lib/same-site.ts).
+  if (!fromThisSite(request)) return Response.json({ message: "Not allowed from another site" }, { status: 403 });
   const token = (await cookies()).get(TOKEN_COOKIE)?.value;
   if (!token) return Response.json({ message: "Signed out" }, { status: 401 });
   const { method, path, body, key } = (await request.json().catch(() => ({}))) as { method?: string; path?: string; body?: unknown; key?: string };

@@ -53,7 +53,7 @@ async function main() {
     const exists = await prisma.user.findFirst({ where: { tenantId: tenant.id, phone: s.phone } });
     if (!exists) {
       await prisma.user.create({
-        data: { tenantId: tenant.id, fullName: s.fullName, phone: s.phone, role: s.role, passwordHash: await bcrypt.hash(s.password, 10) },
+        data: { tenantId: tenant.id, fullName: s.fullName, phone: s.phone, role: s.role, passwordHash: await bcrypt.hash(s.password, 12) },
       });
       console.log(`+ ${s.role.toLowerCase()} ${s.fullName}`);
     }

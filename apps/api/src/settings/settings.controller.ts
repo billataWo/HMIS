@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Patch } from '@nestjs/common';
 import { z } from 'zod';
-import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
+import { type AuthUser, CurrentUser, Roles, AllStaff } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -23,6 +23,7 @@ export class SettingsController {
     private readonly audit: AuditService,
   ) {}
 
+  @AllStaff()
   @Get()
   get(@CurrentUser() me: AuthUser) {
     return this.prisma.client.tenant.findUniqueOrThrow({ where: { id: me.tenantId }, select });

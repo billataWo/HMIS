@@ -2,6 +2,7 @@
 
 import { Check } from "lucide-react";
 import Link from "next/link";
+import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { buttonClass, secondaryButtonClass } from "@/components/ui";
 import { etb } from "@/lib/format";
@@ -38,28 +39,43 @@ export function Plans({ plans, features, trialDays }: { plans: Plan[]; features:
             role="radio"
             aria-checked={yearly === o.value}
             onClick={() => setYearly(o.value)}
-            className={`min-h-10 rounded-lg px-4 font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
-              yearly === o.value ? "bg-white text-slate-900 shadow-sm dark:bg-slate-950 dark:text-white" : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+            className={`relative min-h-10 rounded-lg px-4 font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
+              yearly === o.value ? "text-slate-900 dark:text-white" : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
             }`}
           >
-            {o.label}
+            {/* The white pill slides to the chosen period. */}
+            {yearly === o.value && (
+              <motion.span layoutId="billing-period" aria-hidden className="absolute inset-0 rounded-lg bg-white shadow-sm dark:bg-slate-950" transition={{ type: "spring", bounce: 0.15, duration: 0.4 }} />
+            )}
+            <span className="relative">{o.label}</span>
           </button>
         ))}
       </div>
 
-      <div className={`mt-8 grid gap-5 ${plans.length >= 3 ? "lg:grid-cols-3" : plans.length === 2 ? "md:grid-cols-2" : ""}`}>
+      <div className={`land-stagger mt-8 grid gap-5 ${plans.length >= 3 ? "lg:grid-cols-3" : plans.length === 2 ? "md:grid-cols-2" : ""}`}>
         {plans.map((p) => {
           const isFeatured = p.code === featured;
           return (
-            <div key={p.code} className={`surface relative flex flex-col p-6 ${isFeatured ? "ring-2 ring-brand-600 dark:ring-brand-400" : ""}`}>
+            <div key={p.code} className={`surface land-lift relative flex flex-col p-6 ${isFeatured ? "ring-2 ring-brand-600 lg:-my-2 lg:py-8 dark:ring-brand-400" : ""}`}>
               {isFeatured && (
                 <span className="absolute -top-3 left-6 rounded-full bg-brand-700 px-2.5 py-0.5 text-xs font-medium text-white">Most clinics choose this</span>
               )}
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{p.name}</h3>
               {p.description && <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{p.description}</p>}
-              <p className="mt-5 text-3xl font-semibold tracking-tight text-slate-900 tabular-nums dark:text-white">
-                {etb(yearly ? p.priceYearly : p.priceMonthly)}
-                <span className="text-sm font-normal tracking-normal text-slate-500"> / {yearly ? "year" : "month"}</span>
+              <p className="mt-5 flex items-baseline overflow-hidden text-3xl font-semibold tracking-tight text-slate-900 tabular-nums dark:text-white">
+                {/* The new price rises in as the old one leaves. */}
+                <AnimatePresence mode="popLayout" initial={false}>
+                  <motion.span
+                    key={yearly ? "y" : "m"}
+                    initial={{ y: 14, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ y: -14, opacity: 0 }}
+                    transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                  >
+                    {etb(yearly ? p.priceYearly : p.priceMonthly)}
+                  </motion.span>
+                </AnimatePresence>
+                <span className="ml-1 text-sm font-normal tracking-normal text-slate-500">/ {yearly ? "year" : "month"}</span>
               </p>
               <p className="mt-1 h-5 text-xs text-slate-500">
                 {yearly ? (saving(p) > 0 ? `${etb(saving(p))} less than paying monthly` : "") : `or ${etb(p.priceYearly)} a year`}

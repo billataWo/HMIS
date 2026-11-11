@@ -82,7 +82,9 @@ export class AuthGuard implements CanActivate {
     }
 
     const roles = this.reflector.getAllAndOverride<Role[] | undefined>(ROLES, targets);
-    if (roles && !roles.includes(user.role)) {
+    // Deny by default: every route says who may use it (@Roles, @AllStaff or @Public).
+    if (!roles) throw new ForbiddenException('This action has no access rule');
+    if (!roles.includes(user.role)) {
       throw new ForbiddenException('Your role does not allow this action');
     }
     return true;

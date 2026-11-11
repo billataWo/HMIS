@@ -57,7 +57,7 @@ if (process.env.NODE_ENV === 'production' && (jwtSecret.length < 32 || WEAK_SECR
 }
 
 @Module({
-  imports: [PrismaModule, JwtModule.register({ secret: jwtSecret, signOptions: { expiresIn: '12h' } })],
+  imports: [PrismaModule, JwtModule.register({ secret: jwtSecret, signOptions: { expiresIn: '12h', algorithm: 'HS256' }, verifyOptions: { algorithms: ['HS256'] } })],
   controllers: [
     AppController,
     AuthController,

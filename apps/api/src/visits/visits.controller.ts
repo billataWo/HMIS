@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import type { LabOrderStatus, PrescriptionStatus, Prisma, Role, VisitStatus } from '@hmis/db';
 import { z } from 'zod';
-import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
+import { type AuthUser, CurrentUser, Roles, AllStaff } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
 import { clinicDay, DAY_PATTERN, dayRange } from '../common/clinic-day.js';
 import { fromCents, toCents } from '../common/money.js';
@@ -92,6 +92,7 @@ export class VisitsController {
   ) {}
 
   /** The day's queue in arrival order. Defaults to today in the clinic's time zone. */
+  @AllStaff()
   @Get('queue')
   async queue(@CurrentUser() me: AuthUser, @Query(new ZodPipe(QueueQuerySchema)) q: z.infer<typeof QueueQuerySchema>) {
     const day = q.day ?? clinicDay();

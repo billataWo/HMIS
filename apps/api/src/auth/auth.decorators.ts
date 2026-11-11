@@ -22,8 +22,16 @@ export const AllowPendingPassword = () => SetMetadata(ALLOW_PENDING_PASSWORD, tr
 /** Skip authentication for this route. */
 export const Public = () => SetMetadata(IS_PUBLIC, true);
 
-/** Restrict a route to the given roles. Without it, any signed-in user may call the route. */
+/** Restrict a route to the given roles. A route without @Roles, @AllStaff or @Public is refused. */
 export const Roles = (...roles: Role[]) => SetMetadata(ROLES, roles);
+
+export const ALL_ROLES: Role[] = ['ADMIN', 'RECEPTIONIST', 'DOCTOR', 'NURSE', 'CASHIER', 'PHARMACIST', 'LAB_TECH'];
+
+/**
+ * Open to every signed-in member of the clinic's staff (their own account, the queue, look-ups).
+ * Said explicitly, so a route that forgot its roles is refused instead of open to everyone.
+ */
+export const AllStaff = () => SetMetadata(ROLES, ALL_ROLES);
 
 export const CurrentUser = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): AuthUser => ctx.switchToHttp().getRequest().user,

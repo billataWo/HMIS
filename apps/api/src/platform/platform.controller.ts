@@ -1,5 +1,5 @@
+import { hashPassword, temporaryPasswordExpiry } from '../common/passwords.js';
 import { Body, ConflictException, Controller, Get, HttpCode, NotFoundException, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
-import bcrypt from 'bcryptjs';
 import type { Request } from 'express';
 import { z } from 'zod';
 import type { Prisma, SubscriptionStatus } from '@hmis/db';
@@ -502,7 +502,7 @@ export class PlatformController {
   async addOperator(@Req() req: Request, @CurrentOperator() op: Operator, @Body(new ZodPipe(OperatorSchema)) body: z.infer<typeof OperatorSchema>) {
     if (await this.db.platformUser.findUnique({ where: { email: body.email } })) throw new ConflictException('An operator with this email exists');
     const password = temporaryPassword();
-    const created = await this.db.platformUser.create({ data: { ...body, passwordHash: await bcrypt.hash(password, 10) } });
+    const created = await this.db.platformUser.create({ data: { ...body, passwordHash: await hashPassword(password), temporaryPasswordExpiresAt: temporaryPasswordExpiry() } });
     await this.audit(req, op, 'operator.created', 'PlatformUser', created.id, null, body);
     return { id: created.id, email: created.email, temporaryPassword: password };
   }
@@ -520,7 +520,7 @@ export class PlatformController {
       data: {
         ...(body.role && { role: body.role }),
         ...(body.active !== undefined && { active: body.active }),
-        ...(password && { passwordHash: await bcrypt.hash(password, 10), mustChangePassword: true }),
+        ...(password && { passwordHash: await hashPassword(password), mustChangePassword: true, temporaryPasswordExpiresAt: temporaryPasswordExpiry() }),
         ...(body.resetTwoStep && { totpSecret: null, totpPendingSecret: null, totpEnabledAt: null, totpLastStep: null, totpRecoveryCodes: [] }),
         ...((password || body.resetTwoStep || body.active === false) && { sessionsValidAfter: new Date() }),
       },

@@ -1,3 +1,5 @@
+import { currentPasswordMatches } from '../common/password-check.js';
+import { DUMMY_HASH, hashPassword, needsRehash, temporaryPasswordExpired } from '../common/passwords.js';
 import { Body, Controller, Get, HttpCode, HttpException, Logger, Post, Req, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
@@ -9,7 +11,7 @@ import { normalizePhone } from '../common/phone.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AllowWhileSuspended, tenantPlan } from '../platform/subscription.guard.js';
-import { AllowPendingPassword, AllowTwoStepSetup, type AuthUser, CurrentUser, Public } from './auth.decorators.js';
+import { AllowPendingPassword, AllowTwoStepSetup, type AuthUser, CurrentUser, Public, AllStaff } from './auth.decorators.js';
 import { hashRecoveryCode, looksLikeRecoveryCode, verifyTotp } from './totp.js';
 import { forgetAccount } from './auth.guard.js';
 
@@ -36,7 +38,6 @@ const PasswordSchema = z
   .refine((b) => b.next !== b.current, { message: 'Choose a password different from the current one', path: ['next'] });
 
 // Compared against when the phone is unknown, so response time doesn't reveal which phones have accounts.
-const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10);
 
 /**
  * Wrong-password limits, in memory (per API process), each counted over WINDOW_MS and then locked
@@ -142,8 +143,16 @@ export class AuthController {
       }
       throw new UnauthorizedException('Wrong phone number or password');
     }
+    if (temporaryPasswordExpired(user)) {
+      await this.auditSignIn(user.tenantId, user.id, 'auth.temporary_password_expired', { ip });
+      throw new UnauthorizedException('This temporary password has expired. Ask your clinic administrator for a new one.');
+    }
     failures.delete(`phone:${phone}`);
     failures.delete(`pair:${phone}|${ip ?? 'unknown'}`);
+    // An older, weaker hash is replaced now, while the password is at hand.
+    if (needsRehash(user.passwordHash)) {
+      await this.prisma.system.user.update({ where: { id: user.id }, data: { passwordHash: await hashPassword(body.password) } });
+    }
 
     // Two-step sign-in: the password was right; the session comes after the code. The challenge
     // is a short-lived token that the guard never accepts as a session (it carries a purpose).
@@ -223,6 +232,7 @@ export class AuthController {
   }
 
   /** Any signed-in user changes their own password (and so replaces a temporary one). */
+  @AllStaff()
   @Post('password')
   @HttpCode(200)
   @AllowPendingPassword()
@@ -230,14 +240,14 @@ export class AuthController {
   @AllowWhileSuspended()
   async changePassword(@CurrentUser() me: AuthUser, @Body(new ZodPipe(PasswordSchema)) body: z.infer<typeof PasswordSchema>) {
     const user = await this.prisma.client.user.findFirst({ where: { id: me.sub, tenantId: me.tenantId } });
-    if (!user || !(await bcrypt.compare(body.current, user.passwordHash))) {
+    if (!user || !(await currentPasswordMatches(user.id, body.current, user.passwordHash))) {
       throw new UnauthorizedException('Your current password is not correct');
     }
     // Every other sign-in of this account stops working (a stolen one included); this one gets a
     // fresh token, issued after the cut-off.
     const updated = await this.prisma.client.user.update({
       where: { id: user.id },
-      data: { passwordHash: await bcrypt.hash(body.next, 10), mustChangePassword: false, sessionsValidAfter: new Date() },
+      data: { passwordHash: await hashPassword(body.next), mustChangePassword: false, temporaryPasswordExpiresAt: null, sessionsValidAfter: new Date() },
     });
     forgetAccount(user.id);
     await this.audit.log(me, 'user.password', 'User', user.id);
@@ -245,6 +255,7 @@ export class AuthController {
     return { ok: true, token: await this.jwt.signAsync(payload) };
   }
 
+  @AllStaff()
   @Get('me')
   @AllowPendingPassword()
   @AllowTwoStepSetup()

@@ -1,7 +1,7 @@
 import { Body, ConflictException, Controller, Get, Headers, HttpCode, NotFoundException, Post, Res, UnauthorizedException } from '@nestjs/common';
 import type { Response } from 'express';
 import { z } from 'zod';
-import { type AuthUser, CurrentUser, Public } from '../auth/auth.decorators.js';
+import { type AuthUser, CurrentUser, Public, AllStaff } from '../auth/auth.decorators.js';
 import { tenantContext } from '../common/tenant-context.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -124,6 +124,7 @@ export class SyncController {
    *  - cloud-copy: this is the cloud's read-only copy of a clinic that works on its clinic server
    *  - off: neither (a cloud-only clinic, or no sync set up)
    */
+  @AllStaff()
   @Get('status')
   async status(@CurrentUser() me: AuthUser) {
     const admin = me.role === 'ADMIN';

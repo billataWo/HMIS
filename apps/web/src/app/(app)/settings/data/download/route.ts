@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { API_URL, TOKEN_COOKIE } from "@/lib/api";
+import { fromThisSite } from "@/lib/same-site";
 
 const back = (request: Request, error: string) => NextResponse.redirect(new URL(`/settings/data?error=${error}`, request.url), 303);
 
@@ -12,6 +13,7 @@ const back = (request: Request, error: string) => NextResponse.redirect(new URL(
  * A plain GET download is what browsers handle reliably; the password stays out of the URL.
  */
 export async function POST(request: Request) {
+  if (!fromThisSite(request)) return new NextResponse("Not allowed from another site", { status: 403 });
   const token = (await cookies()).get(TOKEN_COOKIE)?.value;
   if (!token) return NextResponse.redirect(new URL("/login", request.url), 303);
   const form = await request.formData();
