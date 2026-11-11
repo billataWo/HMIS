@@ -31,6 +31,9 @@ export function UserForm() {
           ))}
         </select>
       </Field>
+      <Field label="Room (optional)" error={err.room} hint="Where they see patients, e.g. Room 2. Shown on the waiting-room screen.">
+        <Input name="room" maxLength={40} placeholder="Room 2" defaultValue={v.room} />
+      </Field>
       <Field label="Temporary password" error={err.password} hint="At least 8 characters">
         <Input name="password" type="password" required minLength={8} autoComplete="new-password" />
       </Field>

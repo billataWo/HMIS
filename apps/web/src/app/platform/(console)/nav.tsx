@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, CreditCard, History, Inbox, LayoutDashboard, Settings, UserCog, Users } from "lucide-react";
+import { Building2, CreditCard, History, Inbox, LayoutDashboard, Mic, Settings, UserCog, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -10,6 +10,7 @@ const LINKS = [
   { href: "/platform/clinics", label: "Clinics", icon: Building2 },
   { href: "/platform/plans", label: "Plans", icon: CreditCard },
   { href: "/platform/operators", label: "Operators", icon: Users, owner: true },
+  { href: "/platform/voice", label: "Voice", icon: Mic },
   { href: "/platform/settings", label: "Settings", icon: Settings },
   { href: "/platform/history", label: "History", icon: History },
 ] as const;

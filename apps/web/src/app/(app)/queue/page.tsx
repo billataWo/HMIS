@@ -109,7 +109,12 @@ function VisitRow({ v, role, returnTo, prepayment, lang }: { v: QueueVisit; role
               waiting {formatDuration(v.checkedInAt)}
             </span>
           )}
-          {v.doctor && <span>Dr. {v.doctor.fullName}</span>}
+          {v.doctor && (
+            <span>
+              Dr. {v.doctor.fullName}
+              {v.doctor.room && <span className="font-medium text-slate-700 dark:text-slate-200"> · {v.doctor.room}</span>}
+            </span>
+          )}
           {v.patient.allergies.length > 0 && (
             <span className="inline-flex items-center gap-1 font-medium text-red-700 dark:text-red-400">
               <TriangleAlert aria-hidden className="size-3" />

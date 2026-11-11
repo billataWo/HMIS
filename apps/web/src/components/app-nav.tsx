@@ -31,6 +31,8 @@ import { ROLE_LABELS } from "@/lib/format";
 import { DURATION, EASE } from "./motion";
 import { OfflineAgent, OfflineChip } from "./offline-agent";
 import { clearSnapshot } from "@/lib/offline/idb";
+import { QuickFind, QuickFindButton } from "./quick-find";
+import { canRegister, FRONT_DESK } from "@/lib/roles";
 
 /** `feature`: shown only when the clinic's plan includes that module. */
 type Item = { href: string; label: string; labelAm: string; icon: LucideIcon; roles?: Role[]; feature?: string };
@@ -234,9 +236,12 @@ export function AppNav({ me, lang }: { me: Me; lang: Lang }) {
   return (
     <>
       <OfflineAgent me={me} />
+      <QuickFind frontDesk={FRONT_DESK.includes(me.role)} canRegister={canRegister(me)} />
       {/* Phones and tablets: top bar with a slide-in menu. */}
       <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-slate-200 bg-white/85 px-4 py-2.5 backdrop-blur-md md:hidden print:hidden dark:border-slate-800 dark:bg-slate-950/85">
         <Brand me={me} />
+        <span className="ml-auto" />
+        <QuickFindButton variant="icon" />
         <button
           onClick={() => setOpen(true)}
           aria-label="Open menu"
@@ -285,6 +290,7 @@ export function AppNav({ me, lang }: { me: Me; lang: Lang }) {
       {/* Desktop: fixed sidebar. */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col gap-6 overflow-y-auto border-r border-slate-200 bg-slate-50/80 px-3 py-5 md:flex print:hidden dark:border-slate-800 dark:bg-slate-950">
         <Brand me={me} />
+        <QuickFindButton variant="sidebar" />
         <NavLinks me={me} lang={lang} layoutGroup="desktop" />
         <div className="mt-auto">
           <UserCard me={me} lang={lang} />

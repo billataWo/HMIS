@@ -1,9 +1,9 @@
 import { Suspense } from "react";
-import { PageHeader, Skeleton } from "@/components/ui";
+import { inputClass, PageHeader, Skeleton } from "@/components/ui";
 import { api, ApiError, type Me, type StaffUser } from "@/lib/api";
 import { ROLE_LABELS } from "@/lib/format";
 import { resetUserTwoStep } from "../../two-step-actions";
-import { setUserActive } from "../../actions";
+import { setUserActive, setUserRoom } from "../../actions";
 import { UserForm } from "./user-form";
 
 async function Staff() {
@@ -29,6 +29,7 @@ async function Staff() {
               <th className="px-4 py-3 font-medium">Name</th>
               <th className="px-4 py-3 font-medium">Role</th>
               <th className="px-4 py-3 font-medium">Phone</th>
+              <th className="px-4 py-3 font-medium">Room</th>
               <th className="px-4 py-3 font-medium">Two-step</th>
               <th className="px-4 py-3 font-medium">Status</th>
             </tr>
@@ -39,6 +40,20 @@ async function Staff() {
                 <td className="px-4 py-3">{u.fullName}</td>
                 <td className="px-4 py-3">{ROLE_LABELS[u.role]}</td>
                 <td className="px-4 py-3">{u.phone}</td>
+                <td className="px-4 py-2">
+                  {/* Where they see patients: the waiting-room screen shows it when they call someone in. */}
+                  <form action={setUserRoom.bind(null, u.id)} className="flex items-center gap-1">
+                    <input
+                      name="room"
+                      defaultValue={u.room ?? ""}
+                      maxLength={40}
+                      placeholder={u.role === "DOCTOR" ? "Room 2" : "—"}
+                      aria-label={`Room for ${u.fullName}`}
+                      className={`${inputClass} w-24 px-2 py-1 text-sm`}
+                    />
+                    <button className="rounded-md px-2 py-1 text-xs font-medium text-brand-700 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-950">Save</button>
+                  </form>
+                </td>
                 <td className="px-4 py-3">
                   {u.totpEnabledAt ? (
                     u.id === me.id ? (

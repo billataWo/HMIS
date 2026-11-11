@@ -72,6 +72,8 @@ model User {
   email              String?
   passwordHash       String
   role               Role
+  /// Where this person sees patients ("Room 2", "OPD 1"): shown on the waiting-room screen when they call someone in.
+  room               String?
   active             Boolean   @default(true)
   // Set when an admin creates the account or resets the password: the user must pick their own.
   mustChangePassword Boolean   @default(false)
@@ -983,6 +985,20 @@ model PlatformSetting {
   /// A cancelled clinic's records can be deleted this many days after cancellation (time to export).
   dataRetentionDays  Int      @default(60)
   updatedAt    DateTime @updatedAt
+}
+
+/// The voice that calls patients on the waiting-room TVs: one short recording per word or phrase,
+/// per language ("am", "en"), the same for every clinic. Recorded or uploaded in the platform
+/// console; the TV joins them ("ተራ ቁጥር" + "አስራ ሁለት" + ...). Stored as trimmed mono WAV.
+model VoiceClip {
+  lang      String
+  /// "number", "n1".."n19", "n20".."n90", "hundred", "go_to", "room", "enter", "come_in"
+  key       String
+  mime      String
+  data      Bytes
+  updatedAt DateTime @updatedAt
+
+  @@id([lang, key])
 }
 
 /// HMIS's invoice to a clinic for one subscription period (not the clinic's invoices to patients).

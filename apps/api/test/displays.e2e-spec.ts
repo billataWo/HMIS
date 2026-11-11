@@ -34,10 +34,30 @@ describe('waiting-room screens', () => {
 
     const shown = await board(token).expect(200);
     expect(shown.body.clinic.name).toBe('Screen Clinic');
-    expect(shown.body.serving).toEqual([{ id: v1.id, queueNumber: v1.queueNumber, doctor: 'DOCTOR user' }]);
-    expect(shown.body.next).toEqual([{ id: v2.id, queueNumber: v2.queueNumber }]);
+    expect(shown.body.serving).toEqual([{ id: v1.id, queueNumber: v1.queueNumber, doctor: 'DOCTOR user', room: null }]);
+    expect(shown.body.next).toEqual([{ id: v2.id, queueNumber: v2.queueNumber, doctor: null, room: null }]);
     // Nothing that identifies a patient travels to the screen.
     expect(JSON.stringify(shown.body)).not.toMatch(/Secretname|Hidden|Private|Person|MRN|phone/i);
+  });
+
+  it("tells the waiting room where each called patient goes: the doctor's room", async () => {
+    // An admin sets where the doctor sees patients; others cannot.
+    await api.patch(`/users/${doctor.id}`).set(bearer(desk.token)).send({ room: 'Room 9' }).expect(403);
+    const updated = (await api.patch(`/users/${doctor.id}`).set(bearer(admin.token)).send({ room: '  Room 2  ' }).expect(200)).body;
+    expect(updated.room).toBe('Room 2');
+    expect((await api.get('/lookups/doctors').set(bearer(desk.token)).expect(200)).body).toContainEqual({ id: doctor.id, fullName: 'DOCTOR user', room: 'Room 2' });
+
+    const created = (await api.post('/displays').set(bearer(admin.token)).send({ name: 'Room board' }).expect(201)).body;
+    const { token } = (await pair(created.code, '198.51.100.61').expect(200)).body;
+    const p = (await api.post('/patients').set(bearer(desk.token)).send({ firstName: 'Roomcase', fatherName: 'Patient', sex: 'FEMALE', confirmDuplicate: true }).expect(201)).body;
+    const waiting = (await api.post('/visits').set(bearer(desk.token)).send({ patientId: p.id, doctorId: doctor.id }).expect(201)).body;
+    expect((await board(token).expect(200)).body.next).toContainEqual({ id: waiting.id, queueNumber: waiting.queueNumber, doctor: 'DOCTOR user', room: 'Room 2' });
+    await api.patch(`/visits/${waiting.id}/status`).set(bearer(doctor.token)).send({ status: 'IN_CONSULTATION' }).expect(200);
+    expect((await board(token).expect(200)).body.serving).toContainEqual({ id: waiting.id, queueNumber: waiting.queueNumber, doctor: 'DOCTOR user', room: 'Room 2' });
+    // The queue shows it to staff too; an empty room clears it.
+    const queue = (await api.get('/queue').set(bearer(desk.token)).expect(200)).body;
+    expect(queue.visits.find((v: { id: string }) => v.id === waiting.id).doctor.room).toBe('Room 2');
+    expect((await api.patch(`/users/${doctor.id}`).set(bearer(admin.token)).send({ room: '' }).expect(200)).body.room).toBeNull();
   });
 
   it('gives the screen nothing else: its key is not a staff sign-in', async () => {

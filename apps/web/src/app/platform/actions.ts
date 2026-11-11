@@ -305,3 +305,26 @@ export async function deleteClinicData(tenantId: string, _: FormState, form: For
     return failure(e);
   }
 }
+
+// ─── The waiting-room voice ─────────────────────────────────────────────────────────────────────
+/** One recorded word or phrase (already trimmed and made into WAV in the browser). */
+export async function saveVoiceClip(lang: string, key: string, data: string): Promise<FormState & { updatedAt?: string }> {
+  try {
+    const saved = await platformApi<{ updatedAt: string }>(`/platform/voice/${encodeURIComponent(lang)}/${encodeURIComponent(key)}`, {
+      method: "PUT",
+      body: JSON.stringify({ data }),
+    });
+    return { ok: true, updatedAt: saved.updatedAt };
+  } catch (e) {
+    return failure(e);
+  }
+}
+
+export async function removeVoiceClip(lang: string, key: string): Promise<FormState> {
+  try {
+    await platformApi(`/platform/voice/${encodeURIComponent(lang)}/${encodeURIComponent(key)}`, { method: "DELETE" });
+    return { ok: true };
+  } catch (e) {
+    return failure(e);
+  }
+}

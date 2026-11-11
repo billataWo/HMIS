@@ -166,7 +166,7 @@ export interface QueueVisit {
   calledAt: string | null;
   completedAt: string | null;
   patient: QueuePatient;
-  doctor: { id: string; fullName: string } | null;
+  doctor: { id: string; fullName: string; room?: string | null } | null;
   consultationPaid?: boolean; // present on /queue
   labReady?: boolean; // present on /queue: every ordered test is verified
   labPending?: boolean; // present on /queue: some test has no verified result yet
@@ -522,6 +522,8 @@ export interface Appointment {
 export interface Doctor {
   id: string;
   fullName: string;
+  /** Where they see patients ("Room 2"), shown on the waiting-room screen. */
+  room?: string | null;
 }
 
 export interface Service {
@@ -623,6 +625,7 @@ export interface StaffUser {
   phone: string;
   email: string | null;
   role: Role;
+  room?: string | null;
   active: boolean;
   createdAt: string;
   totpEnabledAt?: string | null; // two-step sign-in is on

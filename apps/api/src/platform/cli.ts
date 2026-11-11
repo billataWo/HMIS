@@ -13,9 +13,15 @@ import { hashPassword, temporaryPasswordExpiry } from '../common/passwords.js';
  *                     creates this owner; while this owner has never signed in, gives a new
  *                     temporary password (so a password that scrolled out of the logs is not
  *                     lost). Once they have signed in, it does nothing.
+ *   voice-import <file | ->
+ *                     on a clinic's own server: loads the waiting-room voice pack downloaded from
+ *                     the platform console (Voice → Download the voice), replacing any voice
+ *                     there; "-" reads it from standard input (`deploy/hmis voice install <file>`)
  */
 import 'dotenv/config';
+import { readFileSync } from 'node:fs';
 import { createPrismaClient, type PlatformRole } from '@hmis/db';
+import { sniffAudio, VOICE_KEY, VOICE_LANGS, VOICE_MAX_BYTES } from '../voice/voice.js';
 import { temporaryPassword } from './create-clinic.js';
 
 const [cmd, ...args] = process.argv.slice(2);
@@ -108,12 +114,34 @@ async function reset() {
   console.log(`${op.fullName}: temporary password ${password}. Their sign-ins have ended; they set up two-step sign-in again.`);
 }
 
+async function voiceImport() {
+  if (!args[0]) fail('usage: voice-import <file>   (or "-" to read it from standard input)');
+  let pack: { format?: string; clips?: { lang: string; key: string; data: string }[] };
+  try {
+    pack = JSON.parse(readFileSync(args[0] === '-' ? 0 : args[0], 'utf8'));
+  } catch (e) {
+    fail(`Cannot read ${args[0]}: ${(e as Error).message}`);
+  }
+  if (pack.format !== 'hmis-voice-1' || !Array.isArray(pack.clips)) fail('Not an HMIS voice pack (download it from the platform console: Voice).');
+  const clips = pack.clips.map((c) => {
+    const data = Buffer.from(String(c.data), 'base64');
+    const mime = sniffAudio(data);
+    if (!(VOICE_LANGS as readonly string[]).includes(c.lang) || !VOICE_KEY.test(c.key) || !mime || data.length > VOICE_MAX_BYTES) {
+      fail(`Clip ${c.lang}/${c.key} is not valid; nothing was changed.`);
+    }
+    return { lang: c.lang, key: c.key, mime, data };
+  });
+  await owner.$transaction([owner.voiceClip.deleteMany({}), owner.voiceClip.createMany({ data: clips })]);
+  console.log(`Voice pack loaded: ${clips.length} clips. The screens pick it up within a minute.`);
+}
+
 try {
   if (cmd === 'add-operator') await add();
+  else if (cmd === 'voice-import') await voiceImport();
   else if (cmd === 'list') await list();
   else if (cmd === 'reset') await reset();
   else if (cmd === 'first-owner') await firstOwner();
-  else fail('usage: node dist/platform/cli.js add-operator|list|reset|first-owner (see the top of src/platform/cli.ts)');
+  else fail('usage: node dist/platform/cli.js add-operator|list|reset|first-owner|voice-import (see the top of src/platform/cli.ts)');
 } finally {
   await owner.$disconnect();
 }

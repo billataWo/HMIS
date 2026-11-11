@@ -37,6 +37,7 @@ export function CheckInForm({
           {doctors.map((d) => (
             <option key={d.id} value={d.id}>
               Dr. {d.fullName}
+              {d.room ? ` · ${d.room}` : ""}
             </option>
           ))}
         </select>

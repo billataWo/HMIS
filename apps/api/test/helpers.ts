@@ -29,6 +29,7 @@ export const api = {
   get: (url: string) => request(app.getHttpServer()).get(url),
   post: (url: string) => request(app.getHttpServer()).post(url),
   patch: (url: string) => request(app.getHttpServer()).patch(url),
+  put: (url: string) => request(app.getHttpServer()).put(url),
   delete: (url: string) => request(app.getHttpServer()).delete(url),
 };
 

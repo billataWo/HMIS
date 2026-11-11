@@ -12,7 +12,7 @@ export class LookupsController {
   doctors(@CurrentUser() me: AuthUser) {
     return this.prisma.client.user.findMany({
       where: { tenantId: me.tenantId, role: 'DOCTOR', active: true },
-      select: { id: true, fullName: true },
+      select: { id: true, fullName: true, room: true },
       orderBy: { fullName: 'asc' },
     });
   }

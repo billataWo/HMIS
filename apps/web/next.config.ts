@@ -66,6 +66,11 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
+      // The voice studio records from the microphone; everywhere else it stays off.
+      {
+        source: "/platform/voice",
+        headers: [{ key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=(), payment=(), usb=()" }],
+      },
       // The service worker must always be fetched fresh, so a new version takes over straight away.
       {
         source: "/sw.js",

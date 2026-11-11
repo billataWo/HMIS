@@ -1,11 +1,13 @@
 "use client";
 
-import { LoaderCircle, Plus } from "lucide-react";
+import { LoaderCircle, Plus, TriangleAlert } from "lucide-react";
 import { useActionState, useRef, useState } from "react";
 import { saveConsultation, type FormState } from "@/app/actions";
 import { Reveal } from "@/components/motion";
 import { Alert, Badge, buttonClass, Field, inputClass, Notice, secondaryButtonClass } from "@/components/ui";
 import type { VisitDetail, VisitStatus } from "@/lib/api";
+import { ageFrom } from "@/lib/format";
+import { vitalFlag } from "./vital-flags";
 
 type Mode = "doctor" | "nurse";
 
@@ -144,6 +146,10 @@ export function ConsultationForm({
     return v === null || v === undefined ? "" : String(v);
   };
   const [weight, setWeight] = useState(initial("weightKg"));
+  // What has been typed in each vital, to flag adult values outside the usual range as they are entered.
+  const [typed, setTyped] = useState<Record<string, string>>(() => Object.fromEntries(VITALS.map((f) => [f.name, initial(f.name)])));
+  const age = ageFrom(visit.patient.dateOfBirth);
+  const adult = age !== null && age >= 18;
   const [height, setHeight] = useState(initial("heightCm"));
   const exam = useRef<HTMLTextAreaElement>(null);
   const complaint = useRef<HTMLTextAreaElement>(null);
@@ -183,6 +189,7 @@ export function ConsultationForm({
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {VITALS.map((f) => (
             <Field key={f.name} label={`${f.label} (${f.unit})`} error={err[f.name]}>
+              <>
               <input
                 name={f.name}
                 type="number"
@@ -192,14 +199,39 @@ export function ConsultationForm({
                 max={f.max}
                 defaultValue={f.name === "weightKg" || f.name === "heightCm" ? undefined : initial(f.name)}
                 value={f.name === "weightKg" ? weight : f.name === "heightCm" ? height : undefined}
-                onChange={
-                  f.name === "weightKg" ? (e) => setWeight(e.target.value) : f.name === "heightCm" ? (e) => setHeight(e.target.value) : undefined
-                }
-                className={inputClass}
+                onChange={(e) => {
+                  if (f.name === "weightKg") setWeight(e.target.value);
+                  else if (f.name === "heightCm") setHeight(e.target.value);
+                  else setTyped((t) => ({ ...t, [f.name]: e.target.value }));
+                }}
+                aria-describedby={adult && vitalFlag(f.name, typed[f.name] ?? "") ? `${f.name}-flag` : undefined}
+                className={`${inputClass} ${
+                  adult && vitalFlag(f.name, typed[f.name] ?? "")
+                    ? vitalFlag(f.name, typed[f.name] ?? "")!.urgent
+                      ? "border-red-400! dark:border-red-700!"
+                      : "border-amber-400! dark:border-amber-700!"
+                    : ""
+                }`}
               />
+              {adult && vitalFlag(f.name, typed[f.name] ?? "") && (
+                <span
+                  id={`${f.name}-flag`}
+                  role="status"
+                  className={`mt-1 flex items-center gap-1 text-xs font-medium ${
+                    vitalFlag(f.name, typed[f.name] ?? "")!.urgent ? "text-red-700 dark:text-red-300" : "text-amber-800 dark:text-amber-300"
+                  }`}
+                >
+                  <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
+                  {vitalFlag(f.name, typed[f.name] ?? "")!.text}
+                </span>
+              )}
+              </>
             </Field>
           ))}
         </div>
+        {!adult && age !== null && (
+          <p className="mt-3 text-xs text-slate-500">A child: compare the vitals with the normal range for their age (no automatic flags).</p>
+        )}
         {bmi(weight, height) && (
           <p className="mt-3">
             <Badge tone="brand">BMI {bmi(weight, height)} kg/m²</Badge>

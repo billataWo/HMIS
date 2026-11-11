@@ -17,6 +17,7 @@ const CreateUserSchema = z.object({
   email: z.email().optional(),
   role: RoleEnum,
   password: z.string().min(8, 'Password must be at least 8 characters'),
+  room: z.string().trim().max(40).transform((r) => r || undefined).optional(),
 });
 
 const UpdateUserSchema = z.object({
@@ -25,9 +26,17 @@ const UpdateUserSchema = z.object({
   active: z.boolean().optional(),
   password: z.string().min(8).optional(),
   resetTwoStep: z.literal(true).optional(), // lost phone: the user sets two-step sign-in up again
+  /** Where they see patients ("Room 2"); empty clears it. */
+  room: z
+    .string()
+    .trim()
+    .max(40)
+    .transform((r) => r || null)
+    .nullable()
+    .optional(),
 });
 
-const publicFields = { id: true, fullName: true, phone: true, email: true, role: true, active: true, createdAt: true, totpEnabledAt: true };
+const publicFields = { id: true, fullName: true, phone: true, email: true, role: true, room: true, active: true, createdAt: true, totpEnabledAt: true };
 
 @Controller('users')
 @Roles('ADMIN')

@@ -64,7 +64,7 @@ const DiagnosisSchema = z.object({
 
 const visitInclude = {
   patient: { select: queuePatientSelect },
-  doctor: { select: { id: true, fullName: true } },
+  doctor: { select: { id: true, fullName: true, room: true } },
   diagnoses: { orderBy: [{ isPrimary: 'desc' }, { id: 'asc' }] },
 } satisfies Prisma.VisitInclude;
 

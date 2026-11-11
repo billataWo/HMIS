@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
+import { ArrowRight } from "lucide-react";
 import { Suspense } from "react";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { CallPop } from "@/components/motion";
 import { API_URL } from "@/lib/api";
 import { formatDualDate, formatTime } from "@/lib/format";
+import { Announcer } from "./announcer";
 import { PairForm } from "./pair-form";
 
 export const metadata: Metadata = { title: "Queue display" };
@@ -12,8 +14,10 @@ export const metadata: Metadata = { title: "Queue display" };
 type Board = {
   clinic: { name: string; nameAm: string | null };
   day: string;
-  serving: { id: string; queueNumber: number; doctor: string | null }[];
-  next: { id: string; queueNumber: number }[];
+  serving: { id: string; queueNumber: number; doctor: string | null; room: string | null }[];
+  next: { id: string; queueNumber: number; doctor: string | null; room: string | null }[];
+  /** The recorded calling voice's version (null: none recorded yet). */
+  voice?: string | null;
 };
 
 /**
@@ -33,11 +37,13 @@ async function Screen() {
       </>
     );
   }
-  const { clinic, day, serving, next } = (await res.json()) as Board;
+  const { clinic, day, serving, next, voice } = (await res.json()) as Board;
 
   return (
     <>
-      <AutoRefresh seconds={10} />
+      {/* Every 5 seconds, so a call is heard within moments of the doctor pressing "Call in". */}
+      <AutoRefresh seconds={5} />
+      <Announcer calls={serving} voice={voice ?? null} />
       <header className="flex flex-wrap items-baseline justify-between gap-4 border-b border-white/10 pb-4">
         <div>
           <p className="text-3xl font-semibold">{clinic.name}</p>
@@ -69,7 +75,14 @@ async function Screen() {
             {serving.map((v) => (
               <CallPop key={v.id} className="rounded-2xl bg-linear-to-br from-brand-600 to-brand-800 p-6 shadow-overlay">
                 <p className="text-7xl font-bold tabular-nums sm:text-8xl">{v.queueNumber}</p>
-                <p className="mt-2 text-2xl text-brand-50">{v.doctor ? `Dr. ${v.doctor}` : ""}</p>
+                {v.room && (
+                  <p className="mt-3 flex items-center gap-3 text-4xl font-semibold sm:text-5xl">
+                    <ArrowRight aria-hidden className="size-9 shrink-0 sm:size-11" />
+                    {v.room}
+                  </p>
+                )}
+                {v.room && <p className="mt-1 text-2xl text-brand-100">ክፍል · Room</p>}
+                <p className="mt-3 text-2xl text-brand-50">{v.doctor ? `Dr. ${v.doctor}` : ""}</p>
               </CallPop>
             ))}
           </div>
@@ -83,8 +96,9 @@ async function Screen() {
         ) : (
           <div className="flex flex-wrap gap-4">
             {next.map((v) => (
-              <span key={v.id} className="rounded-xl bg-white/10 px-6 py-3 text-5xl font-semibold tabular-nums">
-                {v.queueNumber}
+              <span key={v.id} className="flex min-w-28 flex-col items-center rounded-xl bg-white/10 px-6 py-3">
+                <span className="text-5xl font-semibold tabular-nums">{v.queueNumber}</span>
+                {(v.room || v.doctor) && <span className="mt-1 text-lg text-slate-300">{v.room ?? `Dr. ${v.doctor}`}</span>}
               </span>
             ))}
           </div>

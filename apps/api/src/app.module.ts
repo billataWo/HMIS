@@ -38,6 +38,7 @@ import { PayersController } from './payers/payers.controller.js';
 import { PurchaseOrdersController } from './inventory/purchase-orders.controller.js';
 import { PlatformAuthController } from './platform/platform-auth.controller.js';
 import { PlatformController } from './platform/platform.controller.js';
+import { PlatformVoiceController } from './platform/voice.controller.js';
 import { PublicController } from './platform/public.controller.js';
 import { SubscriptionController } from './platform/subscription.controller.js';
 import { PlatformGuard } from './platform/platform-auth.js';
@@ -90,6 +91,7 @@ if (process.env.NODE_ENV === 'production' && (jwtSecret.length < 32 || WEAK_SECR
     PublicController,
     PlatformAuthController,
     PlatformController,
+    PlatformVoiceController,
     PaymentsController,
     ExportsController,
   ],

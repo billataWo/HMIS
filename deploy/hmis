@@ -232,6 +232,7 @@ sudo deploy/hmis <command>
   clinic <command>        create / list clinics, reset a locked-out admin, import <file> (an export)
   platform <command>      HMIS cloud: add-operator / list / reset <email> (platform console)
   licence status          the HMIS licence on this server; licence install <file>: a new one
+  voice install <file>    the waiting-room TVs' calling voice (download it from the platform console: Voice)
   sync <command>          clinic server ↔ cloud (docs/sync/README.md)
   ca-cert                 this server's certificate authority for the PCs (and its fingerprint)
   host-check              check the disk encryption now
@@ -256,6 +257,11 @@ case $cmd in
     ;;
   sync) compose exec -T api node dist/sync/cli.js "$@" ;;
   platform) compose exec -T api node dist/platform/cli.js "$@" ;;
+  voice)
+    # The waiting-room TVs' calling voice, downloaded from the HMIS platform console (Voice).
+    [[ ${1:-} == install && -r ${2:-} ]] || die "usage: deploy/hmis voice install <hmis-voice.json>"
+    compose exec -T api node dist/platform/cli.js voice-import - <"$2"
+    ;;
   licence)
     if [[ ${1:-} == install ]]; then
       [[ -r ${2:-} ]] || die "usage: deploy/hmis licence install <licence file>"

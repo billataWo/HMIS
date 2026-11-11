@@ -114,7 +114,7 @@ export class VisitsController {
         orderBy: [{ checkedInAt: 'asc' }, { queueNumber: 'asc' }],
         include: {
           patient: { select: queuePatientSelect },
-          doctor: { select: { id: true, fullName: true } },
+          doctor: { select: { id: true, fullName: true, room: true } },
           charges: { where: { voidedAt: null }, select: { source: true, quantity: true, unitPrice: true, ...settlementSelect } },
           _count: { select: { diagnoses: true } },
           labOrders: { where: { status: { not: 'CANCELLED' } }, select: { status: true } },

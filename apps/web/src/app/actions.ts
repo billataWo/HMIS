@@ -134,6 +134,7 @@ export async function createUser(_: FormState, form: FormData): Promise<FormStat
         role: text(form, "role"),
         password: String(form.get("password") ?? ""),
         email: text(form, "email") || undefined,
+        room: text(form, "room") || undefined,
       }),
     });
   } catch (e) {
@@ -655,6 +656,12 @@ export async function closeCash(_: FormState, form: FormData): Promise<FormState
   return { ok: true };
 }
 
+/** Where a member of staff sees patients (the waiting-room screen shows it when they call someone in). */
+export async function setUserRoom(id: string, form: FormData) {
+  await api(`/users/${id}`, { method: "PATCH", body: JSON.stringify({ room: String(form.get("room") ?? "").trim() }) });
+  refresh();
+}
+
 export async function setUserActive(id: string, active: boolean) {
   await api(`/users/${id}`, { method: "PATCH", body: JSON.stringify({ active }) });
   redirect("/users");
@@ -887,4 +894,34 @@ export async function searchPatients(q: string): Promise<Patient[]> {
 export async function setLanguage(lang: "en" | "am") {
   (await cookies()).set(LANG_COOKIE, lang, { sameSite: "lax", maxAge: 365 * 24 * 60 * 60, path: "/" });
   refresh();
+}
+
+/** A found patient, as the quick-find dialog lists it. */
+export type FoundPatient = { id: string; mrn: string; name: string; sex: "MALE" | "FEMALE"; age: number | null; phone: string | null; allergies: string[] };
+
+/**
+ * Quick find (Ctrl+K, from any screen): up to 8 patients by name, phone or MRN. The signed-in
+ * user's own search, so the API applies their clinic and role as for the patients list.
+ */
+export async function findPatients(q: string): Promise<{ ok: true; patients: FoundPatient[] } | { ok: false }> {
+  const query = q.trim().slice(0, 100);
+  if (query.length < 2) return { ok: true, patients: [] };
+  try {
+    const found = await api<Patient[]>(`/patients?q=${encodeURIComponent(query)}&take=8`);
+    const now = Date.now();
+    return {
+      ok: true,
+      patients: found.map((p) => ({
+        id: p.id,
+        mrn: p.mrn,
+        name: [p.firstName, p.fatherName, p.grandfather].filter(Boolean).join(" "),
+        sex: p.sex,
+        age: p.dateOfBirth ? Math.floor((now - new Date(p.dateOfBirth).getTime()) / (365.25 * 86_400_000)) : null,
+        phone: p.phone,
+        allergies: p.allergies ?? [],
+      })),
+    };
+  } catch {
+    return { ok: false };
+  }
 }

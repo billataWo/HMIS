@@ -18,6 +18,7 @@ afterAll(stopApp);
 /** Every public route, reviewed: each one authenticates in its own way or is meant to be open. */
 const PUBLIC_ROUTES = [
   'GET /display/queue', // the waiting-room screen's own key
+  'GET /display/voice', // the waiting-room screen's own key (the recorded calling voice)
   'GET /health',
   'GET /public/payments/chapa/callback', // only makes HMIS ask Chapa about its own checkout
   'GET /public/plans',

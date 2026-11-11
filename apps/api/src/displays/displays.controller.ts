@@ -9,6 +9,7 @@ import { clinicDay, dayRange } from '../common/clinic-day.js';
 import { tenantContext } from '../common/tenant-context.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { voicePack, voiceVersion } from '../voice/voice.js';
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 const PAIRING_MINUTES = 10;
@@ -144,10 +145,7 @@ export class DisplaysController {
   @Public()
   @Get('display/queue')
   async board(@Headers('authorization') authorization: string | undefined) {
-    const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : '';
-    if (token.length < 32) throw new UnauthorizedException();
-    const screen = await this.prisma.system.displayScreen.findUnique({ where: { tokenHash: sha256(token) } });
-    if (!screen || screen.revokedAt) throw new UnauthorizedException({ message: 'This screen was removed or paired again', code: 'DISPLAY_REVOKED' });
+    const screen = await this.screen(authorization);
     if (!screen.lastSeenAt || Date.now() - screen.lastSeenAt.getTime() > 60_000) {
       await this.prisma.system.displayScreen.update({ where: { id: screen.id }, data: { lastSeenAt: new Date() } });
     }
@@ -156,27 +154,46 @@ export class DisplaysController {
     const { start, end } = dayRange(day);
     return tenantContext.run({ tenantId: screen.tenantId }, async () => {
       const db = this.prisma.client;
-      const [tenant, serving, waiting] = await Promise.all([
+      const [tenant, serving, waiting, voice] = await Promise.all([
         db.tenant.findUniqueOrThrow({ where: { id: screen.tenantId }, select: { name: true, nameAm: true } }),
         db.visit.findMany({
           where: { tenantId: screen.tenantId, kind: 'OPD', status: 'IN_CONSULTATION', checkedInAt: { gte: start, lt: end } },
           orderBy: { calledAt: 'desc' },
-          select: { id: true, queueNumber: true, doctor: { select: { fullName: true } } },
+          select: { id: true, queueNumber: true, doctor: { select: { fullName: true, room: true } } },
         }),
         db.visit.findMany({
           where: { tenantId: screen.tenantId, kind: 'OPD', status: 'WAITING', checkedInAt: { gte: start, lt: end } },
           orderBy: { queueNumber: 'asc' },
           take: 10,
-          select: { id: true, queueNumber: true },
+          select: { id: true, queueNumber: true, doctor: { select: { fullName: true, room: true } } },
         }),
+        voiceVersion(this.prisma.system),
       ]);
       return {
         clinic: tenant,
         screen: screen.name,
         day,
-        serving: serving.map((v) => ({ id: v.id, queueNumber: v.queueNumber, doctor: v.doctor?.fullName ?? null })),
-        next: waiting.map((v) => ({ id: v.id, queueNumber: v.queueNumber })),
+        serving: serving.map((v) => ({ id: v.id, queueNumber: v.queueNumber, doctor: v.doctor?.fullName ?? null, room: v.doctor?.room ?? null })),
+        next: waiting.map((v) => ({ id: v.id, queueNumber: v.queueNumber, doctor: v.doctor?.fullName ?? null, room: v.doctor?.room ?? null })),
+        /** Which recorded voice to call with (null: none recorded, the TV uses its own voice). */
+        voice,
       };
     });
+  }
+
+  /** The recorded voice for calling patients: the same for every clinic, for paired screens only. */
+  @Public()
+  @Get('display/voice')
+  async voice(@Headers('authorization') authorization: string | undefined) {
+    await this.screen(authorization);
+    return voicePack(this.prisma.system);
+  }
+
+  private async screen(authorization: string | undefined) {
+    const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : '';
+    if (token.length < 32) throw new UnauthorizedException();
+    const screen = await this.prisma.system.displayScreen.findUnique({ where: { tokenHash: sha256(token) } });
+    if (!screen || screen.revokedAt) throw new UnauthorizedException({ message: 'This screen was removed or paired again', code: 'DISPLAY_REVOKED' });
+    return screen;
   }
 }

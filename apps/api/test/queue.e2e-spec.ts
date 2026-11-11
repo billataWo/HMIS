@@ -157,7 +157,7 @@ describe('queue and appointments', () => {
 
   it('lists doctors and services for dropdowns', async () => {
     const doctors = (await api.get('/lookups/doctors').set(bearer(cashier.token)).expect(200)).body;
-    expect(doctors).toEqual([{ id: doctor.id, fullName: 'DOCTOR user' }]);
+    expect(doctors).toEqual([{ id: doctor.id, fullName: 'DOCTOR user', room: null }]);
     const services = (await api.get('/lookups/services').set(bearer(cashier.token)).expect(200)).body;
     expect(services.map((s: { code: string }) => s.code)).toEqual(['CONS']);
   });
