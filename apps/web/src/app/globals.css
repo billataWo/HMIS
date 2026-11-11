@@ -409,3 +409,18 @@
   font-weight: 400;
   font-feature-settings: "liga", "kern";
 }
+/* The serif has no Ge'ez letters: Amharic headlines use the Ethiopic face, a little heavier and
+   with normal spacing and line height (fidel needs more room than Latin capitals). */
+:lang(am) .land-display {
+  font-family: var(--font-ethiopic), var(--font-display), sans-serif;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.25;
+}
+/* Ge'ez has no italic (the browser would only slant it), and wide letter-spacing breaks up fidel. */
+:lang(am) .land-display em {
+  font-style: normal;
+}
+.land:lang(am) .tracking-\[0\.16em\] {
+  letter-spacing: 0.03em;
+}

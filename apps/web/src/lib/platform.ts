@@ -87,6 +87,8 @@ export interface ClinicRequest {
   reviewedAt: string | null;
   rejectReason: string | null;
   tenantId: string | null;
+  termsVersion?: string | null;
+  termsAcceptedAt?: string | null;
   createdAt: string;
   similar?: { id: string; name: string }[];
 }

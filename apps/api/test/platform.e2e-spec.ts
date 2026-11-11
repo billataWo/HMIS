@@ -56,6 +56,7 @@ function requestBody(extra: object = {}) {
     contactPhone: phone(),
     planCode: 'BASIC',
     staffCount: 4,
+    termsVersion: '2026-11-12',
     ...extra,
   };
 }
@@ -90,7 +91,11 @@ describe('the HMIS platform (SaaS)', () => {
       const { reference } = (await api.post('/public/clinic-requests').set(from()).send(body).expect(201)).body;
       expect(reference).toMatch(/^R-[0-9A-F]{6}$/);
       const saved = await db.clinicRequest.findUniqueOrThrow({ where: { reference } });
-      expect(saved).toMatchObject({ status: 'PENDING', contactPhone: '0911556677', clinicName: body.clinicName });
+      expect(saved).toMatchObject({ status: 'PENDING', contactPhone: '0911556677', clinicName: body.clinicName, termsVersion: '2026-11-12' });
+      expect(saved.termsAcceptedAt).toBeInstanceOf(Date);
+      // The terms and the privacy policy must be accepted.
+      await api.post('/public/clinic-requests').set(from()).send(requestBody({ termsVersion: undefined })).expect(400);
+      await api.post('/public/clinic-requests').set(from()).send(requestBody({ termsVersion: 'yes' })).expect(400);
     });
 
     it('refuses a phone that is not Ethiopian, ignores robots, and limits each address', async () => {

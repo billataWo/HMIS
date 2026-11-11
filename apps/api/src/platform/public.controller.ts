@@ -27,6 +27,8 @@ const RequestSchema = z.object({
   message: z.string().trim().max(2000).optional(),
   /** Hidden field on the form: people leave it empty, form-filling robots don't. */
   website: z.string().max(200).optional(),
+  /** The requester accepted the Terms of Service and the Privacy Policy of this date (they are shown on the form). */
+  termsVersion: z.string().regex(/^\d{4}-\d{2}-\d{2}$/,'Please accept the terms and the privacy policy'),
 });
 
 /** Requests per address: 5 an hour (the form is public). */
@@ -47,7 +49,7 @@ export class PublicController {
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       select: { code: true, name: true, description: true, priceMonthly: true, priceYearly: true, maxStaff: true, features: true },
     });
-    const settings = await this.prisma.system.platformSetting.findUnique({ where: { id: 1 }, select: { trialDays: true, vatPercent: true, supportPhone: true, supportEmail: true } });
+    const settings = await this.prisma.system.platformSetting.findUnique({ where: { id: 1 }, select: { trialDays: true, graceDays: true, vatPercent: true, supportPhone: true, supportEmail: true, dataRetentionDays: true } });
     return { plans, features: FEATURES, ...settings };
   }
 
@@ -68,7 +70,7 @@ export class PublicController {
     if (body.website) return { reference };
 
     const { website: _w, contactEmail, ...rest } = body;
-    await this.prisma.system.clinicRequest.create({ data: { ...rest, contactPhone: phone, contactEmail: contactEmail || null, reference, ip } });
+    await this.prisma.system.clinicRequest.create({ data: { ...rest, contactPhone: phone, contactEmail: contactEmail || null, reference, ip, termsAcceptedAt: new Date() } });
     return { reference };
   }
 }

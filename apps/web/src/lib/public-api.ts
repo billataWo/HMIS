@@ -6,7 +6,9 @@ export interface PublicPlans {
   plans: { code: string; name: string; description: string | null; priceMonthly: string; priceYearly: string; maxStaff: number | null; features: string[] }[];
   features: Record<string, string>;
   trialDays: number;
+  graceDays?: number;
   vatPercent: string;
+  dataRetentionDays?: number;
   supportPhone: string | null;
   supportEmail: string | null;
 }

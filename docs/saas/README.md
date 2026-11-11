@@ -250,5 +250,9 @@ Tell the clinic so in the data processing agreement.
 ## Still to do before selling
 
 - Pay one invoice in telebirr's sandbox (see Online payment).
-- Terms of service and a data processing agreement for clinics (who is controller and processor,
-  where the data is kept, backups and deletion), with a lawyer.
+- Have a lawyer review the Terms of Service (`/terms`, which include the data processing
+  agreement of art. 16) and the Privacy Policy (`/privacy`), and fill in the provider's details in
+  `apps/web/src/lib/legal.ts` (legal name, address, registrations). Change `version` there whenever
+  either document changes: each request records the version it accepted.
+- Register with the Ethiopian Communications Authority as controller and processor (Proclamation
+  No. 1321/2024, art. 33).

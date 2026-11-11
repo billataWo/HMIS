@@ -49,6 +49,9 @@ async function Content({ params }: { params: Promise<{ id: string }> }) {
           {STATUS[r.status].label}
         </Badge>
         <span className="text-sm text-slate-500">sent {dateTime(r.createdAt)}</span>
+        <span className="text-sm text-slate-500">
+          {r.termsVersion ? `accepted the terms and privacy policy of ${r.termsVersion}` : "sent before the terms were on the form"}
+        </span>
       </div>
 
       {r.similar && r.similar.length > 0 && (

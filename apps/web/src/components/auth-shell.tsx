@@ -1,4 +1,5 @@
 import { HeartPulse, ShieldCheck, Smartphone, Stethoscope } from "lucide-react";
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { FadeIn } from "@/components/enter";
 import { display } from "@/components/site";
@@ -55,6 +56,15 @@ export function AuthShell({ children }: { children: ReactNode }) {
             <span className="text-lg font-semibold text-(--l-ink)">HMIS</span>
           </div>
           {children}
+          <p className="mt-8 text-center text-xs text-(--l-muted)">
+            <Link href="/privacy" className="rounded underline-offset-4 hover:text-(--l-ink) hover:underline">
+              Privacy policy
+            </Link>
+            <span aria-hidden> · </span>
+            <Link href="/terms" className="rounded underline-offset-4 hover:text-(--l-ink) hover:underline">
+              Terms of service
+            </Link>
+          </p>
         </FadeIn>
       </section>
     </main>

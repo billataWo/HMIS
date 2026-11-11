@@ -6,6 +6,41 @@ import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { buttonClass, secondaryButtonClass } from "@/components/ui";
 import { etb } from "@/lib/format";
+import type { Lang } from "@/lib/i18n";
+import { inLang } from "@/lib/site-lang";
+
+const COPY = {
+  en: {
+    period: "Billing period",
+    monthly: "Monthly",
+    yearly: "Yearly",
+    yearlySave: (p: number) => `Yearly · save up to ${p}%`,
+    featured: "Most clinics choose this",
+    month: "month",
+    year: "year",
+    less: (x: string) => `${x} less than paying monthly`,
+    orYear: (x: string) => `or ${x} a year`,
+    staff: (n: number) => `Up to ${n} staff accounts`,
+    anyStaff: "Any number of staff accounts",
+    core: "Queue, consultation, lab, pharmacy, billing and reports",
+    start: (d: number) => `Start the ${d}-day free trial`,
+  },
+  am: {
+    period: "የክፍያ ጊዜ",
+    monthly: "ወርሃዊ",
+    yearly: "ዓመታዊ",
+    yearlySave: (p: number) => `ዓመታዊ · እስከ ${p}% ይቆጥቡ`,
+    featured: "ብዙ ክሊኒኮች ይህን ይመርጣሉ",
+    month: "ወር",
+    year: "ዓመት",
+    less: (x: string) => `ወርሃዊ ከመክፈል ${x} ያነሰ`,
+    orYear: (x: string) => `ወይም በዓመት ${x}`,
+    staff: (n: number) => `እስከ ${n} የሰራተኛ መለያዎች`,
+    anyStaff: "ያልተገደበ የሰራተኛ መለያዎች",
+    core: "ወረፋ፣ የሐኪም ምርመራ፣ ላብራቶሪ፣ ፋርማሲ፣ ክፍያና ሪፖርቶች",
+    start: (d: number) => `የ${d} ቀን ነፃ ሙከራ ይጀምሩ`,
+  },
+} satisfies Record<Lang, unknown>;
 
 export interface Plan {
   code: string;
@@ -18,7 +53,8 @@ export interface Plan {
 }
 
 /** The plans, priced monthly or yearly. The middle one of three is marked as the usual choice. */
-export function Plans({ plans, features, trialDays }: { plans: Plan[]; features: Record<string, string>; trialDays: number }) {
+export function Plans({ plans, features, trialDays, lang = "en" }: { plans: Plan[]; features: Record<string, string>; trialDays: number; lang?: Lang }) {
+  const t = COPY[lang];
   const [yearly, setYearly] = useState(false);
   const saving = (p: Plan) => Math.max(0, Number(p.priceMonthly) * 12 - Number(p.priceYearly));
   const anySaving = plans.some((p) => saving(p) > 0);
@@ -28,10 +64,10 @@ export function Plans({ plans, features, trialDays }: { plans: Plan[]; features:
 
   return (
     <div>
-      <div role="radiogroup" aria-label="Billing period" className="mx-auto flex w-fit rounded-xl bg-slate-100 p-1 text-sm dark:bg-slate-800">
+      <div role="radiogroup" aria-label={t.period} className="mx-auto flex w-fit rounded-xl bg-slate-100 p-1 text-sm dark:bg-slate-800">
         {[
-          { value: false, label: "Monthly" },
-          { value: true, label: anySaving && bestPercent > 0 ? `Yearly · save up to ${bestPercent}%` : "Yearly" },
+          { value: false, label: t.monthly },
+          { value: true, label: anySaving && bestPercent > 0 ? t.yearlySave(bestPercent) : t.yearly },
         ].map((o) => (
           <button
             key={o.label}
@@ -58,7 +94,7 @@ export function Plans({ plans, features, trialDays }: { plans: Plan[]; features:
           return (
             <div key={p.code} className={`surface land-lift relative flex flex-col p-6 ${isFeatured ? "ring-2 ring-brand-600 lg:-my-2 lg:py-8 dark:ring-brand-400" : ""}`}>
               {isFeatured && (
-                <span className="absolute -top-3 left-6 rounded-full bg-brand-700 px-2.5 py-0.5 text-xs font-medium text-white">Most clinics choose this</span>
+                <span className="absolute -top-3 left-6 rounded-full bg-brand-700 px-2.5 py-0.5 text-xs font-medium text-white">{t.featured}</span>
               )}
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{p.name}</h3>
               {p.description && <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{p.description}</p>}
@@ -75,19 +111,19 @@ export function Plans({ plans, features, trialDays }: { plans: Plan[]; features:
                     {etb(yearly ? p.priceYearly : p.priceMonthly)}
                   </motion.span>
                 </AnimatePresence>
-                <span className="ml-1 text-sm font-normal tracking-normal text-(--l-muted)">/ {yearly ? "year" : "month"}</span>
+                <span className="ml-1 text-sm font-normal tracking-normal text-(--l-muted)">/ {yearly ? t.year : t.month}</span>
               </p>
               <p className="mt-1 h-5 text-xs text-(--l-muted)">
-                {yearly ? (saving(p) > 0 ? `${etb(saving(p))} less than paying monthly` : "") : `or ${etb(p.priceYearly)} a year`}
+                {yearly ? (saving(p) > 0 ? t.less(etb(saving(p))) : "") : t.orYear(etb(p.priceYearly))}
               </p>
               <ul className="mt-5 flex-1 space-y-2 text-sm text-slate-700 dark:text-slate-200">
                 <li className="flex gap-2">
                   <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-emerald-600" />
-                  {p.maxStaff ? `Up to ${p.maxStaff} staff accounts` : "Any number of staff accounts"}
+                  {p.maxStaff ? t.staff(p.maxStaff) : t.anyStaff}
                 </li>
                 <li className="flex gap-2">
                   <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-emerald-600" />
-                  Queue, consultation, lab, pharmacy, billing and reports
+                  {t.core}
                 </li>
                 {p.features.map((f) => (
                   <li key={f} className="flex gap-2">
@@ -97,10 +133,10 @@ export function Plans({ plans, features, trialDays }: { plans: Plan[]; features:
                 ))}
               </ul>
               <Link
-                href={`/request?plan=${encodeURIComponent(p.code)}`}
+                href={inLang(lang, `/request?plan=${encodeURIComponent(p.code)}`)}
                 className={`${isFeatured ? buttonClass : secondaryButtonClass} mt-6 w-full justify-center`}
               >
-                Start the {trialDays}-day free trial
+                {t.start(trialDays)}
               </Link>
             </div>
           );

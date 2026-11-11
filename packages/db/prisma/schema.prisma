@@ -926,6 +926,9 @@ model ClinicRequest {
   rejectReason  String?
   /// The clinic created on approval.
   tenantId      String?
+  /// The version (date) of the Terms of Service and Privacy Policy the requester accepted.
+  termsVersion  String?
+  termsAcceptedAt DateTime?
   createdAt     DateTime            @default(now())
 
   @@index([status, createdAt])

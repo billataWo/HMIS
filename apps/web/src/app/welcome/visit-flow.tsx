@@ -3,17 +3,43 @@
 import { ClipboardCheck, FlaskConical, Pause, Pill, Play, Receipt, Stethoscope, UserPlus } from "lucide-react";
 import { motion, useInView, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import type { Lang } from "@/lib/i18n";
 
 const noSubscribe = () => () => {};
 
-const STEPS = [
-  { icon: UserPlus, title: "Check-in", text: "Register or find the patient; they get a queue number" },
-  { icon: Receipt, title: "Pay first", text: "Cash, telebirr or Chapa before each service, if you want it" },
-  { icon: Stethoscope, title: "Consultation", text: "Vitals, notes, ICD-11 diagnoses and orders" },
-  { icon: FlaskConical, title: "Lab", text: "Orders arrive at the bench; results go back to the doctor" },
-  { icon: Pill, title: "Pharmacy", text: "Prescriptions dispensed from stock, by batch and expiry" },
-  { icon: ClipboardCheck, title: "Done", text: "Receipt printed, visit closed, follow-up booked" },
-];
+const ICONS = [UserPlus, Receipt, Stethoscope, FlaskConical, Pill, ClipboardCheck];
+const STEP_COUNT = ICONS.length;
+
+const COPY = {
+  en: {
+    label: "A visit in HMIS",
+    list: "A patient's visit in HMIS",
+    play: "Play",
+    pause: "Pause",
+    steps: [
+      ["Check-in", "Register or find the patient; they get a queue number"],
+      ["Pay first", "Cash, telebirr or Chapa before each service, if you want it"],
+      ["Consultation", "Vitals, notes, ICD-11 diagnoses and orders"],
+      ["Lab", "Orders arrive at the bench; results go back to the doctor"],
+      ["Pharmacy", "Prescriptions dispensed from stock, by batch and expiry"],
+      ["Done", "Receipt printed, visit closed, follow-up booked"],
+    ],
+  },
+  am: {
+    label: "በHMIS ውስጥ አንድ ጉብኝት",
+    list: "የታካሚ ጉብኝት በHMIS",
+    play: "አጫውት",
+    pause: "አቁም",
+    steps: [
+      ["መቀበያ", "ታካሚውን ይመዝግቡ ወይም ይፈልጉ፤ የወረፋ ቁጥር ይሰጣቸዋል"],
+      ["ቅድሚያ ክፍያ", "ከፈለጉ ከእያንዳንዱ አገልግሎት በፊት በጥሬ ገንዘብ፣ በቴሌብር ወይም በቻፓ"],
+      ["የሐኪም ምርመራ", "ቫይታል ሳይንስ፣ ማስታወሻዎች፣ የICD-11 ምርመራዎችና ትዕዛዞች"],
+      ["ላብራቶሪ", "ትዕዛዞች ላብራቶሪ ይደርሳሉ፤ ውጤቶች ወደ ሐኪሙ ይመለሳሉ"],
+      ["ፋርማሲ", "ማዘዣዎች ከክምችት፣ በባችና በማብቂያ ቀን ቅደም ተከተል ይታደላሉ"],
+      ["ተጠናቀቀ", "ደረሰኝ ታትሟል፣ ጉብኝቱ ተዘግቷል፣ ክትትል ተይዟል"],
+    ],
+  },
+} satisfies Record<Lang, unknown>;
 
 const STEP_MS = 2400;
 const EASE = [0.22, 1, 0.36, 1] as const;
@@ -23,7 +49,9 @@ const EASE = [0.22, 1, 0.36, 1] as const;
  * own. It stops while the pointer or keyboard is on it, while it is off screen, when the visitor
  * pauses it, and entirely for people who ask for reduced motion (then every step simply shows).
  */
-export function VisitFlow() {
+export function VisitFlow({ lang = "en" }: { lang?: Lang }) {
+  const t = COPY[lang];
+  const STEPS = t.steps.map(([title, text], i) => ({ icon: ICONS[i], title, text }));
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { amount: 0.4 });
   const reduce = useReducedMotion();
@@ -37,11 +65,11 @@ export function VisitFlow() {
 
   useEffect(() => {
     if (!running) return;
-    const t = setInterval(() => setActive((a) => (a + 1) % STEPS.length), STEP_MS);
-    return () => clearInterval(t);
+    const timer = setInterval(() => setActive((a) => (a + 1) % STEP_COUNT), STEP_MS);
+    return () => clearInterval(timer);
   }, [running]);
 
-  const progress = active / (STEPS.length - 1);
+  const progress = active / (STEP_COUNT - 1);
 
   return (
     <div
@@ -58,7 +86,7 @@ export function VisitFlow() {
             {animated && !paused && <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-60" />}
             <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
           </span>
-          A visit in HMIS
+          {t.label}
         </p>
         {animated && (
           <button
@@ -67,12 +95,12 @@ export function VisitFlow() {
             className="flex min-h-8 items-center gap-1.5 rounded-md px-2 text-xs text-brand-100/80 hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-white"
           >
             {paused ? <Play aria-hidden className="size-3.5" /> : <Pause aria-hidden className="size-3.5" />}
-            {paused ? "Play" : "Pause"}
+            {paused ? t.play : t.pause}
           </button>
         )}
       </div>
 
-      <ol aria-label="A patient's visit in HMIS" className="relative">
+      <ol aria-label={t.list} className="relative">
         {/* The track, and how far the patient has come along it. */}
         <span aria-hidden className="absolute top-5 bottom-5 left-4.75 w-px bg-white/15" />
         {animated && (

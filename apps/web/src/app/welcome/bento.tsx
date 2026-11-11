@@ -1,5 +1,58 @@
 import { CalendarDays, ChartColumn, FlaskConical, ListOrdered, Pill, Receipt, ScrollText, Stethoscope } from "lucide-react";
 import type { ReactNode } from "react";
+import type { Lang } from "@/lib/i18n";
+
+/** The cards' words, and the labels in their drawings. */
+const B = {
+  en: {
+    queue: ["Queue and waiting room", "Live queue for each department, and a TV in the waiting room that calls the next number."],
+    queueRows: [["12", "Selam T.", "With Dr. Hana"], ["13", "Dawit H.", "At the lab"], ["15", "Abebe K.", "Waiting"]],
+    nowCalling: "Now calling",
+    room: "Room 2",
+    lab: ["Laboratory", "Orders reach the bench; results are checked against reference ranges and go back to the doctor."],
+    consult: ["Consultation", "History, allergies, vitals, notes, ICD-11 diagnoses and prescriptions, per visit."],
+    vitals: ["BP 118/76", "T 36.8 °C", "SpO₂ 98%", "Pulse 82"],
+    diagnosis: "Pneumonia",
+    primary: "ICD-11 · primary",
+    pharmacy: ["Pharmacy and stock", "Dispensing from stock by batch, with low-stock and expiry warnings."],
+    expiry: "Batch B-2207 expires in 32 days",
+    billing: ["Billing", "Price list, pay-before-service, receipts; cash, telebirr, Chapa or bank transfer."],
+    bill: [["Consultation", "150.00"], ["CBC", "120.00"], ["Amoxicillin × 21", "80.00"]],
+    paid: "Paid · telebirr",
+    reports: ["Reports", "Daily takings and visits, and the monthly MoH report as a spreadsheet."],
+    days: ["M", "T", "W", "T", "F", "S", "S"],
+    week: "Visits this week",
+    moh: "MoH report.csv",
+    appts: ["Appointments and audit", "Book visits ahead; every change to a record says who made it, and when."],
+    apptRows: [["09:30", "Follow-up · Selam T."], ["10:15", "Antenatal · Hiwot G."]],
+    audit: "Audit log",
+    auditRow: "Dr. Hana · diagnosis added · 10:42",
+  },
+  am: {
+    queue: ["ወረፋና የመጠበቂያ ክፍል", "ለእያንዳንዱ ክፍል የቀጥታ ወረፋ፣ እና በመጠበቂያ ክፍሉ ቀጣዩን ቁጥር የሚጠራ ቴሌቪዥን።"],
+    queueRows: [["12", "ሰላም ት.", "ከዶ/ር ሐና ጋር"], ["13", "ዳዊት ኃ.", "ላብራቶሪ"], ["15", "አበበ ከ.", "በመጠባበቅ ላይ"]],
+    nowCalling: "አሁን የሚጠራ",
+    room: "ክፍል 2",
+    lab: ["ላብራቶሪ", "ትዕዛዞች ላብራቶሪ ይደርሳሉ፤ ውጤቶች ከማጣቀሻ ክልል ጋር ተነጻጽረው ወደ ሐኪሙ ይመለሳሉ።"],
+    consult: ["የሐኪም ምርመራ", "ታሪክ፣ አለርጂዎች፣ ቫይታል ሳይንስ፣ ማስታወሻዎች፣ የICD-11 ምርመራዎችና ማዘዣዎች — በየጉብኝቱ።"],
+    vitals: ["BP 118/76", "T 36.8 °C", "SpO₂ 98%", "ምት 82"],
+    diagnosis: "የሳምባ ምች",
+    primary: "ICD-11 · ዋና",
+    pharmacy: ["ፋርማሲና ክምችት", "መድኃኒት ከክምችት በባች ይታደላል፤ ክምችት ሲያንስና የማብቂያ ቀን ሲቃረብ ያስጠነቅቃል።"],
+    expiry: "ባች B-2207 በ32 ቀናት ጊዜው ያልፋል",
+    billing: ["ክፍያ", "የዋጋ ዝርዝር፣ ከአገልግሎት በፊት ክፍያ፣ ደረሰኞች፤ በጥሬ ገንዘብ፣ በቴሌብር፣ በቻፓ ወይም በባንክ ዝውውር።"],
+    bill: [["የሐኪም ምርመራ", "150.00"], ["CBC", "120.00"], ["Amoxicillin × 21", "80.00"]],
+    paid: "ተከፍሏል · ቴሌብር",
+    reports: ["ሪፖርቶች", "የዕለት ገቢና ጉብኝቶች፣ እንዲሁም ወርሃዊው የጤና ሚኒስቴር ሪፖርት እንደ ስፕሬድሺት።"],
+    days: ["ሰ", "ማ", "ረ", "ሐ", "ዓ", "ቅ", "እ"],
+    week: "የዚህ ሳምንት ጉብኝቶች",
+    moh: "MoH report.csv",
+    appts: ["ቀጠሮዎችና ኦዲት", "ጉብኝቶችን አስቀድመው ይያዙ፤ በመዝገብ ላይ የሚደረግ እያንዳንዱ ለውጥ ማን እና መቼ እንዳደረገው ያሳያል።"],
+    apptRows: [["09:30", "ክትትል · ሰላም ት."], ["10:15", "የቅድመ ወሊድ · ሕይወት ግ."]],
+    audit: "የኦዲት መዝገብ",
+    auditRow: "ዶ/ር ሐና · ምርመራ ታከለ · 10:42",
+  },
+} satisfies Record<Lang, unknown>;
 
 /*
  * What HMIS does, as a bento grid: each card shows a fragment of the real screen next to its
@@ -32,21 +85,18 @@ function Card({ icon: Icon, title, children, visual, className = "" }: { icon: t
 const panel = "rounded-xl border border-(--l-line) bg-(--l-canvas) p-3 text-(--l-ink)";
 const mono = "font-mono tabular-nums";
 
-export function Bento() {
+export function Bento({ lang = "en" }: { lang?: Lang }) {
+  const t = B[lang];
   return (
     <div className="land-stagger grid gap-4 md:grid-cols-6">
       <Card
         icon={ListOrdered}
-        title="Queue and waiting room"
+        title={t.queue[0]}
         className="md:col-span-6 lg:col-span-4"
         visual={
           <div className="grid gap-2 @sm:grid-cols-[1fr_auto]">
             <div className={`${panel} space-y-1.5`}>
-              {[
-                ["12", "Selam T.", "With Dr. Hana"],
-                ["13", "Dawit H.", "At the lab"],
-                ["15", "Abebe K.", "Waiting"],
-              ].map(([n, who, where]) => (
+              {t.queueRows.map(([n, who, where]) => (
                 <div key={n} className="flex items-center gap-2 text-xs">
                   <span className={`${mono} w-6 text-(--l-muted)`}>#{n}</span>
                   <span className="flex-1 truncate font-medium">{who}</span>
@@ -55,19 +105,19 @@ export function Bento() {
               ))}
             </div>
             <div className="flex min-w-36 flex-col items-center justify-center rounded-xl bg-(--l-deep) px-5 py-3 text-white">
-              <span className="text-[10px] tracking-[0.18em] text-white/60 uppercase">Now calling</span>
+              <span className="text-[10px] tracking-[0.18em] text-white/60 uppercase">{t.nowCalling}</span>
               <span className={`${mono} text-3xl font-semibold`}>#14</span>
-              <span className="text-[11px] text-white/80">Room 2</span>
+              <span className="text-[11px] text-white/80">{t.room}</span>
             </div>
           </div>
         }
       >
-        Live queue for each department, and a TV in the waiting room that calls the next number.
+        {t.queue[1]}
       </Card>
 
       <Card
         icon={FlaskConical}
-        title="Laboratory"
+        title={t.lab[0]}
         className="md:col-span-3 lg:col-span-2"
         visual={
           <div className={`${panel} space-y-2.5`}>
@@ -98,17 +148,17 @@ export function Bento() {
           </div>
         }
       >
-        Orders reach the bench; results are checked against reference ranges and go back to the doctor.
+        {t.lab[1]}
       </Card>
 
       <Card
         icon={Stethoscope}
-        title="Consultation"
+        title={t.consult[0]}
         className="md:col-span-3 lg:col-span-2"
         visual={
           <div className={`${panel} space-y-2`}>
             <div className="flex flex-wrap gap-1.5 text-[11px]">
-              {["BP 118/76", "T 36.8 °C", "SpO₂ 98%", "Pulse 82"].map((v) => (
+              {t.vitals.map((v) => (
                 <span key={v} className={`${mono} rounded-md bg-(--l-paper) px-1.5 py-0.5 ring-1 ring-(--l-line)`}>
                   {v}
                 </span>
@@ -116,18 +166,18 @@ export function Bento() {
             </div>
             <div className="flex items-center gap-2 text-xs">
               <span className={`${mono} rounded bg-(--l-accent-soft) px-1.5 py-0.5 text-[11px] text-(--l-accent)`}>CA40</span>
-              <span className="font-medium">Pneumonia</span>
-              <span className="ml-auto text-[10px] text-(--l-muted)">ICD-11 · primary</span>
+              <span className="font-medium">{t.diagnosis}</span>
+              <span className="ml-auto text-[10px] text-(--l-muted)">{t.primary}</span>
             </div>
           </div>
         }
       >
-        History, allergies, vitals, notes, ICD-11 diagnoses and prescriptions, per visit.
+        {t.consult[1]}
       </Card>
 
       <Card
         icon={Pill}
-        title="Pharmacy and stock"
+        title={t.pharmacy[0]}
         className="md:col-span-3 lg:col-span-2"
         visual={
           <div className={`${panel} space-y-1.5 text-xs`}>
@@ -141,42 +191,38 @@ export function Bento() {
                 <span className={`${mono} ${state === "low" ? "font-semibold text-(--l-warn)" : "text-(--l-muted)"}`}>{left}</span>
               </div>
             ))}
-            <p className="pt-1 text-[10px] text-(--l-warn)">Batch B-2207 expires in 32 days</p>
+            <p className="pt-1 text-[10px] text-(--l-warn)">{t.expiry}</p>
           </div>
         }
       >
-        Dispensing from stock by batch, with low-stock and expiry warnings.
+        {t.pharmacy[1]}
       </Card>
 
       <Card
         icon={Receipt}
-        title="Billing"
+        title={t.billing[0]}
         className="md:col-span-3 lg:col-span-2"
         visual={
           <div className={`${panel} text-xs`}>
-            {[
-              ["Consultation", "150.00"],
-              ["CBC", "120.00"],
-              ["Amoxicillin × 21", "80.00"],
-            ].map(([item, price]) => (
+            {t.bill.map(([item, price]) => (
               <div key={item} className="flex justify-between py-0.5">
                 <span>{item}</span>
                 <span className={mono}>{price}</span>
               </div>
             ))}
             <div className="mt-1.5 flex justify-between border-t border-dashed border-(--l-line) pt-1.5 font-semibold">
-              <span>Paid · telebirr</span>
+              <span>{t.paid}</span>
               <span className={mono}>350.00 ETB</span>
             </div>
           </div>
         }
       >
-        Price list, pay-before-service, receipts; cash, telebirr, Chapa or bank transfer.
+        {t.billing[1]}
       </Card>
 
       <Card
         icon={ChartColumn}
-        title="Reports"
+        title={t.reports[0]}
         className="md:col-span-3 lg:col-span-3"
         visual={
           <div className={panel}>
@@ -184,31 +230,28 @@ export function Bento() {
               {[42, 58, 51, 66, 73, 61, 38].map((h, i) => (
                 <div key={i} className="flex flex-1 flex-col items-center gap-1">
                   <div className={`w-full rounded-t-sm ${i === 4 ? "bg-(--l-accent)" : "bg-(--l-accent)/35"}`} style={{ height: `${h}%` }} />
-                  <span className="text-[9px] text-(--l-muted)">{["M", "T", "W", "T", "F", "S", "S"][i]}</span>
+                  <span className="text-[9px] text-(--l-muted)">{t.days[i]}</span>
                 </div>
               ))}
             </div>
             <p className="mt-2 flex items-center justify-between text-[11px]">
-              <span className="text-(--l-muted)">Visits this week</span>
-              <span className="rounded bg-(--l-paper) px-1.5 py-0.5 font-medium ring-1 ring-(--l-line)">MoH report.csv</span>
+              <span className="text-(--l-muted)">{t.week}</span>
+              <span className="rounded bg-(--l-paper) px-1.5 py-0.5 font-medium ring-1 ring-(--l-line)">{t.moh}</span>
             </p>
           </div>
         }
       >
-        Daily takings and visits, and the monthly MoH report as a spreadsheet.
+        {t.reports[1]}
       </Card>
 
       <Card
         icon={CalendarDays}
-        title="Appointments and audit"
+        title={t.appts[0]}
         className="md:col-span-6 lg:col-span-3"
         visual={
           <div className="grid gap-2 @sm:grid-cols-2">
             <div className={`${panel} space-y-1 text-xs`}>
-              {[
-                ["09:30", "Follow-up · Selam T."],
-                ["10:15", "Antenatal · Hiwot G."],
-              ].map(([t, what]) => (
+              {t.apptRows.map(([t, what]) => (
                 <div key={t} className="flex gap-2">
                   <span className={`${mono} text-(--l-muted)`}>{t}</span>
                   <span className="truncate">{what}</span>
@@ -217,14 +260,14 @@ export function Bento() {
             </div>
             <div className={`${panel} space-y-1 text-xs`}>
               <div className="flex items-center gap-1.5 font-medium">
-                <ScrollText className="size-3.5 text-(--l-accent)" /> Audit log
+                <ScrollText className="size-3.5 text-(--l-accent)" /> {t.audit}
               </div>
-              <p className="text-[11px] text-(--l-muted)">Dr. Hana · diagnosis added · 10:42</p>
+              <p className="text-[11px] text-(--l-muted)">{t.auditRow}</p>
             </div>
           </div>
         }
       >
-        Book visits ahead; every change to a record says who made it, and when.
+        {t.appts[1]}
       </Card>
     </div>
   );
