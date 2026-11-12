@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -14,6 +15,7 @@ async function Content({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const [c, { plans }] = await Promise.all([platformApi<ClinicDetail>(`/platform/clinics/${id}`), platformApi<{ plans: Plan[] }>("/platform/plans")]);
   const s = c.subscription;
+  await connection(); // "today" is the request's, not a prerender's
   const today = clinicToday();
   const paidOn = (invoiceId: string) => c.payments.filter((p) => p.invoiceId === invoiceId && p.status === "CONFIRMED").reduce((sum, p) => sum + Number(p.amount), 0);
   return (

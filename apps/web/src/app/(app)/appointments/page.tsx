@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
@@ -23,6 +24,7 @@ const APPT_STATUS: Record<Appointment["status"], { label: string; tone: BadgeTon
 
 async function Day({ searchParams }: { searchParams: Promise<Search> }) {
   const params = await searchParams;
+  await connection(); // "today" is the request's, not a prerender's
   const today = clinicToday();
   const day = params.day && /^\d{4}-\d{2}-\d{2}$/.test(params.day) ? params.day : today;
   const [me, appts, doctors, services] = await Promise.all([

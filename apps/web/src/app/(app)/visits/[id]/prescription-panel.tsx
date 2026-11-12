@@ -5,6 +5,7 @@ import { cancelPrescription, createPrescription, searchDrugs, type RxDraftItem }
 import { Alert, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
 import type { DrugOption, Frequency, Prescription, RxAlert } from "@/lib/api";
 import { ConfirmCancel } from "@/components/confirm-cancel";
+import { unitsPerDose } from "@/lib/dose";
 
 const FREQUENCIES: { value: Frequency; label: string; perDay: number | null }[] = [
   { value: "OD", label: "OD · once daily", perDay: 1 },
@@ -25,11 +26,12 @@ const RX_STATUS: Record<Prescription["status"], string> = {
 
 type Draft = RxDraftItem & { drug: DrugOption; quantityEdited: boolean };
 
-/** Units for the whole course, assuming one unit per dose; the doctor can change it. */
-function suggestQuantity(freq: Frequency, days?: number) {
-  const perDay = FREQUENCIES.find((f) => f.value === freq)?.perDay;
-  if (freq === "STAT") return 1;
-  return perDay && days ? perDay * days : 1;
+/** Units for the whole course, from the dose ("1 g" of a 500 mg tablet is 2); the doctor can change it. */
+function suggestQuantity(d: Pick<Draft, "dose" | "frequency" | "durationDays" | "drug">) {
+  const each = unitsPerDose(d.dose, d.drug);
+  const perDay = FREQUENCIES.find((f) => f.value === d.frequency)?.perDay;
+  if (d.frequency === "STAT" || !perDay || !d.durationDays) return Math.max(1, Math.ceil(each));
+  return Math.ceil(each * perDay * d.durationDays);
 }
 
 const drugLabel = (d: Pick<DrugOption, "genericName" | "strength" | "form">) => [d.genericName, d.strength, d.form].filter(Boolean).join(" ");
@@ -58,10 +60,8 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
   }, [q]);
 
   const addDraft = (drug: DrugOption) => {
-    setDrafts((d) => [
-      ...d,
-      { drug, drugId: drug.id, dose: `1 ${drug.unit}`, frequency: "TID", durationDays: 5, quantity: suggestQuantity("TID", 5), quantityEdited: false },
-    ]);
+    const draft = { drug, drugId: drug.id, dose: `1 ${drug.unit}`, frequency: "TID" as Frequency, durationDays: 5, quantityEdited: false };
+    setDrafts((d) => [...d, { ...draft, quantity: suggestQuantity(draft) }]);
     setQ("");
     setFound([]);
     setAlerts(undefined);
@@ -74,8 +74,8 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
       ds.map((d, j) => {
         if (j !== i) return d;
         const next = { ...d, ...patch };
-        if (!next.quantityEdited && ("frequency" in patch || "durationDays" in patch)) {
-          next.quantity = suggestQuantity(next.frequency, next.durationDays);
+        if (!next.quantityEdited && ("dose" in patch || "frequency" in patch || "durationDays" in patch)) {
+          next.quantity = suggestQuantity(next);
         }
         return next;
       }),

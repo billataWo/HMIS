@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { ScrollText } from "lucide-react";
 import Form from "next/form";
 import Link from "next/link";
@@ -35,6 +36,7 @@ function details(data: AuditEntry["data"]) {
 
 async function Log({ searchParams }: { searchParams: Promise<Search> }) {
   const q = await searchParams;
+  await connection(); // "today" is the request's, not a prerender's
   const today = clinicToday();
   const params = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]);
   let res: { from: string; to: string; entries: AuditEntry[]; next: string | null };

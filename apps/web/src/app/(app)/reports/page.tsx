@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { FileText } from "lucide-react";
 import Form from "next/form";
 import Link from "next/link";
@@ -50,6 +51,7 @@ const empty = <p className="text-sm text-slate-500">Nothing in this period.</p>;
 
 async function Report({ searchParams }: { searchParams: Promise<Search> }) {
   const params = await searchParams;
+  await connection(); // "today" is the request's, not a prerender's
   const today = clinicToday();
   const valid = (d?: string) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : undefined);
   const from = valid(params.from) ?? today;

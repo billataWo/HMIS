@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -17,6 +18,7 @@ function Tile({ label, value, tone }: { label: string; value: string; tone?: "wa
 
 async function Daily({ searchParams }: { searchParams: Promise<{ day?: string }> }) {
   const params = await searchParams;
+  await connection(); // "today" is the request's, not a prerender's
   const today = clinicToday();
   const day = params.day && /^\d{4}-\d{2}-\d{2}$/.test(params.day) ? params.day : today;
   let s: DailySummary, me: Me;
