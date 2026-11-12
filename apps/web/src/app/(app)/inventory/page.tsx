@@ -1,4 +1,5 @@
 import { Package } from "lucide-react";
+import { ControlledBadge } from "@/components/controlled-badge";
 import Form from "next/form";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -7,6 +8,7 @@ import { Flash } from "@/components/flash";
 import { EmptyState, buttonClass, inputClass, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { api, ApiError, type InventoryResponse } from "@/lib/api";
 import { etb, formatDualDate } from "@/lib/format";
+import { inPacks } from "@/lib/packs";
 
 type Search = { q?: string; filter?: string; done?: string; error?: string };
 
@@ -66,6 +68,15 @@ async function Inventory({ searchParams }: { searchParams: Promise<Search> }) {
         </form>
       )}
 
+      {data.summary.multiStore && (
+        <p className="mb-4 flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+          Stock is kept in several stores; the pharmacy dispenses from the dispensary.
+          <Link href="/inventory/transfers" className={secondaryButtonClass}>
+            Transfers between stores
+          </Link>
+        </p>
+      )}
+
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {FILTERS.map(([k, label]) => (
           <Link
@@ -83,7 +94,27 @@ async function Inventory({ searchParams }: { searchParams: Promise<Search> }) {
       </div>
 
       {data.drugs.length === 0 ? (
-        <EmptyState icon={Package} title="No drugs match this view" />
+        data.summary.drugs === 0 && !q && filter === "all" ? (
+          // A new clinic: start the drug list without typing it all in.
+          <EmptyState
+            icon={Package}
+            title="Your drug list is empty"
+            action={
+              <div className="flex flex-wrap justify-center gap-2">
+                <Link href="/inventory/drugs/starter" className={buttonClass}>
+                  Pick from the essential medicines list
+                </Link>
+                <Link href="/inventory/drugs/import" className={secondaryButtonClass}>
+                  Import a spreadsheet
+                </Link>
+              </div>
+            }
+          >
+            Pick the medicines you stock from a ready list, import your own list from Excel, or add drugs one by one.
+          </EmptyState>
+        ) : (
+          <EmptyState icon={Package} title="No drugs match this view" />
+        )
       ) : (
         <div className="overflow-x-auto surface">
           <table className="w-full text-left text-sm">
@@ -104,11 +135,15 @@ async function Inventory({ searchParams }: { searchParams: Promise<Search> }) {
                     <Link href={`/inventory/drugs/${d.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-400">
                       {d.genericName}
                     </Link>{" "}
-                    {d.strength} {d.form}
+                    {d.strength} {d.form} <ControlledBadge c={d.controlled} />
                     {d.drugClass && <span className="block text-xs text-slate-500">{d.drugClass}</span>}
                   </td>
                   <td className={`px-3 py-2 text-right tabular-nums ${d.low ? "font-semibold text-amber-700 dark:text-amber-400" : ""}`}>
                     {d.onHand} <span className="text-xs text-slate-500">{d.unit}</span>
+                    {inPacks(d.onHand, d) && <span className="block text-xs text-slate-500">{inPacks(d.onHand, d)}</span>}
+                    {d.byStore && d.byStore.length > 0 && (
+                      <span className="block text-xs whitespace-nowrap text-slate-500">{d.byStore.map((b) => `${b.name} ${b.quantity}`).join(" · ")}</span>
+                    )}
                     {d.expiredQty > 0 && <span className="block text-xs font-medium text-red-700 dark:text-red-400">+{d.expiredQty} expired</span>}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-slate-500">{d.reorderLevel || "—"}</td>
@@ -147,6 +182,9 @@ export default function InventoryPage({ searchParams }: PageProps<"/inventory">)
             </Link>
             <Link href="/inventory/count" className={secondaryButtonClass}>
               Stock count
+            </Link>
+            <Link href="/inventory/controlled" className={secondaryButtonClass}>
+              Controlled register
             </Link>
             <Link href="/inventory/suppliers" className={secondaryButtonClass}>
               Suppliers

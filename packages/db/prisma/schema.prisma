@@ -34,6 +34,9 @@ model Tenant {
   // Registration is a front-desk job; a clinic without a receptionist can let doctors do it too.
   doctorsCanRegister Boolean      @default(false)
   nextPo             Int          @default(1) // per-facility counter for purchase order numbers
+  /// Stock kept in more than one place (a main store and a dispensary), moved by transfers.
+  multiStore         Boolean      @default(false)
+  nextTransfer       Int          @default(1) // per-facility counter for stock transfer numbers
   createdAt          DateTime     @default(now())
 
   users         User[]
@@ -297,6 +300,59 @@ model PrescriptionItem {
   instructions   String?
   billedQty      Int          @default(0) // units already charged (sent to the cashier)
   dispensedQty   Int          @default(0)
+  /// Units the patient brought back after they were handed over (dispensedQty is not reduced).
+  returnedQty    Int          @default(0)
+  /// Of those, units whose charge was taken back: refunded, or dropped before it was invoiced.
+  refundedQty    Int          @default(0)
+  /// Set when the pharmacist gave an equivalent (same generic, strength and form; another brand) instead: what was prescribed, and why.
+  substitutedFrom    String?
+  substitutionReason String?
+  returns        DrugReturn[]
+}
+
+/// A place stock is kept: the main store, the dispensary, a ward. Dispensing takes only from dispensary stores.
+model Store {
+  id         String       @id @default(uuid())
+  tenantId   String
+  name       String
+  dispensary Boolean      @default(false)
+  active     Boolean      @default(true)
+  createdAt  DateTime     @default(now())
+  batches    StockBatch[]
+
+  @@unique([tenantId, name])
+}
+
+/// Stock moved between the clinic's stores; each unit moved is a pair of stock movements (out, in).
+model StockTransfer {
+  id          String   @id @default(uuid())
+  tenantId    String
+  number      String
+  fromStoreId String
+  toStoreId   String
+  note        String?
+  userId      String
+  createdAt   DateTime @default(now())
+
+  @@unique([tenantId, number])
+  @@index([tenantId, createdAt])
+}
+
+/// The returns register: drugs a patient brought back to the pharmacy.
+model DrugReturn {
+  id                 String           @id @default(uuid())
+  tenantId           String
+  prescriptionItemId String
+  prescriptionItem   PrescriptionItem @relation(fields: [prescriptionItemId], references: [id])
+  quantity           Int
+  /// Sealed and fit to sell again: put back on the shelf. Otherwise kept aside for destruction.
+  restocked          Boolean
+  reason             String
+  userId             String
+  createdAt          DateTime         @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([prescriptionItemId])
 }
 
 model Drug {
@@ -311,6 +367,12 @@ model Drug {
   unit         String // unit of dispensing
   sellPrice    Decimal @db.Decimal(12, 2)
   reorderLevel Int     @default(0)
+  /// Units in one pack as bought (100 tablets in a box); stock is still kept in units.
+  packSize     Int?
+  /// What the pack is called: box, strip, bottle…
+  packName     String?
+  /// Narcotic or psychotropic: every unit in and out goes in the controlled-drug register.
+  controlled   ControlledClass?
   active       Boolean @default(true)
 
   batches           StockBatch[]
@@ -351,10 +413,19 @@ model StockBatch {
   receiptRef   String? // supplier invoice or delivery note number
   receivedById String?
   receivedAt   DateTime  @default(now())
+  /// Where the batch is kept (multi-store clinics); null in a clinic with one store.
+  storeId      String?
+  store        Store?    @relation(fields: [storeId], references: [id])
 
   movements StockMovement[]
 
   @@index([drugId, expiryDate]) // first-expiry-first-out lookups
+}
+
+/// Drugs under special control (Ethiopian Food and Drug Authority): kept in a register with a running balance.
+enum ControlledClass {
+  NARCOTIC
+  PSYCHOTROPIC
 }
 
 enum StockMovementType {
@@ -364,6 +435,7 @@ enum StockMovementType {
   EXPIRED
   TRANSFER_OUT
   TRANSFER_IN
+  RETURN // brought back by a patient and put back on the shelf
 }
 
 model StockMovement {

@@ -133,7 +133,7 @@ export function VoidForm({ invoiceId }: { invoiceId: string }) {
 
 /**
  * Admin, per invoice line: refund a service the patient never received. Drug lines can be refunded
- * in part (only the units not handed over).
+ * in part (only units not handed over, or returned to the pharmacy).
  */
 export function RemoveLineForm({ invoiceId, chargeId, isDrug, quantity, refundDue }: { invoiceId: string; chargeId: string; isDrug: boolean; quantity: number; refundDue: boolean }) {
   const [state, action, pending] = useActionState<FormState, FormData>(removeInvoiceLine, {});
@@ -152,7 +152,7 @@ export function RemoveLineForm({ invoiceId, chargeId, isDrug, quantity, refundDu
       <input type="hidden" name="chargeId" value={chargeId} />
       {state.error && <Alert>{state.error}</Alert>}
       <p className="text-xs text-slate-600 dark:text-slate-400">
-        Only for a service the patient did not receive: a test whose sample was not taken, drugs not handed over, or a consultation they left before.
+        Only for a service the patient did not receive: a test whose sample was not taken, drugs not handed over (or brought back, once the pharmacy has recorded the return), or a consultation they left before.
       </p>
       <Input name="reason" required minLength={5} placeholder="Why? e.g. patient left before the sample" aria-label="Reason" defaultValue={state.values?.reason} />
       <div className="flex flex-wrap gap-2">

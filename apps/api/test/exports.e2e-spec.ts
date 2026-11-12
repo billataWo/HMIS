@@ -64,6 +64,27 @@ async function clinicWithRecords(name: string) {
       isPrimary: true,
     },
   });
+  // Stock with its ledger: movements are permanent, except when a whole clinic is erased or
+  // replayed into another server, which this file exercises.
+  await db.drug.create({
+    data: {
+      tenantId,
+      genericName: 'Tramadol',
+      form: 'capsule',
+      unit: 'capsule',
+      sellPrice: '3.00',
+      controlled: 'NARCOTIC',
+      batches: {
+        create: {
+          batchNo: 'TRM-X',
+          expiryDate: new Date(Date.now() + 300 * 86_400_000),
+          quantity: 40,
+          costPrice: '1.00',
+          movements: { create: { type: 'RECEIPT', quantity: 40 } },
+        },
+      },
+    },
+  });
   return { tenantId, admin, token: await login(admin.phone), patient };
 }
 
@@ -257,6 +278,13 @@ describe("the whole clinic's data", () => {
     expect(
       await db.diagnosis.count({ where: { visit: { tenantId: c.tenantId } } }),
     ).toBe(1);
+    // The stock ledger was erased with the clinic and replayed with it.
+    expect(
+      await db.stockMovement.findMany({
+        where: { batch: { drug: { tenantId: c.tenantId } } },
+        select: { type: true, quantity: true },
+      }),
+    ).toEqual([{ type: 'RECEIPT', quantity: 40 }]);
     // Nobody can sign in with what was in the file: passwords are reset by an admin.
     await api
       .post('/auth/login')

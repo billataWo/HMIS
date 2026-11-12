@@ -119,6 +119,9 @@ export async function applyChanges(tx: Raw, tables: Tables, changes: Change[]): 
   for (const c of changes) {
     if (!tables.has(c.table)) throw new SyncError(`Unknown table ${c.table}: update the cloud first`, 'UNKNOWN_TABLE');
   }
+  // Replaying another copy's changes may re-write rows that are otherwise permanent (the stock
+  // ledger); the origin already enforced that. For this transaction only.
+  await tx.$executeRawUnsafe(`SELECT set_config('app.replaying', 'on', true)`);
   let pending = changes;
   let applied = 0;
   while (pending.length) {

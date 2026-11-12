@@ -4,29 +4,51 @@ import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { receiveStock, searchDrugs } from "@/app/actions";
 import { Alert, buttonClass, Field, inputClass, secondaryButtonClass } from "@/components/ui";
-import type { DrugOption, Supplier } from "@/lib/api";
+import type { DrugOption, Store, Supplier } from "@/lib/api";
+import { packLabel } from "@/lib/packs";
 
-type Line = { drug: DrugOption; batchNo: string; expiryDate: string; quantity: string; costPrice: string };
+/** `byPack`: quantity and cost are per pack (box of 100); stock is always received in units. */
+type Line = { drug: DrugOption; batchNo: string; expiryDate: string; quantity: string; costPrice: string; byPack: boolean };
+
+/** The line in units: packs × pack size, and the cost of one unit (to the cent). */
+function toUnits(l: Line) {
+  const per = l.byPack && l.drug.packSize ? l.drug.packSize : 1;
+  return { quantity: Number(l.quantity || 0) * per, costPrice: Math.round((Number(l.costPrice || 0) / per) * 100) / 100 };
+}
+
+/** A purchase order's outstanding units, shown in packs when they come to whole packs. */
+function fromOrder(l: { drug: DrugOption; outstanding: number; unitCost: string | null }): Line {
+  const size = l.drug.packSize;
+  const byPack = !!size && l.outstanding % size === 0;
+  const per = byPack ? size! : 1;
+  const cost = l.unitCost ? Number(l.unitCost) * per : null;
+  return { drug: l.drug, batchNo: "", expiryDate: "", quantity: String(l.outstanding / per), costPrice: cost === null ? "" : String(Math.round(cost * 100) / 100), byPack };
+}
 
 /** With `order`, the delivery fills that purchase order: supplier and outstanding quantities are filled in. */
 export function ReceiveForm({
   suppliers,
+  stores = [],
   preset,
   minExpiry,
   order,
 }: {
   suppliers: Supplier[];
+  /** Several stores: where the delivery can go (empty: one store). */
+  stores?: Store[];
   preset?: DrugOption;
   minExpiry: string;
   order?: { id: string; number: string; supplierId: string; lines: { drug: DrugOption; outstanding: number; unitCost: string | null }[] };
 }) {
   const [supplierId, setSupplierId] = useState(order?.supplierId ?? "");
   const [receiptRef, setReceiptRef] = useState("");
+  // Deliveries go to the main store (the first that doesn't dispense) unless another is chosen.
+  const [storeId, setStoreId] = useState(stores.find((s) => !s.dispensary)?.id ?? stores[0]?.id ?? "");
   const [lines, setLines] = useState<Line[]>(
     order
-      ? order.lines.map((l) => ({ drug: l.drug, batchNo: "", expiryDate: "", quantity: String(l.outstanding), costPrice: l.unitCost ? String(Number(l.unitCost)) : "" }))
+      ? order.lines.map(fromOrder)
       : preset
-        ? [{ drug: preset, batchNo: "", expiryDate: "", quantity: "", costPrice: "" }]
+        ? [{ drug: preset, batchNo: "", expiryDate: "", quantity: "", costPrice: "", byPack: !!preset.packSize }]
         : [],
   );
   const [q, setQ] = useState("");
@@ -50,7 +72,7 @@ export function ReceiveForm({
   }, [q]);
 
   const update = (i: number, patch: Partial<Line>) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
-  const total = lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.costPrice || 0), 0);
+  const total = lines.reduce((s, l) => s + toUnits(l).quantity * toUnits(l).costPrice, 0);
 
   const submit = () =>
     start(async () => {
@@ -59,7 +81,8 @@ export function ReceiveForm({
         supplierId: supplierId || undefined,
         purchaseOrderId: order?.id,
         receiptRef: receiptRef || undefined,
-        items: lines.map((l) => ({ drugId: l.drug.id, batchNo: l.batchNo, expiryDate: l.expiryDate, quantity: Number(l.quantity), costPrice: Number(l.costPrice) })),
+        storeId: storeId || undefined,
+        items: lines.map((l) => ({ drugId: l.drug.id, batchNo: l.batchNo, expiryDate: l.expiryDate, ...toUnits(l) })),
       });
       if (res.error) setError(res.error);
       else {
@@ -120,6 +143,18 @@ export function ReceiveForm({
         <Field label="Supplier invoice / delivery note no.">
           <input value={receiptRef} onChange={(e) => setReceiptRef(e.target.value)} className={inputClass} />
         </Field>
+        {stores.length > 0 && (
+          <Field label="Into store" hint="The pharmacy dispenses only from stores marked (dispensary)">
+            <select value={storeId} onChange={(e) => setStoreId(e.target.value)} className={inputClass}>
+              {stores.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                  {s.dispensary ? " (dispensary)" : ""}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
       </div>
 
       {lines.length > 0 && (
@@ -131,7 +166,7 @@ export function ReceiveForm({
                 <th className="px-4 py-3 font-medium">Batch no.</th>
                 <th className="px-4 py-3 font-medium">Expiry</th>
                 <th className="px-4 py-3 font-medium">Quantity</th>
-                <th className="px-4 py-3 font-medium">Cost / unit</th>
+                <th className="px-4 py-3 font-medium">Cost</th>
                 <th />
               </tr>
             </thead>
@@ -151,7 +186,25 @@ export function ReceiveForm({
                     <input type="date" min={minExpiry} value={l.expiryDate} onChange={(e) => update(i, { expiryDate: e.target.value })} aria-label="Expiry date" className={`${inputClass} w-40`} />
                   </td>
                   <td className="px-4 py-3">
-                    <input type="number" min={1} value={l.quantity} onChange={(e) => update(i, { quantity: e.target.value })} aria-label="Quantity" className={`${inputClass} w-24`} />
+                    <div className="flex items-center gap-1.5">
+                      <input type="number" min={1} value={l.quantity} onChange={(e) => update(i, { quantity: e.target.value })} aria-label="Quantity" className={`${inputClass} w-24`} />
+                      {l.drug.packSize ? (
+                        <select
+                          value={l.byPack ? "pack" : "unit"}
+                          onChange={(e) => update(i, { byPack: e.target.value === "pack" })}
+                          aria-label={`Count ${l.drug.genericName} in`}
+                          className={`${inputClass} w-auto py-1.5 text-xs`}
+                        >
+                          <option value="pack">{packLabel(l.drug)}</option>
+                          <option value="unit">{l.drug.unit}</option>
+                        </select>
+                      ) : null}
+                    </div>
+                    {l.byPack && Number(l.quantity) > 0 && (
+                      <span className="mt-1 block text-xs text-slate-500">
+                        = {toUnits(l).quantity} {l.drug.unit}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <input
@@ -160,9 +213,13 @@ export function ReceiveForm({
                       step="0.01"
                       value={l.costPrice}
                       onChange={(e) => update(i, { costPrice: e.target.value })}
-                      aria-label="Cost per unit"
-                      className={`${inputClass} w-24 ${l.costPrice && Number(l.costPrice) > Number(l.drug.sellPrice) ? "border-amber-500" : ""}`}
+                      aria-label={l.byPack ? "Cost per pack" : "Cost per unit"}
+                      className={`${inputClass} w-24 ${l.costPrice && toUnits(l).costPrice > Number(l.drug.sellPrice) ? "border-amber-500" : ""}`}
                     />
+                    <span className="mt-1 block text-xs text-slate-500">
+                      per {l.byPack ? l.drug.packName || "pack" : l.drug.unit}
+                      {l.byPack && l.costPrice && ` · ${toUnits(l).costPrice.toFixed(2)} each`}
+                    </span>
                   </td>
                   <td className="px-4 py-3">
                     <button type="button" onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))} className="text-xs text-red-700 hover:underline dark:text-red-400">
@@ -185,7 +242,7 @@ export function ReceiveForm({
                 <button
                   type="button"
                   onClick={() => {
-                    setLines((ls) => [...ls, { drug: r, batchNo: "", expiryDate: "", quantity: "", costPrice: "" }]);
+                    setLines((ls) => [...ls, { drug: r, batchNo: "", expiryDate: "", quantity: "", costPrice: "", byPack: !!r.packSize }]);
                     setQ("");
                     setFound([]);
                   }}

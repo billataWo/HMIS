@@ -1,14 +1,15 @@
 import { Suspense } from "react";
 import { PageHeader, Skeleton } from "@/components/ui";
-import { api, ApiError, type DrugOption, type DrugStock, type PurchaseOrder, type Supplier } from "@/lib/api";
+import { api, ApiError, type DrugOption, type DrugStock, type PurchaseOrder, type Store, type Supplier } from "@/lib/api";
 import { clinicToday, shiftDay } from "@/lib/format";
 import { ReceiveForm } from "./receive-form";
 
 async function Receive({ searchParams }: { searchParams: Promise<{ drug?: string; po?: string }> }) {
   const { drug, po } = await searchParams;
   let suppliers: Supplier[];
+  let stores: { multiStore: boolean; stores: Store[] };
   try {
-    suppliers = await api<Supplier[]>("/suppliers");
+    [suppliers, stores] = await Promise.all([api<Supplier[]>("/suppliers"), api<{ multiStore: boolean; stores: Store[] }>("/stores")]);
   } catch (e) {
     if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">Only pharmacists and admins receive stock.</p>;
     throw e;
@@ -36,7 +37,15 @@ async function Receive({ searchParams }: { searchParams: Promise<{ drug?: string
       };
     }
   }
-  return <ReceiveForm suppliers={suppliers} preset={preset} order={order} minExpiry={shiftDay(clinicToday(), 1)} />;
+  return (
+    <ReceiveForm
+      suppliers={suppliers}
+      stores={stores.multiStore ? stores.stores.filter((s) => s.active) : []}
+      preset={preset}
+      order={order}
+      minExpiry={shiftDay(clinicToday(), 1)}
+    />
+  );
 }
 
 export default function ReceivePage({ searchParams }: PageProps<"/inventory/receive">) {

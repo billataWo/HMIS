@@ -109,6 +109,15 @@ export class ConsultationController {
         weightKg: true,
         doctor: { select: { fullName: true } },
         diagnoses: { select: { icd11Code: true, label: true, isPrimary: true } },
+        // What was prescribed then (not cancelled ones), so the doctor sees past treatment.
+        prescriptions: {
+          where: { status: { not: 'CANCELLED' } },
+          select: {
+            items: {
+              select: { dose: true, frequency: true, durationDays: true, drug: { select: { genericName: true, strength: true, form: true } } },
+            },
+          },
+        },
       },
     });
     // What the screens need to offer the right next step: is the fee paid, what is still owed.

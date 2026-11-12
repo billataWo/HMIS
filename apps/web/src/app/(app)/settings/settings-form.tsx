@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { saveSettings, type FormState } from "@/app/actions";
+import { Toggle } from "@/components/toggle";
 import { Alert, buttonClass, Field, Input } from "@/components/ui";
 import type { ClinicSettings } from "@/lib/api";
 
@@ -35,30 +36,27 @@ export function SettingsForm({ settings }: { settings: ClinicSettings }) {
 
       <fieldset className="space-y-2">
         <legend className="mb-2 font-medium">Payment</legend>
-        <label className="flex items-start gap-3 text-sm">
-          <input type="checkbox" name="requirePrepayment" defaultChecked={settings.requirePrepayment} className="mt-1" />
-          <span>
-            <span className="font-medium">Patients pay before each service</span>
-            <span className="block text-slate-500">
-              The doctor can&apos;t call a patient in until the consultation fee is paid, the lab can&apos;t take a sample until the test is paid, and the
-              pharmacy sends drugs to the cashier before dispensing. Credit and insurance patients are not held up. Untick to bill everything at the end of the visit.
-            </span>
-          </span>
-        </label>
+        <Toggle name="requirePrepayment" defaultChecked={settings.requirePrepayment} label="Patients pay before each service">
+          The doctor can&apos;t call a patient in until the consultation fee is paid, the lab can&apos;t take a sample until the test is paid, and the pharmacy
+          sends drugs to the cashier before dispensing. Credit and insurance patients are not held up. Turn off to bill everything at the end of the visit.
+        </Toggle>
       </fieldset>
 
       <fieldset className="space-y-2">
         <legend className="mb-2 font-medium">Patient registration</legend>
-        <label className="flex items-start gap-3 text-sm">
-          <input type="checkbox" name="doctorsCanRegister" defaultChecked={settings.doctorsCanRegister} className="mt-1" />
-          <span>
-            <span className="font-medium">Doctors can register new patients</span>
-            <span className="block text-slate-500">
-              Receptionists, nurses and admins always can. Turn this on if your clinic has no receptionist, so a doctor can create the patient&apos;s card. Check-in
-              (and the consultation fee) still happens at the front desk. Cashiers, the lab and the pharmacy never register patients.
-            </span>
-          </span>
-        </label>
+        <Toggle name="doctorsCanRegister" defaultChecked={settings.doctorsCanRegister} label="Doctors can register new patients">
+          Receptionists, nurses and admins always can. Turn this on if your clinic has no receptionist, so a doctor can create the patient&apos;s card. Check-in
+          (and the consultation fee) still happens at the front desk. Cashiers, the lab and the pharmacy never register patients.
+        </Toggle>
+      </fieldset>
+
+      <fieldset className="space-y-2">
+        <legend className="mb-2 font-medium">Pharmacy stock</legend>
+        <Toggle name="multiStore" defaultChecked={settings.multiStore} label="Several stores (main store and dispensary)">
+          For clinics that keep stock in a main store and issue it to the pharmacy. Deliveries go into the main store, the pharmacy dispenses only from the
+          dispensary, and stock moves between them by transfer (Inventory → Transfers). Turning it on creates a Main store and a Dispensary and puts today&apos;s
+          stock in the dispensary, so nothing changes at the counter. Turning it off goes back to one stock; nothing is deleted.
+        </Toggle>
       </fieldset>
 
       <button type="submit" disabled={pending} className={buttonClass}>

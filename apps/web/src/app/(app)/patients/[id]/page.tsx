@@ -8,7 +8,9 @@ import { AllergyEditor } from "@/components/allergy-editor";
 import { canRegister, FRONT_DESK } from "@/lib/roles";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge, linkClass, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
-import { api, ApiError, type Appointment, type Doctor, type Me, type PatientDetail, type QueueVisit, type Service } from "@/lib/api";
+import { ReturnForm } from "@/components/return-form";
+import { api, ApiError, type Appointment, type Doctor, type Me, type Medication, type PatientDetail, type QueueVisit, type Service } from "@/lib/api";
+import { shortDirections } from "@/lib/directions";
 import { ageFrom, clinicToday, formatDualDate, formatTime, fullName } from "@/lib/format";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -49,6 +51,9 @@ async function Patient({
   const canBook = canCheckIn || me.role === "DOCTOR";
   const canOpenVisits = ["ADMIN", "DOCTOR", "NURSE"].includes(me.role);
   const canEditAllergies = me.role === "DOCTOR" || me.role === "NURSE";
+  const canDispense = me.role === "ADMIN" || me.role === "PHARMACIST";
+  // Medication history: for the people who prescribe and dispense.
+  const meds = ["ADMIN", "DOCTOR", "NURSE", "PHARMACIST"].includes(me.role) ? await api<Medication[]>(`/patients/${p.id}/medications`) : null;
   const age = ageFrom(p.dateOfBirth);
 
   return (
@@ -201,8 +206,82 @@ async function Patient({
             </ul>
           )}
         </section>
+
+        {meds && <Medications meds={meds} dispenses={canDispense} canOpenInvoices={me.role === "ADMIN"} />}
       </div>
     </>
+  );
+}
+
+const RX_STATUS: Record<Medication["status"], string> = {
+  PENDING: "Waiting at pharmacy",
+  PARTIALLY_DISPENSED: "Partly dispensed",
+  DISPENSED: "Dispensed",
+  CANCELLED: "Cancelled",
+};
+
+/** Every prescription and counter sale, newest first: what was given and what came back. */
+function Medications({ meds, dispenses, canOpenInvoices }: { meds: Medication[]; dispenses: boolean; canOpenInvoices: boolean }) {
+  return (
+    <section id="medications" className="surface scroll-mt-6 p-4 lg:col-span-2 dark:border-slate-800">
+      <h2 className="mb-2 font-medium">Medications</h2>
+      {meds.length === 0 ? (
+        <p className="text-sm text-slate-500">Nothing prescribed or sold yet.</p>
+      ) : (
+        <ul className="divide-y divide-slate-100 text-sm dark:divide-slate-800">
+          {meds.map((m) => (
+            <li key={m.id} className={`py-3 ${m.status === "CANCELLED" ? "opacity-60" : ""}`}>
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <span>
+                  <span className="font-medium">{formatDualDate(m.createdAt)}</span>
+                  <span className="text-slate-500">
+                    {" "}· {m.visit.kind === "WALK_IN" ? `counter sale by ${m.prescriber.fullName}` : `Dr. ${m.prescriber.fullName}`} · {RX_STATUS[m.status]}
+                  </span>
+                </span>
+                {dispenses && m.status !== "CANCELLED" && (
+                  <Link href={`/rx-label/${m.id}`} target="_blank" className="text-xs text-brand-700 hover:underline dark:text-brand-400">
+                    Print labels
+                  </Link>
+                )}
+              </div>
+              <ul className="mt-1 space-y-1.5">
+                {m.items.map((i) => {
+                  const withPatient = i.dispensedQty - i.returnedQty;
+                  return (
+                    <li key={i.id}>
+                      <span className={m.status === "CANCELLED" ? "line-through" : ""}>
+                        <span className="font-medium">
+                          {i.drug.genericName} {i.drug.strength} {i.drug.form}
+                        </span>{" "}
+                        · {shortDirections(i)} · qty {i.quantity}
+                      </span>
+                      {m.status !== "CANCELLED" && (
+                        <span className="text-xs text-slate-500">
+                          {" "}· given {i.dispensedQty}
+                          {i.returnedQty > 0 && <span className="font-medium text-amber-700 dark:text-amber-400"> · {i.returnedQty} returned</span>}
+                        </span>
+                      )}
+                      {i.instructions && <span className="block text-xs text-slate-500">{i.instructions}</span>}
+                      {i.substitutedFrom && (
+                        <span className="block text-xs text-amber-800 dark:text-amber-300">
+                          Pharmacy gave this instead of {i.substitutedFrom}
+                          {i.substitutionReason && `: ${i.substitutionReason}`}
+                        </span>
+                      )}
+                      {dispenses && withPatient > 0 && (
+                        <div>
+                          <ReturnForm itemId={i.id} drug={i.drug.genericName} unit={i.drug.unit} withPatient={withPatient} canOpenInvoices={canOpenInvoices} />
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

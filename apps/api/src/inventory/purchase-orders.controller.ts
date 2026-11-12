@@ -26,7 +26,7 @@ const ListSchema = z.object({ status: z.enum(['DRAFT', 'ORDERED', 'PARTLY_RECEIV
 
 const include = {
   supplier: { select: { id: true, name: true, phone: true, contactPerson: true, tin: true } },
-  lines: { include: { drug: { select: { id: true, genericName: true, strength: true, form: true, unit: true, sellPrice: true } } } },
+  lines: { include: { drug: { select: { id: true, genericName: true, strength: true, form: true, unit: true, sellPrice: true, packSize: true, packName: true } } } },
 } satisfies Prisma.PurchaseOrderInclude;
 
 type WithLines = { lines: { quantity: number; unitCost: { toString(): string } | null }[] };

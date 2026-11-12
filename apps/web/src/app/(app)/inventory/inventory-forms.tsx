@@ -5,7 +5,7 @@ import { adjustStock, saveDrug, saveSupplier, type FormState } from "@/app/actio
 import { Alert, buttonClass, Field, Input, inputClass } from "@/components/ui";
 import type { DrugStock, Supplier } from "@/lib/api";
 
-const FORMS = ["tablet", "capsule", "syrup", "suspension", "injection", "vial", "inhaler", "cream", "ointment", "drops", "sachet", "suppository", "other"];
+export const FORMS = ["tablet", "capsule", "syrup", "suspension", "injection", "vial", "inhaler", "cream", "ointment", "drops", "sachet", "suppository", "other"];
 
 export function DrugForm({ drug }: { drug?: DrugStock["drug"] }) {
   const [state, action, pending] = useActionState<FormState, FormData>(saveDrug, {});
@@ -44,8 +44,21 @@ export function DrugForm({ drug }: { drug?: DrugStock["drug"] }) {
         <Field label="Selling price per unit (ETB) *" error={err.sellPrice}>
           <Input name="sellPrice" type="number" min={0} step="0.01" required defaultValue={val("sellPrice")} />
         </Field>
-        <Field label="Reorder level" hint="Flag as low stock at or below this quantity" error={err.reorderLevel}>
+        <Field label="Reorder level" hint="Flag as low stock at or below this quantity (in units)" error={err.reorderLevel}>
           <Input name="reorderLevel" type="number" min={0} defaultValue={val("reorderLevel") || "0"} />
+        </Field>
+        <Field label="Bought in" hint="What the supplier sells: box, strip, bottle… Leave empty if bought by the unit" error={err.packName}>
+          <Input name="packName" placeholder="box" defaultValue={val("packName")} />
+        </Field>
+        <Field label="Controlled drug" hint="Narcotics and psychotropics are kept in the controlled-drug register and never sold over the counter" error={err.controlled}>
+          <select name="controlled" defaultValue={val("controlled")} className={inputClass}>
+            <option value="">No</option>
+            <option value="NARCOTIC">Narcotic (e.g. tramadol, pethidine, morphine)</option>
+            <option value="PSYCHOTROPIC">Psychotropic (e.g. diazepam, phenobarbital)</option>
+          </select>
+        </Field>
+        <Field label="Units per pack" hint="e.g. 100 tablets in a box. Lets you receive and order by the pack" error={err.packSize}>
+          <Input name="packSize" type="number" min={2} placeholder="100" defaultValue={val("packSize")} />
         </Field>
       </div>
       {drug && (

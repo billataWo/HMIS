@@ -1,9 +1,11 @@
 "use client";
 
+import { ControlledBadge } from "@/components/controlled-badge";
 import { useActionState, useState } from "react";
 import { closePrescription, dispensePrescription, type FormState } from "@/app/actions";
 import { Alert, buttonClass, Input, inputClass, secondaryButtonClass } from "@/components/ui";
 import type { PrescriptionItem } from "@/lib/api";
+import { Substitute } from "./substitute";
 
 /**
  * Bill-at-the-end clinics: one "Dispense" step (charges are created as drugs are handed over).
@@ -49,9 +51,18 @@ export function DispenseForm({ prescriptionId, items, prepayment }: { prescripti
               <tr key={i.id} className="border-t border-slate-100 align-top dark:border-slate-800">
                 <td className="py-2 pr-3">
                   <span className="font-medium">{i.drug.genericName}</span> {i.drug.strength} {i.drug.form}
+                  {i.drug.brandName && <span className="text-slate-500"> ({i.drug.brandName})</span>} <ControlledBadge c={i.drug.controlled} />
                   <span className="block text-xs text-slate-500">
                     {Number(i.drug.sellPrice).toFixed(2)} ETB / {i.drug.unit}
                   </span>
+                  {i.substitutedFrom && (
+                    <span className="block text-xs text-amber-800 dark:text-amber-300">
+                      Instead of {i.substitutedFrom}
+                      {i.substitutionReason && `: ${i.substitutionReason}`}
+                    </span>
+                  )}
+                  {/* Only before anything of it is charged or handed over. */}
+                  {i.billedQty === 0 && i.dispensedQty === 0 && <Substitute itemId={i.id} need={i.quantity} />}
                 </td>
                 <td className="py-2 pr-3">
                   {i.dose} {i.frequency}
@@ -65,7 +76,15 @@ export function DispenseForm({ prescriptionId, items, prepayment }: { prescripti
                   </td>
                 )}
                 <td className="py-2 pr-3 text-right tabular-nums">{i.dispensedQty}</td>
-                <td className={`py-2 pr-3 text-right tabular-nums ${stock < i.quantity - i.dispensedQty ? "font-medium text-red-700 dark:text-red-400" : ""}`}>{stock}</td>
+                <td className={`py-2 pr-3 text-right tabular-nums ${stock < i.quantity - i.dispensedQty ? "font-medium text-red-700 dark:text-red-400" : ""}`}>
+                  {stock}
+                  {/* Several stores: the shortfall may be sitting in the main store. */}
+                  {stock < i.quantity - i.dispensedQty && (i.elsewhere ?? 0) > 0 && (
+                    <a href="/inventory/transfers" className="block text-xs font-normal whitespace-nowrap text-brand-700 hover:underline dark:text-brand-400">
+                      +{i.elsewhere} in other stores
+                    </a>
+                  )}
+                </td>
                 {canBill && (
                   <td className="py-2 pr-3">
                     {!priced(i) ? (

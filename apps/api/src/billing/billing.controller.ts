@@ -395,11 +395,20 @@ export class BillingController {
       if (units > charge.quantity) throw new ConflictException(`This line has only ${charge.quantity} units`);
       if (units < charge.quantity && charge.source !== 'PHARMACY') throw new ConflictException('Only drug lines can be refunded in part');
       if (charge.source === 'PHARMACY' && charge.sourceId) {
-        // Atomic: release only units that were billed but not handed over.
-        const released = await tx.$executeRaw`
-          UPDATE "PrescriptionItem" SET "billedQty" = "billedQty" - ${units}
-          WHERE "id" = ${charge.sourceId} AND "billedQty" - "dispensedQty" >= ${units}`;
-        if (released !== 1) throw new ConflictException('Those units were already handed over, so they cannot be refunded');
+        // Atomic: refund units the patient brought back to the pharmacy and weren't refunded yet…
+        const returned = await tx.$executeRaw`
+          UPDATE "PrescriptionItem" SET "refundedQty" = "refundedQty" + ${units}
+          WHERE "id" = ${charge.sourceId} AND "returnedQty" - "refundedQty" >= ${units}`;
+        // …or else release units that were billed but never handed over.
+        const released =
+          returned === 1
+            ? 1
+            : await tx.$executeRaw`
+                UPDATE "PrescriptionItem" SET "billedQty" = "billedQty" - ${units}
+                WHERE "id" = ${charge.sourceId} AND "billedQty" - "dispensedQty" >= ${units}`;
+        if (released !== 1) {
+          throw new ConflictException('Those units are with the patient. If they brought them back, record the return at the pharmacy first.');
+        }
       }
       if (charge.source === 'CONSULTATION') {
         const visit = await tx.visit.findUniqueOrThrow({ where: { id: charge.visitId } });

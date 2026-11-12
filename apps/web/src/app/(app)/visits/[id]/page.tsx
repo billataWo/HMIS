@@ -1,4 +1,5 @@
-import { CalendarPlus, Clock, History, ListOrdered, UserRound } from "lucide-react";
+import { CalendarPlus, Clock, History, ListOrdered, Pill, UserRound } from "lucide-react";
+import { shortDirections } from "@/lib/directions";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
@@ -211,6 +212,17 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
                     <p className="mt-1">{p.diagnoses.map((d) => `${d.label} (${d.icd11Code})`).join(", ")}</p>
                   )}
                   {p.chiefComplaint && <p className="mt-1 text-slate-600 dark:text-slate-400">{p.chiefComplaint}</p>}
+                  {p.prescriptions.some((rx) => rx.items.length > 0) && (
+                    <p className="mt-1 flex gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+                      <Pill aria-hidden className="mt-0.5 size-3.5 shrink-0 text-slate-400" />
+                      <span>
+                        {p.prescriptions
+                          .flatMap((rx) => rx.items)
+                          .map((i) => `${[i.drug.genericName, i.drug.strength].filter(Boolean).join(" ")} · ${shortDirections(i)}`)
+                          .join("; ")}
+                      </span>
+                    </p>
+                  )}
                   {(p.systolicBp || p.weightKg) && (
                     <p className="mt-1 text-xs text-slate-500">
                       {p.systolicBp && p.diastolicBp && `BP ${p.systolicBp}/${p.diastolicBp}`}

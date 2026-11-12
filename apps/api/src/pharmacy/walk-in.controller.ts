@@ -5,8 +5,8 @@ import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { WALK_IN_MRN } from '../patients/patients.controller.js';
-import { allergyAlerts } from '../prescriptions/drug-safety.js';
-import { prescriptionInclude } from '../prescriptions/prescriptions.controller.js';
+import { allergyAlerts, interactionAlerts } from '../prescriptions/drug-safety.js';
+import { currentMedicines, prescriptionInclude } from '../prescriptions/prescriptions.controller.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 const SaleSchema = z.object({
@@ -51,10 +51,22 @@ export class WalkInController {
       const drugs = await tx.drug.findMany({ where: { id: { in: drugIds }, tenantId: me.tenantId, active: true } });
       if (drugs.length !== drugIds.length) throw new NotFoundException('One or more drugs were not found');
 
-      // A named customer's recorded allergies are checked, as for a doctor's prescription.
-      const alerts = allergyAlerts(patient.allergies, drugs);
+      // Narcotics and psychotropics need a doctor's prescription: never a counter sale.
+      const controlled = drugs.filter((d) => d.controlled);
+      if (controlled.length) {
+        throw new ConflictException(
+          `${controlled.map((d) => d.genericName).join(', ')} ${controlled.length === 1 ? 'is a controlled drug' : 'are controlled drugs'}: dispense only on a doctor's prescription, not as a counter sale`,
+        );
+      }
+      // A named customer is checked as for a doctor's prescription: allergies, and interactions with
+      // what they are still taking. Every sale is checked for interactions among its own drugs.
+      const current = body.patientId ? await currentMedicines(tx, me.tenantId, patient.id) : [];
+      const alerts = [...allergyAlerts(patient.allergies, drugs), ...interactionAlerts([...current, ...drugs], current.length)];
       if (alerts.length && !body.acknowledgeAlerts) {
-        throw new ConflictException({ message: 'This customer is allergic to a drug in the sale', alerts });
+        throw new ConflictException({
+          message: alerts.some((a) => a.type === 'ALLERGY') ? 'This customer is allergic to a drug in the sale' : 'Check these alerts before selling',
+          alerts,
+        });
       }
 
       const visit = await tx.visit.create({

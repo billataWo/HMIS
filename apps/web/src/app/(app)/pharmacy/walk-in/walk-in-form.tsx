@@ -1,5 +1,6 @@
 "use client";
 
+import { ControlledBadge } from "@/components/controlled-badge";
 import { Search, X } from "lucide-react";
 import { useActionState, useEffect, useState } from "react";
 import { searchDrugs, searchPatients, walkInSale, type FormState } from "@/app/actions";
@@ -61,7 +62,7 @@ export function WalkInForm() {
           </div>
         ) : (
           <>
-            <p className="text-sm text-slate-500">Optional. Leave empty for an unnamed walk-in customer; choose a registered patient to check their allergies.</p>
+            <p className="text-sm text-slate-500">Optional. Leave empty for an unnamed walk-in customer; choose a registered patient to check their allergies and the medicines they are taking.</p>
             <div className="relative max-w-md">
               <Search aria-hidden className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
               <input value={pq} onChange={(e) => setPq(e.target.value)} placeholder="Name, phone or MRN" aria-label="Find a registered patient" className={`${inputClass} pl-9`} />
@@ -95,15 +96,15 @@ export function WalkInForm() {
                 <li key={d.id}>
                   <button
                     type="button"
-                    disabled={d.inStock === 0}
+                    disabled={d.inStock === 0 || !!d.controlled}
                     onClick={() => (setLines((ls) => [...ls, { drug: d, qty: 1 }]), setDq(""))}
                     className="flex w-full justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-50 dark:hover:bg-slate-800"
                   >
                     <span>
-                      {d.genericName} {d.strength} {d.form}
+                      {d.genericName} {d.strength} {d.form} <ControlledBadge c={d.controlled} />
                     </span>
                     <span className="text-slate-500">
-                      {Number(d.sellPrice).toFixed(2)} ETB · {d.inStock ? `${d.inStock} in stock` : "out of stock"}
+                      {d.controlled ? "Doctor's prescription only" : `${Number(d.sellPrice).toFixed(2)} ETB · ${d.inStock ? `${d.inStock} in stock` : "out of stock"}`}
                     </span>
                   </button>
                 </li>
@@ -154,6 +155,21 @@ export function WalkInForm() {
           </table>
         )}
       </section>
+
+      {state.alerts && state.alerts.length > 0 && !pending && (
+        <div role="alert" className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
+          <ul className="list-disc space-y-1 pl-5">
+            {state.alerts.map((a, i) => (
+              <li key={i}>
+                <span className="font-medium">{a.type === "ALLERGY" ? "Allergy" : a.type === "DUPLICATE" ? "Duplicate" : a.severity === "MAJOR" ? "Major interaction" : "Interaction"}:</span> {a.message}
+              </li>
+            ))}
+          </ul>
+          <label className="flex items-center gap-2 font-medium">
+            <input type="checkbox" name="acknowledge" /> I have checked these and advised the customer
+          </label>
+        </div>
+      )}
 
       <div className="flex gap-2">
         <button type="submit" disabled={pending || lines.length === 0} className={buttonClass}>

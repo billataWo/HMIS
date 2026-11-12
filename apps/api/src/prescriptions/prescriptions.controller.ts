@@ -37,9 +37,53 @@ const CreateSchema = z.object({
 export const prescriptionInclude = {
   prescriber: { select: { id: true, fullName: true } },
   items: {
-    include: { drug: { select: { id: true, genericName: true, brandName: true, form: true, strength: true, unit: true, sellPrice: true } } },
+    // The same order on every screen and label.
+    orderBy: [{ drug: { genericName: 'asc' } }, { id: 'asc' }],
+    include: { drug: { select: { id: true, genericName: true, brandName: true, form: true, strength: true, unit: true, sellPrice: true, controlled: true } } },
   },
 } satisfies Prisma.PrescriptionInclude;
+
+const DAY_MS = 86_400_000;
+/** A course with no length (PRN, as directed) counts as current for this long after it was given. */
+const OPEN_COURSE_DAYS = 30;
+
+/**
+ * Medicines the patient is probably still taking, from other visits and counter sales: handed over
+ * in the last 90 days, course not yet over (start + days), and not all brought back. Checked with
+ * new drugs for interactions and duplicates; the alert says when they were started.
+ */
+export async function currentMedicines(
+  db: Pick<Prisma.TransactionClient, 'prescriptionItem'>,
+  tenantId: string,
+  patientId: string,
+  exceptVisitId?: string,
+  now = new Date(),
+) {
+  const items = await db.prescriptionItem.findMany({
+    where: {
+      dispensedQty: { gt: 0 },
+      prescription: {
+        tenantId,
+        status: { in: ['DISPENSED', 'PARTIALLY_DISPENSED'] },
+        createdAt: { gte: new Date(now.getTime() - 90 * DAY_MS) },
+        visit: { patientId, ...(exceptVisitId && { id: { not: exceptVisitId } }) },
+      },
+    },
+    include: { drug: true, prescription: { select: { createdAt: true, dispensedAt: true } } },
+  });
+  const seen = new Set<string>();
+  return items
+    .filter((i) => {
+      const start = i.prescription.dispensedAt ?? i.prescription.createdAt;
+      const days = i.durationDays ?? OPEN_COURSE_DAYS;
+      return i.returnedQty < i.dispensedQty && start.getTime() + days * DAY_MS > now.getTime();
+    })
+    .filter((i) => !seen.has(i.drugId) && seen.add(i.drugId))
+    .map((i) => {
+      const since = (i.prescription.dispensedAt ?? i.prescription.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Africa/Addis_Ababa' });
+      return { ...i.drug, note: `taking since ${since}` };
+    });
+}
 
 @Controller()
 export class PrescriptionsController {
@@ -70,6 +114,24 @@ export class PrescriptionsController {
   }
 
   /**
+   * A patient's medication history: every prescription and counter sale, newest first, with what
+   * was handed over and brought back. For the people who prescribe and dispense.
+   */
+  @Get('patients/:id/medications')
+  @Roles('ADMIN', 'DOCTOR', 'NURSE', 'PHARMACIST')
+  async medications(@CurrentUser() me: AuthUser, @Param('id') id: string) {
+    if (!z.uuid().safeParse(id).success) throw new NotFoundException('Patient not found');
+    const patient = await this.prisma.client.patient.findFirst({ where: { id, tenantId: me.tenantId }, select: { id: true } });
+    if (!patient) throw new NotFoundException('Patient not found');
+    return this.prisma.client.prescription.findMany({
+      where: { tenantId: me.tenantId, visit: { patientId: id } },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      include: { ...prescriptionInclude, visit: { select: { id: true, kind: true, checkedInAt: true } } },
+    });
+  }
+
+  /**
    * Creates a prescription. If the drugs trigger allergy, interaction or duplicate alerts, the
    * first attempt is refused with the alerts; the doctor resubmits with acknowledgeAlerts, plus
    * a written reason when overriding an allergy. The accepted alerts are stored with it.
@@ -89,15 +151,20 @@ export class PrescriptionsController {
     const drugs = await db.drug.findMany({ where: { id: { in: drugIds }, tenantId: me.tenantId, active: true } });
     if (drugs.length !== drugIds.length) throw new NotFoundException('One or more drugs were not found');
 
-    // Check the new drugs against each other and against anything else prescribed in this visit.
-    const existing = await db.prescriptionItem.findMany({
-      where: { prescription: { visitId: id, status: { not: 'CANCELLED' } } },
-      include: { drug: true },
-    });
+    // Check the new drugs against each other, against anything else prescribed in this visit, and
+    // against what the patient is still taking from earlier visits.
+    const [existing, current] = await Promise.all([
+      db.prescriptionItem.findMany({
+        where: { prescription: { visitId: id, status: { not: 'CANCELLED' } } },
+        include: { drug: true },
+      }),
+      currentMedicines(db, me.tenantId, visit.patientId, id),
+    ]);
+    const before = [...current, ...existing.map((e) => e.drug)];
     const newDrugs = body.items.map((i) => drugs.find((d) => d.id === i.drugId)!);
     const alerts = [
       ...allergyAlerts(visit.patient.allergies, drugs),
-      ...interactionAlerts([...existing.map((e) => e.drug), ...newDrugs], existing.length),
+      ...interactionAlerts([...before, ...newDrugs], before.length),
     ];
 
     if (alerts.length && !body.acknowledgeAlerts) {

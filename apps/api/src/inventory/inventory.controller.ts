@@ -6,6 +6,8 @@ import { clinicDay, DAY_PATTERN, dayRange } from '../common/clinic-day.js';
 import { fromCents, toCents } from '../common/money.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { FORMULARY } from './formulary.js';
+import { receivingStore, storeMode } from './stores.js';
 
 /** Stock expiring within this many days is flagged as "expiring soon". */
 export const EXPIRY_WARNING_DAYS = 90;
@@ -29,12 +31,25 @@ const DrugSchema = z.object({
   unit: z.string().trim().min(1).max(30),
   sellPrice: price,
   reorderLevel: z.number().int().min(0).max(1_000_000).default(0),
+  // How it is bought: 100 tablets to a box. Stock and prices stay per unit.
+  packSize: z.number().int().min(2, 'A pack holds at least 2 units').max(100_000).nullable().optional(),
+  packName: optionalText(30),
+  // Narcotic or psychotropic: kept in the controlled-drug register, never sold over the counter.
+  controlled: z.enum(['NARCOTIC', 'PSYCHOTROPIC']).nullable().optional(),
 });
 const DrugUpdateSchema = DrugSchema.partial().extend({ active: z.boolean().optional() });
+
+/** Many drugs at once: picked from the starter list or imported from a spreadsheet. */
+const BulkDrugSchema = z.object({ items: z.array(DrugSchema).min(1, 'Choose at least one drug').max(500) });
+
+/** The same drug, form and strength counts as already in the list. */
+const drugKey = (d: { genericName: string; strength?: string | null; form: string }) =>
+  [d.genericName, d.strength ?? '', d.form].map((s) => s.trim().toLowerCase().replace(/\s+/g, ' ')).join('|');
 
 const ReceiptSchema = z.object({
   supplierId: z.uuid().optional(),
   purchaseOrderId: z.uuid().optional(), // the order this delivery fills (its received quantities go up)
+  storeId: z.uuid().optional(), // several stores: where the delivery goes (default: the main store)
   receiptRef: optionalText(100),
   items: z
     .array(
@@ -101,6 +116,7 @@ export class InventoryController {
   async list(@CurrentUser() me: AuthUser, @Query(new ZodPipe(ListSchema)) { q, filter }: z.infer<typeof ListSchema>) {
     const today = dayRange(clinicDay()).start;
     const soon = new Date(today.getTime() + EXPIRY_WARNING_DAYS * 86_400_000);
+    const { multi } = await storeMode(this.prisma.client, me.tenantId);
     const words = q.split(/\s+/).filter(Boolean);
     const drugs = await this.prisma.client.drug.findMany({
       where: {
@@ -115,7 +131,7 @@ export class InventoryController {
         })),
       },
       orderBy: { genericName: 'asc' },
-      include: { batches: { where: { quantity: { gt: 0 } }, orderBy: { expiryDate: 'asc' } } },
+      include: { batches: { where: { quantity: { gt: 0 } }, orderBy: { expiryDate: 'asc' }, include: { store: { select: { id: true, name: true, createdAt: true } } } } },
     });
 
     const rows = drugs.map(({ batches, ...d }) => {
@@ -131,10 +147,25 @@ export class InventoryController {
         stockValueCents: usable.reduce((s, b) => s + b.quantity * toCents(b.costPrice), 0),
         expiredValueCents: expired.reduce((s, b) => s + b.quantity * toCents(b.costPrice), 0),
         low: d.reorderLevel > 0 && onHand <= d.reorderLevel,
+        // Several stores: usable units in each store that holds some.
+        byStore: multi
+          ? Object.values(
+              usable.reduce<Record<string, { storeId: string; name: string; quantity: number; order: number }>>((acc, b) => {
+                const key = b.store?.id ?? 'none';
+                acc[key] ??= { storeId: key, name: b.store?.name ?? 'No store', quantity: 0, order: b.store?.createdAt.getTime() ?? 0 };
+                acc[key].quantity += b.quantity;
+                return acc;
+              }, {}),
+            )
+              // Always the same order: the stores as they were set up (main store first).
+              .sort((x, y) => x.order - y.order)
+              .map(({ order: _order, ...b }) => b)
+          : [],
       };
     });
 
     const summary = {
+      multiStore: multi,
       drugs: rows.length,
       stockValue: fromCents(rows.reduce((s, r) => s + r.stockValueCents, 0)),
       low: rows.filter((r) => r.low).length,
@@ -162,6 +193,42 @@ export class InventoryController {
     return drug;
   }
 
+  /** The starter list of common medicines, each marked when the clinic already has it. */
+  @Get('drugs/starter')
+  async starter(@CurrentUser() me: AuthUser) {
+    const have = await this.prisma.client.drug.findMany({ where: { tenantId: me.tenantId }, select: { genericName: true, strength: true, form: true } });
+    const keys = new Set(have.map(drugKey));
+    return FORMULARY.map((f) => ({ ...f, inList: keys.has(drugKey(f)) }));
+  }
+
+  /**
+   * Adds many drugs in one go (starter list, spreadsheet). Drugs already in the list are skipped
+   * and named in the reply, so importing the same file twice adds nothing twice.
+   */
+  @Post('drugs/bulk')
+  async bulkDrugs(@CurrentUser() me: AuthUser, @Body(new ZodPipe(BulkDrugSchema)) { items }: z.infer<typeof BulkDrugSchema>) {
+    return this.prisma.client.$transaction(async (tx) => {
+      // One import at a time per clinic, so two at once can't add the same drug twice.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`drugs:${me.tenantId}`}))`;
+      const have = await tx.drug.findMany({ where: { tenantId: me.tenantId }, select: { genericName: true, strength: true, form: true } });
+      const keys = new Set(have.map(drugKey));
+      const created: string[] = [];
+      const skipped: string[] = [];
+      for (const item of items) {
+        const label = [item.genericName, item.strength, item.form].filter(Boolean).join(' ');
+        if (keys.has(drugKey(item))) {
+          skipped.push(label);
+          continue;
+        }
+        keys.add(drugKey(item));
+        await tx.drug.create({ data: { ...item, sellPrice: item.sellPrice.toFixed(2), tenantId: me.tenantId } });
+        created.push(label);
+      }
+      await this.audit.log(me, 'drug.import', 'Drug', undefined, { created: created.length, skipped: skipped.length }, tx);
+      return { created, skipped };
+    });
+  }
+
   @Patch('drugs/:id')
   async updateDrug(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(DrugUpdateSchema)) body: z.infer<typeof DrugUpdateSchema>) {
     const drug = await this.findDrug(me, id);
@@ -183,7 +250,7 @@ export class InventoryController {
     const drug = await this.findDrug(me, id);
     const db = this.prisma.client;
     const [batches, movements] = await Promise.all([
-      db.stockBatch.findMany({ where: { drugId: id }, orderBy: [{ expiryDate: 'asc' }], include: { supplierRef: { select: { name: true } } } }),
+      db.stockBatch.findMany({ where: { drugId: id }, orderBy: [{ expiryDate: 'asc' }], include: { supplierRef: { select: { name: true } }, store: { select: { name: true } } } }),
       db.stockMovement.findMany({ where: { batch: { drugId: id } }, orderBy: { createdAt: 'desc' }, take: 50, include: { batch: { select: { batchNo: true } } } }),
     ]);
     const userIds = [...new Set(movements.map((m) => m.userId).filter((x): x is string => !!x))];
@@ -203,6 +270,14 @@ export class InventoryController {
     return this.prisma.client.$transaction(async (tx) => {
       const supplier = body.supplierId ? await tx.supplier.findFirst({ where: { id: body.supplierId, tenantId: me.tenantId } }) : null;
       if (body.supplierId && !supplier) throw new NotFoundException('Supplier not found');
+      // Several stores: into the chosen store, or the main store. One store: batches have none.
+      const { multi } = await storeMode(tx, me.tenantId);
+      const store = !multi
+        ? null
+        : body.storeId
+          ? await tx.store.findFirst({ where: { id: body.storeId, tenantId: me.tenantId, active: true } })
+          : await receivingStore(tx, me.tenantId);
+      if (multi && !store) throw new NotFoundException('Store not found');
 
       const warnings: string[] = [];
       const received: { drug: string; batchNo: string; quantity: number }[] = [];
@@ -215,7 +290,7 @@ export class InventoryController {
         }
 
         const expiryDate = new Date(item.expiryDate);
-        const existing = await tx.stockBatch.findFirst({ where: { drugId: drug.id, batchNo: item.batchNo } });
+        const existing = await tx.stockBatch.findFirst({ where: { drugId: drug.id, batchNo: item.batchNo, storeId: store?.id ?? null } });
         let batchId: string;
         if (existing) {
           if (existing.expiryDate.toISOString().slice(0, 10) !== item.expiryDate) {
@@ -236,6 +311,7 @@ export class InventoryController {
                 supplier: supplier?.name,
                 receiptRef: body.receiptRef,
                 receivedById: me.sub,
+                storeId: store?.id,
               },
             })
           ).id;
@@ -298,6 +374,7 @@ export class InventoryController {
         quantity: true,
         costPrice: true,
         drug: { select: { id: true, genericName: true, strength: true, form: true, unit: true } },
+        store: { select: { name: true } },
       },
     });
   }

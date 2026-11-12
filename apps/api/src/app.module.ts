@@ -36,6 +36,8 @@ import { DocumentsController } from './documents/documents.controller.js';
 import { WalkInController } from './pharmacy/walk-in.controller.js';
 import { PayersController } from './payers/payers.controller.js';
 import { PurchaseOrdersController } from './inventory/purchase-orders.controller.js';
+import { ControlledRegisterController } from './inventory/controlled.controller.js';
+import { StoresController } from './inventory/stores.controller.js';
 import { PlatformAuthController } from './platform/platform-auth.controller.js';
 import { PlatformController } from './platform/platform.controller.js';
 import { PlatformVoiceController } from './platform/voice.controller.js';
@@ -87,6 +89,8 @@ if (process.env.NODE_ENV === 'production' && (jwtSecret.length < 32 || WEAK_SECR
     WalkInController,
     PayersController,
     PurchaseOrdersController,
+    ControlledRegisterController,
+    StoresController,
     SubscriptionController,
     PublicController,
     PlatformAuthController,

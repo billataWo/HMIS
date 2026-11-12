@@ -1,5 +1,6 @@
 "use client";
 
+import { ControlledBadge } from "@/components/controlled-badge";
 import { useEffect, useState, useTransition } from "react";
 import { cancelPrescription, createPrescription, searchDrugs, type RxDraftItem } from "@/app/actions";
 import { Alert, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
@@ -128,6 +129,12 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
                 {i.durationDays && ` × ${i.durationDays} days`} · qty {i.quantity}
                 {i.dispensedQty > 0 && i.dispensedQty < i.quantity && <span className="text-slate-500"> ({i.dispensedQty} given)</span>}
                 {i.instructions && <span className="block text-xs text-slate-500">{i.instructions}</span>}
+                {i.substitutedFrom && (
+                  <span className="block text-xs text-amber-800 dark:text-amber-300">
+                    Pharmacy gave this instead of {i.substitutedFrom}
+                    {i.substitutionReason && `: ${i.substitutionReason}`}
+                  </span>
+                )}
               </li>
             ))}
           </ul>
@@ -146,7 +153,7 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
             <div key={i} className="space-y-2 border-b border-slate-100 pb-3 dark:border-slate-800">
               <div className="flex items-center justify-between gap-2 text-sm">
                 <span>
-                  <span className="font-medium">{drugLabel(d.drug)}</span>
+                  <span className="font-medium">{drugLabel(d.drug)}</span> <ControlledBadge c={d.drug.controlled} />
                   <span className={`ml-2 text-xs ${d.drug.inStock >= d.quantity ? "text-slate-500" : "text-red-700 dark:text-red-400"}`}>
                     {d.drug.inStock} in stock
                   </span>
@@ -210,7 +217,7 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
                 <li key={r.id}>
                   <button type="button" onClick={() => addDraft(r)} className="flex w-full justify-between gap-2 px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-slate-800">
                     <span>
-                      {drugLabel(r)}
+                      {drugLabel(r)} <ControlledBadge c={r.controlled} />
                       {r.drugClass && <span className="text-xs text-slate-500"> · {r.drugClass}</span>}
                     </span>
                     <span className={`text-xs ${r.inStock > 0 ? "text-slate-500" : "text-red-700 dark:text-red-400"}`}>

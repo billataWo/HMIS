@@ -13,6 +13,7 @@ export interface CountBatch {
   quantity: number;
   costPrice: string;
   drug: { id: string; genericName: string; strength: string | null; form: string; unit: string };
+  store?: { name: string } | null; // several stores: where this batch is kept
 }
 
 /**
@@ -23,7 +24,7 @@ export function CountForm({ batches }: { batches: CountBatch[] }) {
   const [state, action, pending] = useActionState<FormState, FormData>(saveStockCount, {});
   const [q, setQ] = useState("");
   const today = clinicToday();
-  const shown = batches.filter((b) => `${b.drug.genericName} ${b.batchNo}`.toLowerCase().includes(q.trim().toLowerCase()));
+  const shown = batches.filter((b) => `${b.drug.genericName} ${b.batchNo} ${b.store?.name ?? ""}`.toLowerCase().includes(q.trim().toLowerCase()));
 
   return (
     <form action={action} className="space-y-4">
@@ -57,7 +58,10 @@ export function CountForm({ batches }: { batches: CountBatch[] }) {
                 <td className="px-4 py-2">
                   {b.drug.genericName} {b.drug.strength} {b.drug.form}
                 </td>
-                <td className="px-4 py-2 font-mono text-xs">{b.batchNo}</td>
+                <td className="px-4 py-2 font-mono text-xs">
+                  {b.batchNo}
+                  {b.store && <span className="block font-sans text-slate-500">{b.store.name}</span>}
+                </td>
                 <td className={`px-4 py-2 ${b.expiryDate.slice(0, 10) < today ? "font-medium text-red-700 dark:text-red-400" : ""}`}>{b.expiryDate.slice(0, 10)}</td>
                 <td className="px-4 py-2 text-right tabular-nums">
                   {b.quantity} <span className="text-xs text-slate-500">{b.drug.unit}</span>

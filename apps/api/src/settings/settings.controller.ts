@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { type AuthUser, CurrentUser, Roles, AllStaff } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
 import { ZodPipe } from '../common/zod.pipe.js';
+import { ensureStores } from '../inventory/stores.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 const SettingsSchema = z.object({
@@ -12,9 +13,11 @@ const SettingsSchema = z.object({
   address: z.string().trim().max(300).nullable().optional(),
   requirePrepayment: z.boolean().optional(),
   doctorsCanRegister: z.boolean().optional(),
+  // A main store and a dispensary (or more), with transfers between them.
+  multiStore: z.boolean().optional(),
 });
 
-const select = { id: true, name: true, nameAm: true, phone: true, address: true, type: true, requirePrepayment: true, doctorsCanRegister: true };
+const select = { id: true, name: true, nameAm: true, phone: true, address: true, type: true, requirePrepayment: true, doctorsCanRegister: true, multiStore: true };
 
 @Controller('settings')
 export class SettingsController {
@@ -32,7 +35,12 @@ export class SettingsController {
   @Patch()
   @Roles('ADMIN')
   async update(@CurrentUser() me: AuthUser, @Body(new ZodPipe(SettingsSchema)) body: z.infer<typeof SettingsSchema>) {
-    const updated = await this.prisma.client.tenant.update({ where: { id: me.tenantId }, data: body, select });
+    const updated = await this.prisma.client.$transaction(async (tx) => {
+      // Turning several stores on sets up a Main store and a Dispensary and puts current stock in
+      // the dispensary; turning it off keeps the stores (stock is simply all usable again).
+      if (body.multiStore) await ensureStores(tx, me.tenantId);
+      return tx.tenant.update({ where: { id: me.tenantId }, data: body, select });
+    });
     await this.audit.log(me, 'settings.update', 'Tenant', me.tenantId, body);
     return updated;
   }

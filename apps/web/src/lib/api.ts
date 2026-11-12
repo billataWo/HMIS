@@ -255,6 +255,9 @@ export interface InventoryRow {
   unit: string;
   sellPrice: string;
   reorderLevel: number;
+  packSize: number | null; // units per pack as bought
+  packName: string | null;
+  controlled: ControlledClass | null;
   active: boolean;
   onHand: number;
   expiringSoon: number;
@@ -263,10 +266,32 @@ export interface InventoryRow {
   stockValue: string;
   expiredValue: string;
   low: boolean;
+  byStore?: { storeId: string; name: string; quantity: number }[]; // several stores: usable units per store
+}
+
+/** A place stock is kept (several stores): dispensing takes only from dispensary stores. */
+export interface Store {
+  id: string;
+  name: string;
+  dispensary: boolean;
+  active: boolean;
+  drugs: number; // drugs with usable stock there
+  units: number;
+}
+
+export interface StockTransfer {
+  id: string;
+  number: string;
+  from: string;
+  to: string;
+  note: string | null;
+  by: string | null;
+  createdAt: string;
+  lines: { drug: { id: string; genericName: string; strength: string | null; form: string; unit: string }; batchNo: string; expiryDate: string; quantity: number }[];
 }
 
 export interface InventoryResponse {
-  summary: { drugs: number; stockValue: string; low: number; expiring: number; expired: number; expiredValue: string; expiryWarningDays: number };
+  summary: { multiStore?: boolean; drugs: number; stockValue: string; low: number; expiring: number; expired: number; expiredValue: string; expiryWarningDays: number };
   drugs: InventoryRow[];
 }
 
@@ -289,13 +314,14 @@ export interface DrugStock {
     costPrice: string;
     supplier: string | null;
     supplierRef: { name: string } | null;
+    store?: { name: string } | null; // several stores: where the batch is kept
     receiptRef: string | null;
     receivedAt: string;
     expired: boolean;
   }[];
   movements: {
     id: string;
-    type: "RECEIPT" | "DISPENSE" | "ADJUSTMENT" | "EXPIRED" | "TRANSFER_OUT" | "TRANSFER_IN";
+    type: StockMovementType;
     quantity: number;
     reference: string | null;
     reason: string | null;
@@ -363,6 +389,7 @@ export interface ClinicSettings {
   address: string | null;
   requirePrepayment: boolean;
   doctorsCanRegister: boolean;
+  multiStore: boolean; // a main store and a dispensary (or more), with transfers
 }
 
 export interface Diagnosis {
@@ -396,6 +423,9 @@ export type VisitDetail = QueueVisit &
       weightKg: string | null;
       doctor: { fullName: string } | null;
       diagnoses: Omit<Diagnosis, "id">[];
+      prescriptions: {
+        items: { dose: string; frequency: Frequency; durationDays: number | null; drug: { genericName: string; strength: string | null; form: string } }[];
+      }[];
     }[];
   };
 
@@ -414,8 +444,82 @@ export interface DrugOption {
   strength: string | null;
   unit: string;
   sellPrice: string;
+  packSize?: number | null;
+  packName?: string | null;
+  controlled?: ControlledClass | null;
   inStock: number;
 }
+
+/** Narcotic or psychotropic: kept in the controlled-drug register, never sold over the counter. */
+export type ControlledClass = "NARCOTIC" | "PSYCHOTROPIC";
+
+export interface RegisterLine {
+  id: string;
+  at: string;
+  type: StockMovementType;
+  batchNo: string;
+  expiryDate: string;
+  in: number;
+  out: number;
+  balance: number;
+  by: string | null;
+  supplier: string | null;
+  reference: string | null;
+  reason: string | null;
+  patient: { id: string; mrn: string; firstName: string; fatherName: string; grandfather: string | null } | null;
+  prescriber: string | null;
+  prescriptionId: string | null;
+}
+
+export interface ControlledRegister {
+  from: string;
+  to: string;
+  drugs: {
+    id: string;
+    genericName: string;
+    brandName: string | null;
+    strength: string | null;
+    form: string;
+    unit: string;
+    controlled: ControlledClass;
+    opening: number;
+    received: number;
+    issued: number;
+    closing: number;
+    lines: RegisterLine[];
+  }[];
+}
+
+/** A medicine on the starter list (no price: the clinic sets it). */
+export interface FormularyDrug {
+  group: string;
+  genericName: string;
+  strength: string | null;
+  form: string;
+  unit: string;
+  drugClass: string | null;
+  packSize?: number;
+  packName?: string;
+  controlled?: ControlledClass;
+  inList: boolean;
+}
+
+/** One drug to add (starter list, spreadsheet import). */
+export interface NewDrug {
+  genericName: string;
+  brandName?: string | null;
+  drugClass?: string | null;
+  form: string;
+  strength?: string | null;
+  unit: string;
+  sellPrice: number;
+  reorderLevel?: number;
+  packSize?: number | null;
+  packName?: string | null;
+  controlled?: ControlledClass | null;
+}
+
+export type StockMovementType = "RECEIPT" | "DISPENSE" | "ADJUSTMENT" | "EXPIRED" | "TRANSFER_OUT" | "TRANSFER_IN" | "RETURN";
 
 export type Frequency = "OD" | "BID" | "TID" | "QID" | "NOCTE" | "PRN" | "STAT";
 
@@ -428,9 +532,14 @@ export interface PrescriptionItem {
   instructions: string | null;
   billedQty: number;
   dispensedQty: number;
+  returnedQty: number; // brought back by the patient after being handed over
+  refundedQty: number; // of those, units whose charge was taken back
+  substitutedFrom?: string | null; // another brand was given instead of this (what was prescribed)
+  substitutionReason?: string | null;
   paidQty?: number; // present on the pharmacy worklist
-  drug: Pick<DrugOption, "id" | "genericName" | "brandName" | "form" | "strength" | "unit" | "sellPrice">;
+  drug: Pick<DrugOption, "id" | "genericName" | "brandName" | "form" | "strength" | "unit" | "sellPrice" | "controlled">;
   inStock?: number; // present on the pharmacy worklist
+  elsewhere?: number; // several stores: usable units in stores other than the dispensary
 }
 
 export interface Prescription {
@@ -446,6 +555,42 @@ export interface Prescription {
 
 export interface PharmacyPrescription extends Prescription {
   visit: { id: string; queueNumber: number; status: VisitStatus; kind?: "OPD" | "WALK_IN"; patient: QueuePatient };
+}
+
+/** One entry of a patient's medication history. */
+export interface Medication extends Prescription {
+  visit: { id: string; kind: "OPD" | "WALK_IN"; checkedInAt: string };
+}
+
+/** What a medicine label prints. */
+export interface RxLabel extends Omit<Prescription, "items"> {
+  visit: { id: string; kind: "OPD" | "WALK_IN"; patient: QueuePatient };
+  tenant: { name: string; nameAm: string | null; phone: string | null; address: string | null };
+  dispensedBy: string | null;
+  items: (PrescriptionItem & { batches: string[]; expiresAt: string | null })[];
+}
+
+/** A line of the pharmacy's returns register. */
+export interface DrugReturnRow {
+  id: string;
+  quantity: number;
+  restocked: boolean;
+  reason: string;
+  createdAt: string;
+  prescriptionItem: {
+    drug: { genericName: string; strength: string | null; form: string; unit: string };
+    prescription: { visit: { patient: { id: string; mrn: string; firstName: string; fatherName: string } } };
+  };
+}
+
+export interface ReturnResult {
+  id: string;
+  quantity: number;
+  restocked: boolean;
+  unit: string;
+  /** Returned units still charged on an invoice: an admin refunds them there. */
+  refundDue: number;
+  invoices: { id: string; number: string }[];
 }
 
 export interface Charge {

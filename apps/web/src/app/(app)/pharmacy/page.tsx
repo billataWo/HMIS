@@ -1,10 +1,11 @@
-import { Pill, ShoppingBag } from "lucide-react";
+import { Pill, Printer, ShieldAlert, ShoppingBag } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { Flash } from "@/components/flash";
-import { Badge, buttonClass, EmptyState, PageHeader, Skeleton } from "@/components/ui";
-import { api, ApiError, type PharmacyPrescription } from "@/lib/api";
+import { ReturnForm } from "@/components/return-form";
+import { Badge, buttonClass, EmptyState, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
+import { api, ApiError, type DrugReturnRow, type Me, type PharmacyPrescription } from "@/lib/api";
 import { ageFrom, formatDuration, formatTime, fullName } from "@/lib/format";
 import { ClosePrescriptionForm, DispenseForm } from "./dispense-form";
 
@@ -36,9 +37,13 @@ function PatientLine({ p }: { p: PharmacyPrescription }) {
 }
 
 async function Worklist() {
-  let data: { prepayment: boolean; open: PharmacyPrescription[]; dispensedToday: PharmacyPrescription[] };
+  let data: { prepayment: boolean; open: PharmacyPrescription[]; dispensedToday: PharmacyPrescription[]; returnsToday: DrugReturnRow[]; admin: boolean };
   try {
-    data = await api("/pharmacy/queue");
+    const [queue, me] = await Promise.all([
+      api<Omit<typeof data, "admin">>("/pharmacy/queue"),
+      api<Me>("/auth/me"),
+    ]);
+    data = { ...queue, admin: me.role === "ADMIN" };
   } catch (e) {
     if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">Only pharmacists and admins can dispense.</p>;
     throw e;
@@ -69,7 +74,10 @@ async function Worklist() {
               </div>
             )}
             <DispenseForm prescriptionId={p.id} items={p.items} prepayment={data.prepayment} />
-            <ClosePrescriptionForm prescriptionId={p.id} />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <ClosePrescriptionForm prescriptionId={p.id} />
+              <LabelsLink id={p.id} />
+            </div>
           </section>
         ))
       )}
@@ -81,18 +89,78 @@ async function Worklist() {
           </summary>
           <ul className="mt-2 divide-y divide-slate-100 text-sm dark:divide-slate-800">
             {data.dispensedToday.map((p) => (
-              <li key={p.id} className="py-2">
+              <li key={p.id} className="space-y-1 py-3">
                 <PatientLine p={p} />
-                <p className="text-slate-600 dark:text-slate-400">
-                  {p.items.map((i) => `${i.drug.genericName} × ${i.dispensedQty}`).join(", ")}
-                  {p.dispensedAt && <span className="text-slate-500"> · {formatTime(p.dispensedAt)}</span>}
-                </p>
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="text-slate-600 dark:text-slate-400">
+                    {p.items.map((i) => `${i.drug.genericName} × ${i.dispensedQty}${i.returnedQty ? ` (${i.returnedQty} returned)` : ""}`).join(", ")}
+                    {p.dispensedAt && <span className="text-slate-500"> · {formatTime(p.dispensedAt)}</span>}
+                  </p>
+                  <LabelsLink id={p.id} />
+                </div>
+                {p.items
+                  .filter((i) => i.dispensedQty - i.returnedQty > 0)
+                  .map((i) => (
+                    <ReturnForm
+                      key={i.id}
+                      itemId={i.id}
+                      drug={i.drug.genericName}
+                      unit={i.drug.unit}
+                      withPatient={i.dispensedQty - i.returnedQty}
+                      canOpenInvoices={data.admin}
+                      label={`Return ${i.drug.genericName}`}
+                    />
+                  ))}
               </li>
             ))}
           </ul>
         </details>
       )}
+
+      {data.returnsToday.length > 0 && (
+        <section className="surface p-4 dark:border-slate-800">
+          <h2 className="mb-2 font-medium">
+            Returns today <span className="text-slate-500">({data.returnsToday.length})</span>
+          </h2>
+          <ul className="divide-y divide-slate-100 text-sm dark:divide-slate-800">
+            {data.returnsToday.map((r) => {
+              const pt = r.prescriptionItem.prescription.visit.patient;
+              const d = r.prescriptionItem.drug;
+              return (
+                <li key={r.id} className="flex flex-wrap items-baseline justify-between gap-2 py-2">
+                  <span>
+                    <span className="font-medium">
+                      {d.genericName} {d.strength} × {r.quantity}
+                    </span>{" "}
+                    <Badge tone={r.restocked ? "success" : "warning"}>{r.restocked ? "Back on the shelf" : "For destruction"}</Badge>
+                    <span className="block text-xs text-slate-500">{r.reason}</span>
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    <Link href={`/patients/${pt.id}#medications`} className="hover:underline">
+                      {fullName(pt)} · {pt.mrn}
+                    </Link>{" "}
+                    · {formatTime(r.createdAt)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      <p className="text-xs text-slate-500">
+        A patient bringing back drugs from an earlier day? Open their record (Patients) and use &ldquo;Record a return&rdquo; under Medications.
+      </p>
     </div>
+  );
+}
+
+function LabelsLink({ id }: { id: string }) {
+  return (
+    <Link href={`/rx-label/${id}`} target="_blank" className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline dark:text-brand-400">
+      <Printer aria-hidden className="size-3.5" />
+      Print labels
+    </Link>
   );
 }
 
@@ -107,10 +175,16 @@ export default function PharmacyPage({ searchParams }: PageProps<"/pharmacy">) {
         title="Pharmacy"
         subtitle="ፋርማሲ · prescriptions to dispense"
         actions={
-          <Link href="/pharmacy/walk-in" className={buttonClass}>
-            <ShoppingBag aria-hidden />
-            Walk-in sale
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/inventory/controlled" className={secondaryButtonClass}>
+              <ShieldAlert aria-hidden />
+              Controlled register
+            </Link>
+            <Link href="/pharmacy/walk-in" className={buttonClass}>
+              <ShoppingBag aria-hidden />
+              Walk-in sale
+            </Link>
+          </div>
         }
       />
       <AutoRefresh seconds={20} />

@@ -18,7 +18,9 @@ import {
   type DuplicatePatient,
   type Frequency,
   type IcdEntry,
+  type NewDrug,
   type Patient,
+  type ReturnResult,
   type RxAlert,
 } from "@/lib/api";
 
@@ -28,12 +30,14 @@ export interface FormState {
   values?: Record<string, string>;
   ok?: boolean;
   duplicates?: DuplicatePatient[];
+  /** Prescribing or sale alerts to review before going ahead (allergies, interactions, duplicates). */
+  alerts?: RxAlert[];
 }
 
 function toFormState(e: unknown, values: Record<string, string>): FormState {
   if (e instanceof ApiError) {
     const fieldErrors = Object.fromEntries((e.body.errors ?? []).map((x) => [x.field, x.message]));
-    return { error: e.body.errors?.length ? "Please fix the highlighted fields." : e.message, fieldErrors, values, duplicates: e.body.duplicates };
+    return { error: e.body.errors?.length ? "Please fix the highlighted fields." : e.message, fieldErrors, values, duplicates: e.body.duplicates, alerts: e.body.alerts };
   }
   throw e;
 }
@@ -319,6 +323,87 @@ export async function closePrescription(_: FormState, form: FormData): Promise<F
   return { ok: true };
 }
 
+/** Adds many drugs at once (starter list, spreadsheet). Drugs already in the list are skipped. */
+export async function importDrugs(items: NewDrug[]): Promise<{ created: string[]; skipped: string[] } | { error: string; rows?: Record<number, string> }> {
+  try {
+    const res = await api<{ created: string[]; skipped: string[] }>("/drugs/bulk", { method: "POST", body: JSON.stringify({ items }) });
+    refresh();
+    return res;
+  } catch (e) {
+    if (!(e instanceof ApiError)) throw e;
+    // "items.3.sellPrice" → row 3: what is wrong with it.
+    const rows: Record<number, string> = {};
+    for (const x of e.body.errors ?? []) {
+      const m = /^items\.(\d+)\.?(\w*)/.exec(x.field);
+      if (m) rows[Number(m[1])] = `${m[2] ? `${m[2]}: ` : ""}${x.message}`;
+    }
+    return { error: e.body.errors?.length ? "Some rows need fixing." : e.message, rows };
+  }
+}
+
+/** Several stores: moves stock from one store to another (earliest expiry first). */
+export async function createTransfer(input: { fromStoreId: string; toStoreId: string; note?: string; items: { drugId: string; quantity: number }[] }): Promise<{ error?: string; number?: string }> {
+  try {
+    const t = await api<{ number: string }>("/inventory/transfers", { method: "POST", body: JSON.stringify(input) });
+    refresh();
+    return { number: t.number };
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.body.errors?.[0]?.message ?? e.message };
+    throw e;
+  }
+}
+
+/** Several stores: adds a store, or changes one (name, dispensing, in use). */
+export async function saveStore(id: string | null, body: { name?: string; dispensary?: boolean; active?: boolean }): Promise<{ error?: string }> {
+  try {
+    await api(id ? `/stores/${id}` : "/stores", { method: id ? "PATCH" : "POST", body: JSON.stringify(body) });
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.body.errors?.[0]?.message ?? e.message };
+    throw e;
+  }
+  refresh();
+  return {};
+}
+
+/** Pharmacy: other brands of the same drug, strength and form that can be given instead. */
+export async function drugEquivalents(itemId: string): Promise<DrugOption[]> {
+  return api<DrugOption[]>(`/prescription-items/${itemId}/equivalents`);
+}
+
+/** Pharmacy: gives another brand instead of the one prescribed (before anything is charged). */
+export async function substituteDrug(itemId: string, drugId: string, reason: string): Promise<{ error?: string }> {
+  try {
+    await api(`/prescription-items/${itemId}/substitute`, { method: "POST", body: JSON.stringify({ drugId, reason }) });
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.message };
+    throw e;
+  }
+  refresh();
+  return {};
+}
+
+export type ReturnState = FormState & { result?: ReturnResult };
+
+/** Pharmacy: drugs a patient brought back (put back on the shelf or kept aside for destruction). */
+export async function returnDrugs(_: ReturnState, form: FormData): Promise<ReturnState> {
+  const values = Object.fromEntries([...form.entries()].map(([k, v]) => [k, String(v)]));
+  const quantity = Number(text(form, "quantity"));
+  if (!Number.isInteger(quantity) || quantity < 1) return { error: "Enter how many units came back.", values };
+  const restocked = text(form, "condition") === "restock";
+  if (!restocked && text(form, "condition") !== "discard") return { error: "Say whether they can be sold again.", values };
+  let result: ReturnResult;
+  try {
+    result = await api<ReturnResult>(`/prescription-items/${text(form, "itemId")}/return`, {
+      method: "POST",
+      body: JSON.stringify({ quantity, restocked, reason: text(form, "reason") }),
+    });
+  } catch (e) {
+    return toFormState(e, values);
+  }
+  refresh();
+  return { ok: true, result };
+}
+
 /**
  * Form fields are named qty_<itemId>; blank or zero means "not this time". The submit button's
  * "step" value picks the action: "bill" sends the units to the cashier, otherwise dispense.
@@ -398,6 +483,9 @@ export async function saveDrug(_: FormState, form: FormData): Promise<FormState>
     unit: text(form, "unit"),
     sellPrice: Number(text(form, "sellPrice")),
     reorderLevel: Number(text(form, "reorderLevel") || 0),
+    packSize: text(form, "packSize") ? Number(text(form, "packSize")) : null,
+    packName: text(form, "packName") || null,
+    controlled: text(form, "controlled") || null,
     ...(id && { active: form.get("active") === "on" }),
   };
   let saved: { id: string };
@@ -419,7 +507,7 @@ export interface ReceiptLine {
   costPrice: number;
 }
 
-export async function receiveStock(input: { supplierId?: string; purchaseOrderId?: string; receiptRef?: string; items: ReceiptLine[] }): Promise<{ error?: string; warnings?: string[]; received?: number }> {
+export async function receiveStock(input: { supplierId?: string; purchaseOrderId?: string; receiptRef?: string; storeId?: string; items: ReceiptLine[] }): Promise<{ error?: string; warnings?: string[]; received?: number }> {
   try {
     const res = await api<{ received: unknown[]; warnings: string[] }>("/inventory/receipts", { method: "POST", body: JSON.stringify(input) });
     refresh();
@@ -562,6 +650,7 @@ export async function saveSettings(_: FormState, form: FormData): Promise<FormSt
         address: text(form, "address") || null,
         requirePrepayment: form.get("requirePrepayment") === "on",
         doctorsCanRegister: form.get("doctorsCanRegister") === "on",
+        multiStore: form.get("multiStore") === "on",
       }),
     });
   } catch (e) {
@@ -837,7 +926,9 @@ export async function createPurchaseOrder(_: FormState, form: FormData): Promise
     .map(([k, v]) => {
       const drugId = k.slice(4);
       const cost = text(form, `cost_${drugId}`);
-      return { drugId, quantity: Number(v), unitCost: cost ? Number(cost) : null };
+      // Counted in packs: the order is kept in units (5 boxes of 100 = 500), cost per unit.
+      const per = Math.max(1, Math.trunc(Number(text(form, `pack_${drugId}`) || 1)));
+      return { drugId, quantity: Number(v) * per, unitCost: cost ? Math.round((Number(cost) / per) * 100) / 100 : null };
     })
     .filter((l) => Number.isInteger(l.quantity) && l.quantity > 0);
   if (!lines.length) return { error: "Add at least one drug with a quantity.", values };

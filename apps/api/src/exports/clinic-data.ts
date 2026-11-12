@@ -229,6 +229,11 @@ export async function deleteClinicData(
           throw new Error(
             'Not deleting: the clinic is not the only one visible.',
           );
+        // Erasing the whole clinic removes its permanent records too (the stock ledger), for
+        // this transaction only.
+        await tx.$executeRawUnsafe(
+          `SELECT set_config('app.erasing_clinic', 'on', true)`,
+        );
         for (const t of order) {
           const n = await tx.$executeRawUnsafe(
             `DELETE FROM "${t.replace(/"/g, '""')}"`,

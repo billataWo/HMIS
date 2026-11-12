@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { api, ApiError, type DrugStock } from "@/lib/api";
 import { etb, formatDualDate, formatTime } from "@/lib/format";
+import { inPacks, packLabel } from "@/lib/packs";
 import { AdjustForm, DrugForm } from "../../inventory-forms";
 
 const MOVE_LABEL: Record<DrugStock["movements"][number]["type"], string> = {
@@ -13,6 +14,7 @@ const MOVE_LABEL: Record<DrugStock["movements"][number]["type"], string> = {
   EXPIRED: "Expired write-off",
   TRANSFER_OUT: "Transferred out",
   TRANSFER_IN: "Transferred in",
+  RETURN: "Returned by patient",
 };
 
 async function Drug({ params }: { params: Promise<{ id: string }> }) {
@@ -31,8 +33,8 @@ async function Drug({ params }: { params: Promise<{ id: string }> }) {
   return (
     <>
       <PageHeader
-        title={[d.genericName, d.strength, d.form].filter(Boolean).join(" ")}
-        subtitle={`${onHand} ${d.unit} usable · ${Number(d.sellPrice).toFixed(2)} ETB per ${d.unit}${d.active ? "" : " · inactive"}`}
+        title={[d.genericName, d.strength, d.form, d.controlled && `(${d.controlled === "NARCOTIC" ? "narcotic" : "psychotropic"})`].filter(Boolean).join(" ")}
+        subtitle={`${onHand} ${d.unit} usable${inPacks(onHand, d) ? ` (${inPacks(onHand, d)})` : ""} · ${packLabel(d) ? `bought by the ${packLabel(d)} · ` : ""}${Number(d.sellPrice).toFixed(2)} ETB per ${d.unit}${d.active ? "" : " · inactive"}`}
         actions={
           <div className="flex gap-2">
             <Link href={`/inventory/receive?drug=${d.id}`} className={secondaryButtonClass}>
@@ -65,7 +67,10 @@ async function Drug({ params }: { params: Promise<{ id: string }> }) {
                   <tbody>
                     {s.batches.map((b) => (
                       <tr key={b.id} className={`border-t border-slate-200 dark:border-slate-800 ${b.quantity === 0 ? "text-slate-500" : ""}`}>
-                        <td className="px-4 py-3 font-mono text-xs">{b.batchNo}</td>
+                        <td className="px-4 py-3 font-mono text-xs">
+                          {b.batchNo}
+                          {b.store && <span className="block font-sans text-slate-500">{b.store.name}</span>}
+                        </td>
                         <td className={`px-3 py-2 ${b.expired && b.quantity > 0 ? "font-medium text-red-700 dark:text-red-400" : ""}`}>
                           {formatDualDate(b.expiryDate)}
                           {b.expired && " · expired"}
