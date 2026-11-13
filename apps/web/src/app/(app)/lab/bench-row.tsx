@@ -1,8 +1,8 @@
 "use client";
 
 import { TriangleAlert } from "lucide-react";
-import { useActionState, useState } from "react";
-import { labStep, type FormState } from "@/app/actions";
+import { useActionState, useState, useTransition } from "react";
+import { labStep, markLabUrgent, type FormState } from "@/app/actions";
 import { isCritical, LAB_STATUS, LabValue, rangeText } from "@/components/lab-result";
 import { Alert, Badge, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
 import type { LabOrder, LabWorkOrder } from "@/lib/api";
@@ -143,7 +143,37 @@ function CriticalCall({ required }: { required: boolean }) {
   );
 }
 
-export function BenchRow({ o, prepayment }: { o: LabWorkOrder; prepayment: boolean }) {
+/**
+ * The turnaround clock, from the sample: "12 of 60 min", or "Overdue 15 min" once past the target.
+ * Before the sample there is no clock (the patient may still be at the cashier).
+ */
+function Clock({ minutes, target }: { minutes: number; target: number }) {
+  if (minutes > target) return <Badge tone="danger">Overdue {minutes - target} min</Badge>;
+  return (
+    <span className={minutes >= target * 0.75 ? "font-medium text-amber-700 dark:text-amber-400" : ""} title="Minutes since the sample, of the target">
+      {minutes} of {target} min
+    </span>
+  );
+}
+
+/** Moves a test to the top of the bench with the urgent target (the doctor phoned, the patient got worse). */
+function MakeUrgent({ id }: { id: string }) {
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string>();
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      onClick={() => start(async () => setError((await markLabUrgent(id)).error))}
+      title={error}
+      className="text-xs text-slate-500 hover:text-red-700 hover:underline"
+    >
+      {error ? "Couldn't mark urgent" : "Mark urgent"}
+    </button>
+  );
+}
+
+export function BenchRow({ o, prepayment, sampleMinutes }: { o: LabWorkOrder; prepayment: boolean; /** Minutes since the sample was taken. */ sampleMinutes?: number | null }) {
   const [state, action, pending] = useActionState<FormState, FormData>(labStep, {});
   const t = o.labTest;
   const unpaid = prepayment && o.status === "ORDERED" && !o.paid;
@@ -152,11 +182,16 @@ export function BenchRow({ o, prepayment }: { o: LabWorkOrder; prepayment: boole
     <li className="space-y-2 py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <span>
+          {o.urgent && (
+            <span className="mr-1.5 rounded bg-red-700 px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-white uppercase dark:bg-red-600">Urgent</span>
+          )}
           <span className="font-medium">{t.name}</span>
           {t.loincCode && <span className="ml-1 font-mono text-xs text-slate-500">LOINC {t.loincCode}</span>}
           {o.sampleId && <span className="ml-2 font-mono text-xs">· {o.sampleId}</span>}
         </span>
-        <span className="flex items-center gap-2 text-xs text-slate-500">
+        <span className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          {!o.urgent && <MakeUrgent id={o.id} />}
+          {sampleMinutes != null && o.targetMinutes != null && <Clock minutes={sampleMinutes} target={o.targetMinutes} />}
           {unpaid && <Badge tone="danger">Not paid</Badge>}
           {o.status === "ORDERED" && o.rejectReason && <Badge tone="warning">New sample needed</Badge>}
           {o.critical && o.status === "RESULTED" && <Badge tone="danger">Critical</Badge>}

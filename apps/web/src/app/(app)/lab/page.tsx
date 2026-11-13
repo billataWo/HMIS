@@ -6,7 +6,7 @@ import { Flash } from "@/components/flash";
 import { LabValue } from "@/components/lab-result";
 import { Badge, buttonClass, EmptyState, PageHeader, Skeleton } from "@/components/ui";
 import { api, ApiError, type LabWorkOrder } from "@/lib/api";
-import { ageFrom, formatDuration, formatTime, fullName } from "@/lib/format";
+import { ageFrom, formatDuration, formatMinutes, formatTime, fullName, minutesBetween } from "@/lib/format";
 import { AmendResult, BenchRow } from "./bench-row";
 
 /** Groups a flat list of orders by visit, keeping the order of first appearance. */
@@ -14,6 +14,18 @@ function byVisit(orders: LabWorkOrder[]) {
   const groups = new Map<string, LabWorkOrder[]>();
   for (const o of orders) groups.set(o.visit.id, [...(groups.get(o.visit.id) ?? []), o]);
   return [...groups.values()];
+}
+
+/** "took 42 min", red when it missed the target. */
+function Took({ minutes, target }: { minutes: number; target?: number | null }) {
+  const late = target != null && minutes > target;
+  return (
+    <span className={late ? "font-medium text-red-700 dark:text-red-400" : ""}>
+      {" "}
+      · took {formatMinutes(minutes)}
+      {late && ` (target ${formatMinutes(target)})`}
+    </span>
+  );
 }
 
 async function Worklist() {
@@ -24,7 +36,6 @@ async function Worklist() {
     if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">Only lab technicians and admins work the lab bench.</p>;
     throw e;
   }
-
   return (
     <div className="space-y-6">
       {data.open.length === 0 ? (
@@ -33,11 +44,12 @@ async function Worklist() {
         byVisit(data.open).map((group) => {
           const { visit, orderedBy, orderedAt } = group[0];
           const age = ageFrom(visit.patient.dateOfBirth);
+          const urgent = group.some((o) => o.urgent);
           return (
-            <section key={visit.id} className="surface p-4 dark:border-slate-800">
+            <section key={visit.id} className={`surface p-4 ${urgent ? "border-red-300 ring-1 ring-red-200 dark:border-red-800 dark:ring-red-900" : "dark:border-slate-800"}`}>
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <div>
-                  <span className="font-medium">{fullName(visit.patient)}</span>
+                  {urgent && <Badge tone="danger">Urgent</Badge>} <span className="font-medium">{fullName(visit.patient)}</span>
                   <span className="text-sm text-slate-500">
                     {" "}· {visit.patient.mrn} · {visit.patient.sex === "MALE" ? "M" : "F"}
                     {age !== null && ` · ${age}y`}
@@ -51,7 +63,7 @@ async function Worklist() {
               </div>
               <ul className="divide-y divide-slate-100 dark:divide-slate-800">
                 {group.map((o) => (
-                  <BenchRow key={o.id} o={o} prepayment={data.prepayment} />
+                  <BenchRow key={o.id} o={o} prepayment={data.prepayment} sampleMinutes={o.sampleCollectedAt ? minutesBetween(o.sampleCollectedAt) : null} />
                 ))}
               </ul>
             </section>
@@ -71,7 +83,8 @@ async function Worklist() {
                   {fullName(o.visit.patient)} · {o.labTest.name}: <LabValue o={o} />
                 </span>
                 <span className="text-xs text-slate-500">
-                  {o.amendedAt && <Badge tone="warning">Amended</Badge>} {o.verifiedAt && formatTime(o.verifiedAt)} ·{" "}
+                  {o.amendedAt && <Badge tone="warning">Amended</Badge>} {o.urgent && <Badge tone="danger">Urgent</Badge>} {o.verifiedAt && formatTime(o.verifiedAt)}
+                  {o.verifiedAt && o.sampleCollectedAt && !o.amendedAt && <Took minutes={minutesBetween(o.sampleCollectedAt, o.verifiedAt)} target={o.targetMinutes} />} ·{" "}
                   <Link href={`/lab-report/${o.visit.id}`} target="_blank" className="text-brand-700 hover:underline dark:text-brand-400">
                     Print
                   </Link>{" "}

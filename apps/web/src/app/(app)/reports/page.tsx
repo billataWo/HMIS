@@ -6,8 +6,8 @@ import { Suspense, type ReactNode } from "react";
 import { BarList, ColumnChart } from "@/components/charts";
 import { StaggerCell, StaggerGrid } from "@/components/enter";
 import { inputClass, PageHeader, pillClass, secondaryButtonClass, Skeleton } from "@/components/ui";
-import { api, ApiError, type Dashboard } from "@/lib/api";
-import { clinicToday, etb, formatDualDate, PAYMENT_METHODS, shiftDay } from "@/lib/format";
+import { api, ApiError, type Dashboard, type LabTurnaround, type TatSummary } from "@/lib/api";
+import { clinicToday, etb, formatDualDate, formatMinutes, PAYMENT_METHODS, shiftDay } from "@/lib/format";
 
 type Search = { from?: string; to?: string };
 
@@ -174,10 +174,12 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
           }
         >
           <p className="mb-3 text-sm">
-            {d.lab.ordered} tests ordered · {d.lab.verified} verified
+            {d.lab.ordered} tests ordered · {d.lab.verified} verified{d.lab.urgent ? ` · ${d.lab.urgent} urgent` : ""}
           </p>
           {d.lab.topTests.length ? <BarList items={d.lab.topTests.map((x) => ({ key: x.name, label: x.name, value: x.count, display: String(x.count) }))} /> : empty}
         </Panel>
+
+        {d.lab.turnaround && <Turnaround t={d.lab.turnaround} />}
 
         <Panel title="Pharmacy" action={<span className="text-xs text-slate-500">sales {etb(d.pharmacy.sales)}</span>}>
           <p className="mb-3 text-sm">{d.pharmacy.unitsDispensed} units dispensed</p>
@@ -211,6 +213,79 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
         </Panel>
       </div>
     </div>
+  );
+}
+
+const mins = (m: number | null) => (m === null ? "—" : formatMinutes(m));
+/** "18 of 20 on target (90%)", amber below 80%. */
+function OnTarget({ s }: { s: TatSummary }) {
+  if (!s.withTarget) return <span className="text-slate-500">no targets set</span>;
+  const pct = Math.round((s.onTime / s.withTarget) * 100);
+  return (
+    <span className={pct < 80 ? "font-medium text-amber-700 dark:text-amber-400" : ""}>
+      {s.onTime} of {s.withTarget} ({pct}%)
+    </span>
+  );
+}
+
+/** How fast the lab releases results: sample to release (the lab's time), against each test's target. */
+function Turnaround({ t }: { t: LabTurnaround }) {
+  return (
+    <Panel title="Lab turnaround" action={<span className="text-xs text-slate-500">sample taken → result released</span>}>
+      {t.count === 0 ? (
+        <p className="text-sm text-slate-500">No released results in this period.</p>
+      ) : (
+        <>
+          <dl className="grid grid-cols-2 gap-y-1 text-sm">
+            <dt>Median time</dt>
+            <dd className="text-right tabular-nums">{mins(t.medianMinutes)}</dd>
+            <dt>On target</dt>
+            <dd className="text-right tabular-nums">
+              <OnTarget s={t} />
+            </dd>
+            <dt>Urgent tests</dt>
+            <dd className="text-right tabular-nums">
+              {t.urgent.count ? (
+                <>
+                  {t.urgent.count} · median {mins(t.urgent.medianMinutes)} · <OnTarget s={t.urgent} />
+                </>
+              ) : (
+                "none"
+              )}
+            </dd>
+            <dt className="text-slate-500">Order → result (with paying)</dt>
+            <dd className="text-right text-slate-500 tabular-nums">{mins(t.orderToReleaseMinutes)}</dd>
+          </dl>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-slate-500">
+                <tr>
+                  <th className="py-1 font-medium">Test</th>
+                  <th className="py-1 text-right font-medium">Released</th>
+                  <th className="py-1 text-right font-medium">Median</th>
+                  <th className="py-1 text-right font-medium">Target</th>
+                  <th className="py-1 text-right font-medium">Late</th>
+                </tr>
+              </thead>
+              <tbody>
+                {t.tests.map((x) => (
+                  <tr key={x.name} className="border-t border-slate-100 dark:border-slate-800">
+                    <td className="py-1">{x.name}</td>
+                    <td className="py-1 text-right tabular-nums">{x.count}</td>
+                    <td className="py-1 text-right tabular-nums">{mins(x.medianMinutes)}</td>
+                    <td className="py-1 text-right text-slate-500 tabular-nums">{mins(x.targetMinutes)}</td>
+                    <td className={`py-1 text-right tabular-nums ${x.withTarget - x.onTime ? "font-medium text-red-700 dark:text-red-400" : "text-slate-500"}`}>
+                      {x.withTarget ? x.withTarget - x.onTime : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">Targets are set per test in Settings → Prices; urgent tests use the clinic&apos;s urgent target. Amended results are left out.</p>
+        </>
+      )}
+    </Panel>
   );
 }
 

@@ -1,6 +1,6 @@
 import { Body, ConflictException, Controller, Get, NotFoundException, Param, Patch, Post, Put } from '@nestjs/common';
 import { z } from 'zod';
-import { applyRecommendedRanges, type Db } from '@hmis/db';
+import { applyRecommendedRanges, applyRecommendedTargets, type Db } from '@hmis/db';
 import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
 import { toCents } from '../common/money.js';
@@ -42,6 +42,8 @@ const ComponentSchema = z
   .refine((c) => c.refLow == null || c.refHigh == null || c.refLow < c.refHigh, { message: 'Low must be below high', path: ['refHigh'] });
 const components = z.array(ComponentSchema).max(40);
 
+/** Target turnaround, sample to released result: 5 minutes to 14 days (cultures); empty = none. */
+const tatMinutes = z.number().int().min(5).max(14 * 24 * 60).nullable().optional();
 const LabTestSchema = z
   .object({
     components: components.default([]),
@@ -51,6 +53,7 @@ const LabTestSchema = z
     refLow: z.number().nullable().optional(),
     refHigh: z.number().nullable().optional(),
     price,
+    tatMinutes,
     resultOptions: z.array(z.string().trim().min(1).max(60)).max(20).default([]),
   })
   .refine((t) => t.refLow == null || t.refHigh == null || t.refLow < t.refHigh, { message: 'Low must be below high', path: ['refHigh'] })
@@ -66,6 +69,7 @@ const LabTestUpdateSchema = z
     refLow: z.number().nullable().optional(),
     refHigh: z.number().nullable().optional(),
     price: price.optional(),
+    tatMinutes,
     resultOptions: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
     components: components.optional(),
     active: z.boolean().optional(),
@@ -202,21 +206,25 @@ export class CatalogController {
   }
 
   /**
+   * For clinics set up before ranges existed: adds the recommended critical limits and ranges for
+   * men, women and children, and turnaround targets, to the starter tests that have none of their
+   * own (never overwrites).
+   */
+  @Post('lab-tests/recommended-ranges')
+  async recommendedRanges(@CurrentUser() me: AuthUser) {
+    const { filled, targets } = await this.prisma.client.$transaction(async (tx) => ({
+      filled: await applyRecommendedRanges(tx as unknown as Db, me.tenantId),
+      targets: await applyRecommendedTargets(tx as unknown as Db, me.tenantId),
+    }));
+    await this.audit.log(me, 'labtest.recommended-ranges', 'LabTest', undefined, { filled, targets });
+    return { filled, targets };
+  }
+
+  /**
    * A test's critical (panic) limits and its ranges for men, women and age groups, for the test
    * itself or each panel component, saved together (the list replaces the current one). Results
    * already given keep the range they were judged by (printed with them).
    */
-  /**
-   * For clinics set up before ranges existed: adds the recommended critical limits and ranges for
-   * men, women and children to the starter tests that have none of their own (never overwrites).
-   */
-  @Post('lab-tests/recommended-ranges')
-  async recommendedRanges(@CurrentUser() me: AuthUser) {
-    const filled = await this.prisma.client.$transaction((tx) => applyRecommendedRanges(tx as unknown as Db, me.tenantId));
-    await this.audit.log(me, 'labtest.recommended-ranges', 'LabTest', undefined, { filled });
-    return { filled };
-  }
-
   @Put('lab-tests/:id/ranges')
   async saveRanges(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(RangesSchema)) body: z.infer<typeof RangesSchema>) {
     const t = await this.prisma.client.labTest.findFirst({ where: { id, tenantId: me.tenantId }, include: { components: true } });

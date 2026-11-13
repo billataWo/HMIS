@@ -37,6 +37,8 @@ model Tenant {
   /// Stock kept in more than one place (a main store and a dispensary), moved by transfers.
   multiStore         Boolean      @default(false)
   nextTransfer       Int          @default(1) // per-facility counter for stock transfer numbers
+  /// Target for urgent lab tests, sample taken to result released (minutes).
+  labUrgentMinutes   Int          @default(60)
   createdAt          DateTime     @default(now())
 
   users         User[]
@@ -469,6 +471,8 @@ model LabTest {
   // For qualitative tests (e.g. malaria film): the allowed answers. Empty = numeric or free text.
   resultOptions String[]
   active        Boolean  @default(true)
+  /// Target turnaround, sample taken to result released (minutes); empty = no target.
+  tatMinutes    Int?
   /// Ranges for men, women and age groups; the test's own range is the default.
   ranges        LabRange[]
 
@@ -591,6 +595,8 @@ model LabOrder {
   status            LabOrderStatus   @default(ORDERED)
   /// Lab-only visits: who asked for the test (a doctor or clinic outside), if anyone.
   requestedBy       String?
+  /// Needed now (STAT): first on the bench, with a shorter turnaround target.
+  urgent            Boolean          @default(false)
   sampleId          String?
   sampleCollectedAt DateTime?
   collectedById     String?

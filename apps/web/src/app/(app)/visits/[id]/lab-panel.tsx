@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, useTransition } from "react";
-import { cancelLabOrder, labAlertSeen, orderLabTests } from "@/app/actions";
+import { cancelLabOrder, labAlertSeen, markLabUrgent, orderLabTests } from "@/app/actions";
 import { LAB_STATUS, LabValue, rangeText } from "@/components/lab-result";
 import { Alert, buttonClass } from "@/components/ui";
 import { Earlier } from "@/components/lab-history";
@@ -24,6 +24,7 @@ export function LabPanel({
   history?: LabHistoryOrder[];
 }) {
   const [picked, setPicked] = useState<string[]>([]);
+  const [urgent, setUrgent] = useState(false);
   const [error, setError] = useState<string>();
   const [pending, start] = useTransition();
   const open = new Set(orders.filter((o) => o.status !== "CANCELLED" && o.status !== "VERIFIED").map((o) => o.labTest.id));
@@ -34,9 +35,18 @@ export function LabPanel({
   const submit = () =>
     start(async () => {
       setError(undefined);
-      const res = await orderLabTests(visitId, picked);
+      const res = await orderLabTests(visitId, picked, urgent);
       if (res.error) setError(res.error);
-      else setPicked([]);
+      else {
+        setPicked([]);
+        setUrgent(false);
+      }
+    });
+  const makeUrgent = (id: string) =>
+    start(async () => {
+      setError(undefined);
+      const res = await markLabUrgent(id);
+      if (res.error) setError(res.error);
     });
 
   return (
@@ -56,6 +66,9 @@ export function LabPanel({
           {orders.map((o) => (
             <li key={o.id} className={`flex flex-wrap items-baseline justify-between gap-2 px-3 py-2 ${o.status === "CANCELLED" ? "opacity-50" : ""}`}>
               <span>
+                {o.urgent && o.status !== "CANCELLED" && (
+                  <span className="mr-1.5 rounded bg-red-700 px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-white uppercase dark:bg-red-600">Urgent</span>
+                )}
                 <span className={`font-medium ${o.status === "CANCELLED" ? "line-through" : ""}`}>{o.labTest.name}</span>
                 {o.status === "VERIFIED" ? (
                   <>
@@ -95,9 +108,16 @@ export function LabPanel({
                   </span>
                 )}
               </span>
-              {editable && o.status === "ORDERED" && (
-                <ConfirmCancel disabled={pending} onConfirm={() => start(() => cancelLabOrder(o.id))} question="Cancel this test?" />
-              )}
+              <span className="flex items-center gap-3">
+                {editable && !o.urgent && (o.status === "ORDERED" || o.status === "SAMPLE_COLLECTED" || o.status === "RESULTED") && (
+                  <button type="button" disabled={pending} onClick={() => makeUrgent(o.id)} className="text-xs text-slate-500 hover:text-red-700 hover:underline">
+                    Make urgent
+                  </button>
+                )}
+                {editable && o.status === "ORDERED" && (
+                  <ConfirmCancel disabled={pending} onConfirm={() => start(() => cancelLabOrder(o.id))} question="Cancel this test?" />
+                )}
+              </span>
             </li>
           ))}
         </ul>
@@ -120,9 +140,15 @@ export function LabPanel({
           </div>
           {error && <Alert>{error}</Alert>}
           {picked.length > 0 && (
-            <button type="button" disabled={pending} onClick={submit} className={buttonClass}>
-              {pending ? "Ordering…" : `Order ${picked.length} ${picked.length === 1 ? "test" : "tests"} · ${total.toFixed(2)} ETB`}
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="button" disabled={pending} onClick={submit} className={buttonClass}>
+                {pending ? "Ordering…" : `Order ${picked.length} ${picked.length === 1 ? "test" : "tests"} · ${total.toFixed(2)} ETB`}
+              </button>
+              <label className="flex items-center gap-2 text-sm" title="The lab does these first, with a shorter target time">
+                <input type="checkbox" name="urgent" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} />
+                <span className={urgent ? "font-medium text-red-700 dark:text-red-400" : ""}>Urgent (needed now)</span>
+              </label>
+            </div>
           )}
         </div>
       )}

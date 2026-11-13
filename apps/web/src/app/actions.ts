@@ -425,9 +425,21 @@ export async function dispensePrescription(_: FormState, form: FormData): Promis
   return { ok: true, values: { step } };
 }
 
-export async function orderLabTests(visitId: string, labTestIds: string[]): Promise<{ error?: string }> {
+export async function orderLabTests(visitId: string, labTestIds: string[], urgent = false): Promise<{ error?: string }> {
   try {
-    await api(`/visits/${visitId}/lab-orders`, { method: "POST", body: JSON.stringify({ labTestIds }) });
+    await api(`/visits/${visitId}/lab-orders`, { method: "POST", body: JSON.stringify({ labTestIds, urgent }) });
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.message };
+    throw e;
+  }
+  refresh();
+  return {};
+}
+
+/** A test that is needed now: first on the lab bench, with the urgent target. */
+export async function markLabUrgent(id: string): Promise<{ error?: string }> {
+  try {
+    await api(`/lab-orders/${id}/urgent`, { method: "POST" });
   } catch (e) {
     if (e instanceof ApiError) return { error: e.message };
     throw e;
@@ -462,9 +474,9 @@ export async function saveLabRanges(
 }
 
 /** Settings: adds the recommended ranges and critical limits to tests that have none. */
-export async function applyRecommendedLabRanges(): Promise<{ filled?: string[]; error?: string }> {
+export async function applyRecommendedLabRanges(): Promise<{ filled?: string[]; targets?: string[]; error?: string }> {
   try {
-    const res = await api<{ filled: string[] }>("/catalog/lab-tests/recommended-ranges", { method: "POST" });
+    const res = await api<{ filled: string[]; targets: string[] }>("/catalog/lab-tests/recommended-ranges", { method: "POST" });
     refresh();
     return res;
   } catch (e) {
@@ -484,7 +496,7 @@ export async function labWalkIn(_: FormState, form: FormData): Promise<FormState
   if (!patientId) return { error: "Choose the patient first.", values };
   if (!labTestIds.length) return { error: "Tick at least one test.", values };
   try {
-    await api("/lab/walk-in", { method: "POST", body: JSON.stringify({ patientId, labTestIds, requestedBy: text(form, "requestedBy") || undefined }) });
+    await api("/lab/walk-in", { method: "POST", body: JSON.stringify({ patientId, labTestIds, requestedBy: text(form, "requestedBy") || undefined, urgent: form.get("urgent") === "on" }) });
   } catch (e) {
     return toFormState(e, values);
   }
@@ -691,6 +703,7 @@ export async function saveLabTest(_: FormState, form: FormData): Promise<FormSta
         refLow: num("refLow"),
         refHigh: num("refHigh"),
         price: Number(text(form, "price")),
+        tatMinutes: num("tatMinutes"),
         resultOptions: options,
         // Panel components, one per line: "Name | unit | low-high | answer/answer". Sent only when edited.
         ...(text(form, "components") !== text(form, "componentsOriginal") && { components: parseComponents(text(form, "components")) }),
@@ -717,6 +730,7 @@ export async function saveSettings(_: FormState, form: FormData): Promise<FormSt
         requirePrepayment: form.get("requirePrepayment") === "on",
         doctorsCanRegister: form.get("doctorsCanRegister") === "on",
         multiStore: form.get("multiStore") === "on",
+        labUrgentMinutes: optionalNumber(form, "labUrgentMinutes"),
       }),
     });
   } catch (e) {

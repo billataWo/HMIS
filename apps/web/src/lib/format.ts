@@ -65,6 +65,16 @@ export function formatDuration(fromIso: string, to: Date | string = new Date()) 
   return days >= 3 || hours === 0 ? `${days} day${days === 1 ? "" : "s"}` : `${days} day${days === 1 ? "" : "s"} ${hours} h`;
 }
 
+/** Whole minutes from one time to another (or to now); never negative. */
+export function minutesBetween(fromIso: string, to: Date | string = new Date()) {
+  return Math.max(0, Math.floor((new Date(to).getTime() - new Date(fromIso).getTime()) / 60_000));
+}
+
+/** A number of minutes: "42 min", "2 h 5 min", "3 h". */
+export function formatMinutes(m: number) {
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`;
+}
+
 /** Moves a YYYY-MM-DD string by a number of days. */
 export function shiftDay(day: string, by: number) {
   const d = new Date(`${day}T12:00:00Z`);

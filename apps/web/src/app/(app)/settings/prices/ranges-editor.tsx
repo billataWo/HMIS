@@ -224,23 +224,25 @@ export function RangesEditor({ t }: { t: CatalogLabTest }) {
 
 /** For clinics set up before ranges existed: fills in the recommended ones where a test has none. */
 export function RecommendedRanges() {
-  const [result, setResult] = useState<{ filled?: string[]; error?: string }>();
+  const [result, setResult] = useState<{ filled?: string[]; targets?: string[]; error?: string }>();
   const [pending, start] = useTransition();
   return (
     <div className="mb-4 space-y-2">
       {result?.error && <Alert>{result.error}</Alert>}
       {result?.filled && (
-        <Notice tone={result.filled.length ? "success" : "info"}>
-          {result.filled.length ? `Added recommended ranges and critical limits to: ${result.filled.join(", ")}.` : "Every common test already has ranges of its own; nothing was changed."}
+        <Notice tone={result.filled.length || result.targets?.length ? "success" : "info"}>
+          {result.filled.length ? `Added recommended ranges and critical limits to: ${result.filled.join(", ")}. ` : ""}
+          {result.targets?.length ? `Added target times to: ${result.targets.join(", ")}.` : ""}
+          {!result.filled.length && !result.targets?.length && "Every common test already has ranges and a target time of its own; nothing was changed."}
         </Notice>
       )}
       <p className="flex flex-wrap items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-        Common tests (haemoglobin, CBC, glucose, creatinine…) have recommended critical limits and ranges for men, women and children.
+        Common tests (haemoglobin, CBC, glucose, creatinine…) have recommended critical limits, ranges for men, women and children, and target times.
         <button type="button" disabled={pending} onClick={() => start(async () => setResult(await applyRecommendedLabRanges()))} className={secondaryButtonClass}>
           {pending ? "Adding…" : "Use the recommended ranges"}
         </button>
       </p>
-      <p className="text-xs text-slate-500">Only tests with no ranges of their own are filled in. Have your laboratory head check them against your analysers.</p>
+      <p className="text-xs text-slate-500">Only tests with no ranges (or no target time) of their own are filled in. Have your laboratory head check them against your analysers.</p>
     </div>
   );
 }

@@ -16,11 +16,14 @@ const OrderSchema = z.object({
     .min(1, 'Choose at least one test')
     .max(30)
     .refine((ids) => new Set(ids).size === ids.length, 'Each test may appear only once'),
+  /** Needed now (STAT): first on the bench, with the clinic's shorter target. */
+  urgent: z.boolean().optional(),
 });
 /** Tests for someone who did not see a doctor here: a request from outside, or their own. */
 const WalkInSchema = z.object({
   patientId: z.uuid(), // results belong on a named patient's record
   labTestIds: OrderSchema.shape.labTestIds,
+  urgent: OrderSchema.shape.urgent,
   requestedBy: z
     .string()
     .trim()
@@ -74,6 +77,16 @@ const RejectSchema = z
 const LAB: Role[] = ['ADMIN', 'LAB_TECH'];
 const OPEN: LabOrderStatus[] = ['ORDERED', 'SAMPLE_COLLECTED', 'RESULTED'];
 
+/**
+ * How long a test should take, sample taken to result released (minutes): the test's own target,
+ * or for an urgent test the clinic's urgent target (or the test's, if that is shorter). Null when
+ * the test has no target and isn't urgent.
+ */
+export function targetMinutes(urgent: boolean, tatMinutes: number | null, urgentMinutes: number) {
+  if (urgent) return tatMinutes === null ? urgentMinutes : Math.min(tatMinutes, urgentMinutes);
+  return tatMinutes;
+}
+
 const rangeSelect = { sex: true, ageFromDays: true, ageToDays: true, refLow: true, refHigh: true, critLow: true, critHigh: true } satisfies Prisma.LabRangeSelect;
 const orderInclude = {
   labTest: {
@@ -87,6 +100,7 @@ const orderInclude = {
       critLow: true,
       critHigh: true,
       resultOptions: true,
+      tatMinutes: true,
       ranges: { select: rangeSelect },
       components: {
         orderBy: { sortOrder: 'asc' },
@@ -177,7 +191,7 @@ export class LabController {
 
   @Post('visits/:id/lab-orders')
   @Roles('DOCTOR')
-  async create(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(OrderSchema)) { labTestIds }: z.infer<typeof OrderSchema>) {
+  async create(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(OrderSchema)) { labTestIds, urgent = false }: z.infer<typeof OrderSchema>) {
     if (!z.uuid().safeParse(id).success) throw new NotFoundException('Visit not found');
     return this.prisma.client.$transaction(async (tx) => {
       const visit = await tx.visit.findFirst({ where: { id, tenantId: me.tenantId } });
@@ -203,7 +217,7 @@ export class LabController {
       for (const [i, testId] of labTestIds.entries()) {
         const t = byId.get(testId)!;
         const order = await tx.labOrder.create({
-          data: { tenantId: me.tenantId, visitId: id, labTestId: t.id, orderedById: me.sub, orderedAt: new Date(now + i) },
+          data: { tenantId: me.tenantId, visitId: id, labTestId: t.id, orderedById: me.sub, orderedAt: new Date(now + i), urgent },
         });
         // Free tests (e.g. programme-funded HIV testing) create no charge, so nobody is sent to the cashier.
         if (Number(t.price) > 0) {
@@ -211,7 +225,7 @@ export class LabController {
         }
         created.push(order.id);
       }
-      await this.audit.log(me, 'lab.order', 'Visit', id, { tests: tests.map((t) => t.name) }, tx);
+      await this.audit.log(me, 'lab.order', 'Visit', id, { tests: tests.map((t) => t.name), ...(urgent && { urgent }) }, tx);
       const orders = await tx.labOrder.findMany({ where: { id: { in: created } }, include: orderInclude });
       return created.map((oid) => orders.find((o) => o.id === oid)!);
     });
@@ -232,28 +246,54 @@ export class LabController {
     });
   }
 
-  /** Open lab work, oldest first, with whether each test is paid; plus today's verified results. */
+  /**
+   * A test needed now, after it was ordered (the patient got worse, or the lab sees it should be):
+   * it moves to the top of the bench with the urgent target.
+   */
+  @Post('lab-orders/:id/urgent')
+  @Roles('ADMIN', 'DOCTOR', 'LAB_TECH')
+  async markUrgent(@CurrentUser() me: AuthUser, @Param('id') id: string) {
+    const order = await this.order(me, id);
+    if (!OPEN.includes(order.status)) throw new ConflictException('This test is already finished');
+    if (order.urgent) return forViewer(order, me.role);
+    const updated = await this.prisma.client.labOrder.update({ where: { id }, data: { urgent: true }, include: orderInclude });
+    await this.audit.log(me, 'lab.urgent', 'LabOrder', id);
+    return forViewer(updated, me.role);
+  }
+
+  /**
+   * Open lab work, urgent first then oldest, with whether each test is paid and its turnaround
+   * target (minutes from the sample); plus today's verified results.
+   */
   @Get('lab/worklist')
   @Roles(...LAB)
   async worklist(@CurrentUser() me: AuthUser) {
     const db = this.prisma.client;
     const include = { ...orderInclude, visit: { select: { id: true, queueNumber: true, kind: true, patient: { select: queuePatientSelect } } } };
-    const [open, verifiedToday, prepayment] = await Promise.all([
-      db.labOrder.findMany({ where: { tenantId: me.tenantId, status: { in: OPEN } }, orderBy: [{ orderedAt: 'asc' }, { id: 'asc' }], include }),
+    const [open, verifiedToday, prepayment, tenant] = await Promise.all([
+      db.labOrder.findMany({ where: { tenantId: me.tenantId, status: { in: OPEN } }, orderBy: [{ urgent: 'desc' }, { orderedAt: 'asc' }, { id: 'asc' }], include }),
       db.labOrder.findMany({
         where: { tenantId: me.tenantId, status: 'VERIFIED', verifiedAt: { gte: dayRange(clinicDay()).start } },
         orderBy: { verifiedAt: 'desc' },
         include,
       }),
       prepaymentRequired(db, me.tenantId),
+      db.tenant.findUniqueOrThrow({ where: { id: me.tenantId }, select: { labUrgentMinutes: true } }),
     ]);
+    const target = (o: { urgent: boolean; labTest: { tatMinutes: number | null } }) => ({
+      targetMinutes: targetMinutes(o.urgent, o.labTest.tatMinutes, tenant.labUrgentMinutes),
+    });
     const charges = await db.charge.findMany({
       where: { source: 'LAB', sourceId: { in: open.map((o) => o.id) } },
       select: { sourceId: true, ...settlementSelect },
     });
     // An order is paid when it has no unsettled charge (free tests have no charge at all).
     const unpaid = new Set(charges.filter((c) => !isSettled(c)).map((c) => c.sourceId));
-    return { prepayment, open: open.map((o) => ({ ...o, paid: !unpaid.has(o.id) })), verifiedToday };
+    return {
+      prepayment,
+      open: open.map((o) => ({ ...o, paid: !unpaid.has(o.id), ...target(o) })),
+      verifiedToday: verifiedToday.map((o) => ({ ...o, ...target(o) })),
+    };
   }
 
   @Post('lab-orders/:id/collect')
@@ -514,13 +554,21 @@ export class LabController {
       for (const [i, testId] of body.labTestIds.entries()) {
         const t = byId.get(testId)!;
         const order = await tx.labOrder.create({
-          data: { tenantId: me.tenantId, visitId: visit.id, labTestId: t.id, orderedById: me.sub, orderedAt: new Date(now + i), requestedBy: body.requestedBy },
+          data: {
+            tenantId: me.tenantId,
+            visitId: visit.id,
+            labTestId: t.id,
+            orderedById: me.sub,
+            orderedAt: new Date(now + i),
+            requestedBy: body.requestedBy,
+            urgent: body.urgent ?? false,
+          },
         });
         if (Number(t.price) > 0) {
           await tx.charge.create({ data: { visitId: visit.id, source: 'LAB', sourceId: order.id, description: t.name, unitPrice: t.price } });
         }
       }
-      await this.audit.log(me, 'lab.walk-in', 'Visit', visit.id, { tests: tests.map((t) => t.name), requestedBy: body.requestedBy }, tx);
+      await this.audit.log(me, 'lab.walk-in', 'Visit', visit.id, { tests: tests.map((t) => t.name), requestedBy: body.requestedBy, ...(body.urgent && { urgent: true }) }, tx);
       return { visitId: visit.id, tests: tests.length };
     });
   }

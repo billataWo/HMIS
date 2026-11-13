@@ -3,7 +3,7 @@ import { PrismaClient } from "./generated/prisma/client.js";
 
 export * from "./generated/prisma/client.js";
 export { addStarterCatalog } from "./starter.js";
-export { applyRecommendedRanges, RECOMMENDED_RANGES } from "./lab-ranges.js";
+export { applyRecommendedRanges, applyRecommendedTargets, RECOMMENDED_RANGES, RECOMMENDED_TAT } from "./lab-ranges.js";
 
 export type Db = PrismaClient;
 

@@ -6,6 +6,7 @@ import { ETHIOPIAN_MONTHS, ETHIOPIAN_MONTHS_AM, ethiopianMonthRange, toEthiopian
 import { fromCents, toCents } from '../common/money.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { EXPIRY_WARNING_DAYS } from '../inventory/inventory.controller.js';
+import { targetMinutes } from '../lab/lab.controller.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 const RangeSchema = z.object({
@@ -45,6 +46,59 @@ function tally<T>(items: T[], key: (t: T) => string, take = 10) {
   const m = new Map<string, number>();
   for (const i of items) m.set(key(i), (m.get(key(i)) ?? 0) + 1);
   return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, take);
+}
+
+function median(xs: number[]) {
+  if (!xs.length) return null;
+  const a = [...xs].sort((x, y) => x - y);
+  const m = Math.floor(a.length / 2);
+  return Math.round(a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2);
+}
+
+type TatOrder = {
+  urgent: boolean;
+  orderedAt: Date;
+  sampleCollectedAt: Date | null;
+  verifiedAt: Date | null;
+  amendedAt: Date | null;
+  labTest: { name: string; tatMinutes: number | null };
+};
+
+/**
+ * Lab turnaround for released tests: sample taken to result released (the lab's own time), and
+ * order to release (what the doctor waits, including the cashier). Targets are today's settings.
+ * Amended results are left out: their release time is the amendment's.
+ */
+export function labTurnaround(orders: TatOrder[], urgentMinutes: number) {
+  const done = orders
+    .filter((o) => o.verifiedAt && o.sampleCollectedAt && !o.amendedAt)
+    .map((o) => ({
+      o,
+      lab: (o.verifiedAt!.getTime() - o.sampleCollectedAt!.getTime()) / 60000,
+      total: (o.verifiedAt!.getTime() - o.orderedAt.getTime()) / 60000,
+      target: targetMinutes(o.urgent, o.labTest.tatMinutes, urgentMinutes),
+    }));
+  const summary = (xs: typeof done) => {
+    const targeted = xs.filter((x) => x.target !== null);
+    return {
+      count: xs.length,
+      medianMinutes: median(xs.map((x) => x.lab)),
+      withTarget: targeted.length,
+      onTime: targeted.filter((x) => x.lab <= x.target!).length,
+    };
+  };
+  const byTest = new Map<string, typeof done>();
+  for (const x of done) byTest.set(x.o.labTest.name, [...(byTest.get(x.o.labTest.name) ?? []), x]);
+  return {
+    ...summary(done),
+    orderToReleaseMinutes: median(done.map((x) => x.total)),
+    urgent: summary(done.filter((x) => x.o.urgent)),
+    // Tests that most often missed their target, then the slowest.
+    tests: [...byTest.entries()]
+      .map(([name, xs]) => ({ name, ...summary(xs), targetMinutes: xs[0].o.labTest.tatMinutes }))
+      .sort((a, b) => b.withTarget - b.onTime - (a.withTarget - a.onTime) || (b.medianMinutes ?? 0) - (a.medianMinutes ?? 0))
+      .slice(0, 8),
+  };
 }
 
 function daysBetween(from: string, to: string) {
@@ -101,7 +155,16 @@ export class ReportsController {
         }),
         db.labOrder.findMany({
           where: { tenantId: t, orderedAt: range, status: { not: 'CANCELLED' } },
-          select: { status: true, resultFlag: true, labTest: { select: { name: true } } },
+          select: {
+            status: true,
+            resultFlag: true,
+            urgent: true,
+            orderedAt: true,
+            sampleCollectedAt: true,
+            verifiedAt: true,
+            amendedAt: true,
+            labTest: { select: { name: true, tatMinutes: true } },
+          },
         }),
         db.charge.findMany({ where: { visit: { tenantId: t }, source: 'PHARMACY', voidedAt: null, createdAt: range }, select: { unitPrice: true, quantity: true } }),
         db.stockMovement.findMany({
@@ -118,6 +181,7 @@ export class ReportsController {
         }),
       ]);
 
+    const { labUrgentMinutes } = await db.tenant.findUniqueOrThrow({ where: { id: t }, select: { labUrgentMinutes: true } });
     const waits = visits.filter((v) => v.calledAt).map((v) => (v.calledAt!.getTime() - v.checkedInAt.getTime()) / 60000);
     const byMethod: Record<string, number> = {};
     for (const p of payments) byMethod[p.method] = (byMethod[p.method] ?? 0) + toCents(p.amount);
@@ -181,6 +245,8 @@ export class ReportsController {
         abnormal: labOrders.filter((o) => !!o.resultFlag && o.resultFlag !== 'N').length,
         critical: labOrders.filter((o) => o.resultFlag === 'LL' || o.resultFlag === 'HH').length,
         topTests: tally(labOrders, (o) => o.labTest.name, 5).map(([name, count]) => ({ name, count })),
+        urgent: labOrders.filter((o) => o.urgent).length,
+        turnaround: labTurnaround(labOrders.filter((o) => o.status === 'VERIFIED'), labUrgentMinutes),
       },
       pharmacy: {
         sales: fromCents(pharmacyCharges.reduce((s, c) => s + toCents(c.unitPrice) * c.quantity, 0)),

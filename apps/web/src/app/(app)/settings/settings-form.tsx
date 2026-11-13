@@ -59,6 +59,19 @@ export function SettingsForm({ settings }: { settings: ClinicSettings }) {
         </Toggle>
       </fieldset>
 
+      <fieldset className="space-y-2">
+        <legend className="mb-2 font-medium">Laboratory</legend>
+        <div className="max-w-56">
+          <Field label="Target for urgent tests (minutes)" error={err.labUrgentMinutes}>
+            <Input name="labUrgentMinutes" type="number" min={10} max={1440} step={1} required defaultValue={settings.labUrgentMinutes ?? 60} />
+          </Field>
+        </div>
+        <p className="text-sm text-slate-500">
+          From the sample to the released result. Urgent tests go to the top of the lab bench and show as overdue once past this time (or past the test&apos;s
+          own target, if that is shorter). Each test&apos;s normal target is set in Settings → Prices.
+        </p>
+      </fieldset>
+
       <button type="submit" disabled={pending} className={buttonClass}>
         {pending ? "Saving…" : "Save settings"}
       </button>

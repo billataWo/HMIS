@@ -102,6 +102,10 @@ export function RequestForm({ tests, patient: preset, returnTo }: { tests: LabTe
             <Input name="requestedBy" maxLength={200} placeholder="e.g. Dr. Sara, Bole Clinic" defaultValue={state.values?.requestedBy} />
           </Field>
         </div>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="urgent" defaultChecked={state.values?.urgent === "on"} />
+          Urgent: the request says the result is needed now (the lab does it first)
+        </label>
       </section>
 
       <div className="flex flex-wrap items-center gap-3">

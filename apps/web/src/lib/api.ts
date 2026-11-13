@@ -195,6 +195,8 @@ export interface LabTest {
   critHigh?: string | null;
   price: string;
   resultOptions: string[];
+  /** Target turnaround, sample taken to result released (minutes); null = no target. */
+  tatMinutes?: number | null;
   /** Panel tests (CBC, urinalysis…): one result per component, each with its own range or answers. */
   components?: LabComponent[];
   /** Ranges for men, women and age groups (the test's own range is the default). */
@@ -242,6 +244,8 @@ export interface LabOrder {
   status: LabStatus;
   /** Lab-only visits: who asked for the test (a doctor or clinic outside). */
   requestedBy?: string | null;
+  /** Needed now (STAT): first on the bench, with the clinic's shorter target. */
+  urgent?: boolean;
   sampleId: string | null;
   sampleCollectedAt: string | null;
   resultValue: string | null;
@@ -274,6 +278,8 @@ export interface LabOrder {
 
 export interface LabWorkOrder extends LabOrder {
   paid?: boolean;
+  /** Minutes from the sample to release this test should take (urgent or the test's own); null = none. */
+  targetMinutes?: number | null;
   visit: { id: string; queueNumber: number; kind?: "OPD" | "WALK_IN" | "LAB"; patient: QueuePatient };
 }
 
@@ -391,6 +397,19 @@ export interface CatalogLabTest extends LabTest {
   active: boolean;
 }
 
+/** Released tests: count, median minutes sample → release, and how many of those with a target met it. */
+export interface TatSummary {
+  count: number;
+  medianMinutes: number | null;
+  withTarget: number;
+  onTime: number;
+}
+export interface LabTurnaround extends TatSummary {
+  orderToReleaseMinutes: number | null;
+  urgent: TatSummary;
+  tests: (TatSummary & { name: string; targetMinutes: number | null })[];
+}
+
 export interface Dashboard {
   from: string;
   to: string;
@@ -406,7 +425,15 @@ export interface Dashboard {
     receivables: { payer: string; due: string }[];
   };
   topDiagnoses: { code: string; label: string; count: number }[];
-  lab: { ordered: number; verified: number; abnormal: number; critical?: number; topTests: { name: string; count: number }[] };
+  lab: {
+    ordered: number;
+    verified: number;
+    abnormal: number;
+    critical?: number;
+    urgent?: number;
+    topTests: { name: string; count: number }[];
+    turnaround?: LabTurnaround;
+  };
   pharmacy: { sales: string; unitsDispensed: number; topDrugs: { name: string; units: number }[] };
   stock: { value: string; low: number; expiring: number; expiredOnShelf: number; expiredLoss: string; adjustmentLoss: string };
   daily: { day: string; visits: number; collected: string }[];
@@ -437,6 +464,7 @@ export interface ClinicSettings {
   requirePrepayment: boolean;
   doctorsCanRegister: boolean;
   multiStore: boolean; // a main store and a dispensary (or more), with transfers
+  labUrgentMinutes?: number; // target for urgent lab tests, sample to release
 }
 
 export interface Diagnosis {

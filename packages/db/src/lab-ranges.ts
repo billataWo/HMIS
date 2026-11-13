@@ -63,6 +63,36 @@ export const RECOMMENDED_RANGES: Record<string, Rec> = {
   "Complete blood count (CBC)/Hematocrit": HAEMATOCRIT,
 };
 
+/**
+ * Turnaround targets in minutes, sample taken to result released: what a clinic lab with the usual
+ * analysers reaches on a normal day. The clinic changes them per test in Settings → Prices.
+ */
+export const RECOMMENDED_TAT: Record<string, number> = {
+  Hemoglobin: 60,
+  "White blood cell count": 60,
+  "Platelet count": 60,
+  "Complete blood count (CBC)": 60,
+  ESR: 90, // the tube stands for an hour
+  "Fasting blood glucose": 60,
+  "Random blood glucose": 30,
+  HbA1c: 120,
+  Creatinine: 120,
+  "Malaria blood film": 60,
+  "Urine hCG (pregnancy test)": 30,
+  "H. pylori stool antigen": 60,
+  "HIV rapid test": 30,
+  "Widal test": 60,
+  Urinalysis: 60,
+  "Stool examination": 60,
+};
+
+/** Sets the recommended turnaround target on tests that have none. Returns the tests it set. */
+export async function applyRecommendedTargets(db: PrismaClient, tenantId: string) {
+  const tests = await db.labTest.findMany({ where: { tenantId, tatMinutes: null, name: { in: Object.keys(RECOMMENDED_TAT) } }, select: { id: true, name: true } });
+  for (const t of tests) await db.labTest.update({ where: { id: t.id }, data: { tatMinutes: RECOMMENDED_TAT[t.name] } });
+  return tests.map((t) => t.name);
+}
+
 const dec = (n: number | undefined) => (n === undefined ? null : n.toFixed(3));
 
 /**

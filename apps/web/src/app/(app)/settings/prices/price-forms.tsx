@@ -70,6 +70,10 @@ export function LabTestRow({ t }: { t?: CatalogLabTest }) {
           className={`${inputClass} w-full min-w-0 flex-1 sm:min-w-64`}
         />
         <input name="loincCode" defaultValue={t?.loincCode ?? ""} placeholder="LOINC" aria-label="LOINC code" className={`${inputClass} w-28`} />
+        <label className="flex items-center gap-1 text-xs text-slate-500" title="How long the test should take, from the sample to the released result. The bench warns when it is overdue.">
+          <input name="tatMinutes" type="number" min={5} step={1} defaultValue={t?.tatMinutes ?? ""} placeholder="—" aria-label="Target time in minutes" className={`${inputClass} w-20`} />
+          min target
+        </label>
         <PanelComponents t={t} />
         {t && (
           <label className="flex items-center gap-1 text-xs">

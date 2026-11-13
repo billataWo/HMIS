@@ -15,9 +15,11 @@ const SettingsSchema = z.object({
   doctorsCanRegister: z.boolean().optional(),
   // A main store and a dispensary (or more), with transfers between them.
   multiStore: z.boolean().optional(),
+  // How fast an urgent lab test should be released, sample to result (minutes).
+  labUrgentMinutes: z.number().int().min(10).max(24 * 60).optional(),
 });
 
-const select = { id: true, name: true, nameAm: true, phone: true, address: true, type: true, requirePrepayment: true, doctorsCanRegister: true, multiStore: true };
+const select = { id: true, name: true, nameAm: true, phone: true, address: true, type: true, requirePrepayment: true, doctorsCanRegister: true, multiStore: true, labUrgentMinutes: true };
 
 @Controller('settings')
 export class SettingsController {
