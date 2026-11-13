@@ -348,10 +348,16 @@ export default function ReportsPage({ searchParams }: PageProps<"/reports">) {
         title="Reports"
         subtitle="ሪፖርቶች · how the clinic is doing"
         actions={
-          <Link href="/reports/moh" className={secondaryButtonClass}>
-            <FileText aria-hidden />
-            Monthly MoH report
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/reports/idsr" className={secondaryButtonClass}>
+              <FileText aria-hidden />
+              Weekly IDSR report
+            </Link>
+            <Link href="/reports/moh" className={secondaryButtonClass}>
+              <FileText aria-hidden />
+              Monthly MoH report
+            </Link>
+          </div>
         }
       />
       <Suspense fallback={<Skeleton className="h-96" />}>

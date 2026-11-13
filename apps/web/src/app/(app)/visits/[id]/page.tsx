@@ -1,4 +1,4 @@
-import { CalendarPlus, Clock, History, ListOrdered, Pill, UserRound } from "lucide-react";
+import { CalendarPlus, Clock, History, ListOrdered, Pill, UserRound, FileText } from "lucide-react";
 import { shortDirections } from "@/lib/directions";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -9,9 +9,13 @@ import { AllergyEditor } from "@/components/allergy-editor";
 import { StatusBadge } from "@/components/status-badge";
 import { buttonClass, Notice, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { Flash } from "@/components/flash";
-import { api, ApiError, type ClinicalDocument, type LabHistoryOrder, type LabOrder, type LabTest, type Me, type Prescription, type ProcedureCharge, type Service, type VisitDetail } from "@/lib/api";
+import { api, ApiError, type ClinicalDocument, type LabHistoryOrder, type PatientProblem, type VitalsRow, type LabOrder, type LabTest, type Me, type Prescription, type ProcedureCharge, type Service, type VisitDetail } from "@/lib/api";
 import { ageFrom, etb, formatDualDate, formatDuration, formatTime, fullName } from "@/lib/format";
 import { ConsultationForm } from "./consultation-form";
+import { Addenda } from "@/components/addenda";
+import { NotifiablePanel } from "@/components/notifiable-panel";
+import { ProblemList } from "@/components/problem-list";
+import { VitalsTrend } from "@/components/vitals-trend";
 import { DiagnosisPanel } from "./diagnosis-panel";
 import { LabPanel } from "./lab-panel";
 import { PrescriptionPanel } from "./prescription-panel";
@@ -35,6 +39,7 @@ function ReadOnly({ v }: { v: VisitDetail }) {
     ["History", v.history],
     ["Examination", v.examination],
     ["Plan", v.plan],
+    ["Advice for the patient", v.patientAdvice],
   ];
   return (
     <div className="space-y-4 text-sm">
@@ -88,6 +93,11 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
   const feeUnpaid = v.prepayment && !v.consultationPaid;
   const age = ageFrom(v.patient.dateOfBirth);
   const returnTo = `/visits/${v.id}`;
+  // The record beyond this visit: long-term conditions and how the vitals have moved.
+  const clinical = ["ADMIN", "DOCTOR", "NURSE"].includes(me.role);
+  const [problems, vitals] = clinical
+    ? await Promise.all([api<PatientProblem[]>(`/patients/${v.patient.id}/problems`), api<VitalsRow[]>(`/patients/${v.patient.id}/vitals`)])
+    : [[], []];
 
   return (
     <>
@@ -101,6 +111,12 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
               <UserRound aria-hidden />
               Patient record
             </Link>
+            {clinical && v.kind === "OPD" && v.status !== "WAITING" && v.status !== "CANCELLED" && (
+              <Link href={`/visit-summary/${v.id}`} target="_blank" className={secondaryButtonClass}>
+                <FileText aria-hidden />
+                Visit summary
+              </Link>
+            )}
             {mode === "doctor" && (
               <Link href={`/appointments/new?patientId=${v.patient.id}`} className={secondaryButtonClass}>
                 <CalendarPlus aria-hidden />
@@ -132,6 +148,10 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] xl:gap-8">
         <div className="min-w-0 space-y-6">
+          {/* Public health first: an immediately reportable disease is phoned through within 30 minutes. */}
+          {v.notifiable && v.notifiable.length > 0 && (
+            <NotifiablePanel visitId={v.id} items={v.notifiable} canReport={["ADMIN", "DOCTOR", "NURSE"].includes(me.role) && v.status !== "CANCELLED"} />
+          )}
           {v.kind === "WALK_IN" && <Notice tone="info">This is a pharmacy counter sale, not a consultation.</Notice>}
           {v.kind === "LAB" && <Notice tone="info">This is a lab-only visit (tests without a consultation here).</Notice>}
           {v.status === "WAITING" && mode === "doctor" && feeUnpaid && (
@@ -184,6 +204,9 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
               }}
             />
           )}
+          {v.kind === "OPD" && (
+            <Addenda visitId={v.id} addenda={v.addenda ?? []} canAdd={(me.role === "DOCTOR" || me.role === "NURSE") && v.status !== "CANCELLED"} />
+          )}
           <DiagnosisPanel visitId={v.id} diagnoses={v.diagnoses} editable={!closed && mode === "doctor"} />
           {/* Tests and drugs are ordered once the doctor has called the patient in. */}
           <LabPanel visitId={v.id} orders={labOrders} tests={labTests} history={labHistory} editable={!closed && mode === "doctor" && v.status !== "WAITING"} />
@@ -194,7 +217,11 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
           ) : null}
         </div>
 
-        <aside className="lg:sticky lg:top-6 lg:self-start">
+        <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+          {clinical && v.kind === "OPD" && (
+            <ProblemList patientId={v.patient.id} problems={problems} canEdit={me.role === "DOCTOR"} fromVisit={v.diagnoses} />
+          )}
+          {clinical && <VitalsTrend rows={vitals} />}
           <h2 className="mb-3 flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
             <History aria-hidden className="size-4 text-slate-400" />
             Previous visits

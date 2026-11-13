@@ -16,12 +16,14 @@ import type { Prisma } from '@hmis/db';
 import { z } from 'zod';
 import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
+import { DAY_PATTERN } from '../common/clinic-day.js';
 import { fromCents, toCents } from '../common/money.js';
 import { isSettled, prepaymentRequired, settlementSelect } from '../common/settlement.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { queuePatientSelect } from '../visits/visits.controller.js';
 import { ICD11_CODE, searchIcd } from './icd11-common.js';
+import { visitNotifiable } from './public-health.controller.js';
 
 const num = (min: number, max: number, int = false) => {
   const n = int ? z.number().int() : z.number();
@@ -29,8 +31,11 @@ const num = (min: number, max: number, int = false) => {
 };
 const note = z.string().trim().max(10_000).nullable().optional();
 
-const VITALS = ['temperatureC', 'pulse', 'systolicBp', 'diastolicBp', 'respRate', 'spo2', 'weightKg', 'heightCm'] as const;
-const NOTES = ['chiefComplaint', 'history', 'examination', 'plan'] as const;
+const VITALS = ['temperatureC', 'pulse', 'systolicBp', 'diastolicBp', 'respRate', 'spo2', 'weightKg', 'heightCm', 'muacMm'] as const;
+/** What triage records besides the vitals: the priority, and pregnancy and breastfeeding. */
+const TRIAGE = ['triageLevel', 'pregnancyStatus', 'lmpDate', 'breastfeeding'] as const;
+export const TRIAGE_LEVELS = ['RED', 'ORANGE', 'YELLOW', 'GREEN'] as const;
+const NOTES = ['chiefComplaint', 'history', 'examination', 'plan', 'patientAdvice'] as const;
 
 const UpdateSchema = z
   .object({
@@ -42,10 +47,26 @@ const UpdateSchema = z
     spo2: num(50, 100, true),
     weightKg: num(0.3, 300),
     heightCm: num(20, 250),
+    muacMm: num(50, 400, true),
+    triageLevel: z.enum(TRIAGE_LEVELS).nullable().optional(),
+    pregnancyStatus: z.enum(['NOT_PREGNANT', 'POSSIBLE', 'PREGNANT']).nullable().optional(),
+    /** First day of the last menstrual period (YYYY-MM-DD): within the last 10 months. */
+    lmpDate: z
+      .string()
+      .regex(DAY_PATTERN, 'Use a date like 2026-09-01')
+      .refine((d) => {
+        const days = (Date.now() - new Date(`${d}T12:00:00Z`).getTime()) / 86_400_000;
+        return days >= 0 && days <= 300;
+      }, 'The last period must be within the last 10 months')
+      .nullable()
+      .optional(),
+    breastfeeding: z.boolean().nullable().optional(),
     chiefComplaint: note,
     history: note,
     examination: note,
     plan: note,
+    /** Advice for the patient in plain words, printed on their visit summary. */
+    patientAdvice: z.string().trim().max(2000).nullable().optional(),
   })
   .refine((v) => v.systolicBp == null || v.diastolicBp == null || v.systolicBp > v.diastolicBp, {
     message: 'Systolic must be higher than diastolic',
@@ -66,6 +87,8 @@ const visitInclude = {
   patient: { select: queuePatientSelect },
   doctor: { select: { id: true, fullName: true, room: true } },
   diagnoses: { orderBy: [{ isPrimary: 'desc' }, { id: 'asc' }] },
+  addenda: { orderBy: { createdAt: 'asc' } },
+  notifications: true,
 } satisfies Prisma.VisitInclude;
 
 const isClosed = (status: string) => status === 'COMPLETED' || status === 'CANCELLED';
@@ -127,8 +150,13 @@ export class ConsultationController {
       prepaymentRequired(this.prisma.client, me.tenantId),
     ]);
     const unpaid = charges.filter((c) => !isSettled(c));
+    // Who wrote each addendum.
+    const authors = await this.prisma.client.user.findMany({ where: { id: { in: visit.addenda.map((a) => a.authorId) } }, select: { id: true, fullName: true, role: true } });
     return {
       ...visit,
+      addenda: visit.addenda.map((a) => ({ ...a, author: authors.find((u) => u.id === a.authorId) ?? null })),
+      // Diseases public health must hear about: immediate ones are reported from the visit.
+      notifiable: await visitNotifiable(this.prisma, visit.diagnoses, visit.notifications),
       previous,
       prepayment,
       consultationPaid: charges.filter((c) => c.source === 'CONSULTATION').every(isSettled),
@@ -152,16 +180,20 @@ export class ConsultationController {
 
     const fields = Object.keys(body).filter((k) => body[k as keyof typeof body] !== undefined);
     if (me.role === 'NURSE') {
-      const allowed: string[] = [...VITALS, 'chiefComplaint'];
+      const allowed: string[] = [...VITALS, ...TRIAGE, 'chiefComplaint'];
       const blocked = fields.filter((f) => !allowed.includes(f));
       if (blocked.length) throw new ForbiddenException(`Nurses cannot edit: ${blocked.join(', ')}`);
     }
 
-    const updated = await this.prisma.client.visit.update({
-      where: { id },
-      data: Object.fromEntries(fields.map((f) => [f, body[f as keyof typeof body]])),
-      include: visitInclude,
-    });
+    const pregnancyFields = fields.filter((f) => ['pregnancyStatus', 'lmpDate', 'breastfeeding'].includes(f));
+    if (pregnancyFields.length && visit.patient.sex === 'MALE' && pregnancyFields.some((f) => body[f as keyof typeof body] != null)) {
+      throw new ConflictException('Pregnancy and breastfeeding apply to women only');
+    }
+    const data: Record<string, unknown> = Object.fromEntries(fields.map((f) => [f, body[f as keyof typeof body]]));
+    if (typeof data.lmpDate === 'string') data.lmpDate = new Date(`${data.lmpDate}T00:00:00Z`);
+    // Who set the priority and when (the queue is seen in that order).
+    if (fields.includes('triageLevel') && body.triageLevel !== visit.triageLevel) Object.assign(data, { triagedAt: new Date(), triagedById: me.sub });
+    const updated = await this.prisma.client.visit.update({ where: { id }, data, include: visitInclude });
     // Field names only: the audit log must not become a second copy of clinical content.
     await this.audit.log(me, 'visit.update', 'Visit', id, { fields });
     return updated;

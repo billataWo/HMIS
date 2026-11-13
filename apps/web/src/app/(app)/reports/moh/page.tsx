@@ -95,6 +95,7 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
         </table>
         <p className="mt-2 text-sm">
           New visits <strong>{r.opd.newVisits}</strong> · repeat visits <strong>{r.opd.repeatVisits}</strong>
+          {" "}· referrals out <strong>{r.opd.referralsOut}</strong>
           {r.opd.withoutDiagnosis > 0 && <span className="text-amber-700 dark:text-amber-400"> · {r.opd.withoutDiagnosis} visits have no diagnosis recorded</span>}
         </p>
       </section>

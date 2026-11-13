@@ -305,7 +305,7 @@ export class ReportsController {
     const db = this.prisma.client;
     const t = me.tenantId;
 
-    const [tenant, visits, malaria] = await Promise.all([
+    const [tenant, visits, malaria, referralsOut] = await Promise.all([
       db.tenant.findUniqueOrThrow({ where: { id: t }, select: { name: true, nameAm: true, address: true } }),
       db.visit.findMany({
         where: { tenantId: t, kind: 'OPD', checkedInAt: range, status: { not: 'CANCELLED' } },
@@ -320,6 +320,7 @@ export class ReportsController {
         where: { tenantId: t, status: 'VERIFIED', verifiedAt: range, labTest: { name: { contains: 'malaria', mode: 'insensitive' } } },
         select: { resultValue: true },
       }),
+      db.clinicalDocument.count({ where: { tenantId: t, type: 'REFERRAL', createdAt: range } }),
     ]);
 
     // A visit is "new" if it is the patient's first ever visit at this facility.
@@ -365,6 +366,7 @@ export class ReportsController {
         repeatVisits: visits.length - newVisits,
         byAge: groups.map((g) => ({ ageGroup: g, ...opd[g] })),
         withoutDiagnosis: visits.filter((v) => v.diagnoses.length === 0).length,
+        referralsOut,
       },
       morbidity: [...morbidity.entries()]
         .map(([code, r]) => ({ code, ...r, total: r.male + r.female }))

@@ -14,6 +14,7 @@ import {
   Pill,
   Receipt,
   ScrollText,
+  Send,
   Settings,
   UserCog,
   Users,
@@ -53,6 +54,7 @@ const GROUPS: { title?: string; items: Item[] }[] = [
       { href: "/lab", label: "Lab", labelAm: "ላብራቶሪ", icon: FlaskConical, roles: ["ADMIN", "LAB_TECH"] },
       { href: "/pharmacy", label: "Pharmacy", labelAm: "ፋርማሲ", icon: Pill, roles: ["ADMIN", "PHARMACIST"] },
       { href: "/inventory", label: "Inventory", labelAm: "ክምችት", icon: Package, roles: ["ADMIN", "PHARMACIST"] },
+      { href: "/referrals", label: "Referrals", labelAm: "ሪፈራሎች", icon: Send, roles: ["ADMIN", "DOCTOR", "NURSE"] },
     ],
   },
   {

@@ -25,7 +25,8 @@ describe('current medicines', () => {
     }
   });
 
-  const patient = async () => (await api.post('/patients').set(bearer(desk.token)).send({ confirmDuplicate: true, firstName: 'On', fatherName: 'Warfarin', sex: 'FEMALE' }).expect(201)).body.id as string;
+  // A man: these tests are about current medicines, not the pregnancy reminder warfarin raises for a woman.
+  const patient = async () => (await api.post('/patients').set(bearer(desk.token)).send({ confirmDuplicate: true, firstName: 'On', fatherName: 'Warfarin', sex: 'MALE' }).expect(201)).body.id as string;
   const seen = async (patientId: string) => {
     const visitId = (await api.post('/visits').set(bearer(desk.token)).send({ patientId }).expect(201)).body.id as string;
     await api.patch(`/visits/${visitId}/status`).set(bearer(doctor.token)).send({ status: 'IN_CONSULTATION' }).expect(200);

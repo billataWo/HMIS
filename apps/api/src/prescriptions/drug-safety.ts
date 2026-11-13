@@ -1,5 +1,5 @@
 /**
- * Prescribing safety checks: allergies, interactions and duplicates.
+ * Prescribing safety checks: allergies, interactions, duplicates, pregnancy and breastfeeding.
  *
  * The interaction list holds well-established, clinically important pairs for the medicines
  * Ethiopian clinics commonly stock (the starter formulary). It is not a full interaction
@@ -27,7 +27,7 @@ function has(d: DrugLike, term: string) {
 }
 
 export interface Alert {
-  type: 'ALLERGY' | 'INTERACTION' | 'DUPLICATE';
+  type: 'ALLERGY' | 'INTERACTION' | 'DUPLICATE' | 'PREGNANCY' | 'BREASTFEEDING';
   severity: 'BLOCK' | 'MAJOR' | 'MODERATE';
   message: string;
   drugIds: string[];
@@ -186,4 +186,97 @@ export function interactionAlerts(drugs: DrugLike[], firstNew = 0): Alert[] {
     }
   }
   return alerts;
+}
+
+type SafetyRule = {
+  terms: string[];
+  /** BLOCK: not given (a reason is required to go ahead); MAJOR: avoid; MODERATE: caution. */
+  severity: 'BLOCK' | 'MAJOR' | 'MODERATE';
+  effect: string;
+  /** Pregnancy weeks the rule applies from / until (when the weeks are known). */
+  from?: number;
+  to?: number;
+};
+
+/**
+ * Medicines to avoid in pregnancy, for the drugs Ethiopian clinics commonly stock. Not a full
+ * teratology reference: have the clinical advisor review it for the facility's formulary.
+ */
+export const PREGNANCY_RULES: SafetyRule[] = [
+  { terms: ['misoprostol'], severity: 'BLOCK', effect: 'causes miscarriage and uterine rupture (only for an intended obstetric use)' },
+  { terms: ['methotrexate'], severity: 'BLOCK', effect: 'causes miscarriage and birth defects' },
+  { terms: ['isotretinoin', 'acitretin'], severity: 'BLOCK', effect: 'causes severe birth defects' },
+  { terms: ['warfarin'], severity: 'BLOCK', effect: 'causes birth defects and fetal bleeding (heparin is used instead)' },
+  { terms: ['valproate', 'valproic acid'], severity: 'BLOCK', effect: 'causes neural tube defects and harms development' },
+  { terms: ['enalapril', 'lisinopril', 'captopril', 'ramipril', 'ace inhibitor'], severity: 'MAJOR', effect: 'harms the fetal kidneys (methyldopa or nifedipine are used instead)' },
+  { terms: ['losartan', 'valsartan', 'angiotensin receptor blocker'], severity: 'MAJOR', effect: 'harms the fetal kidneys (methyldopa or nifedipine are used instead)' },
+  { terms: ['atorvastatin', 'simvastatin', 'rosuvastatin', 'statin'], severity: 'MAJOR', effect: 'is not used in pregnancy: stop until after delivery' },
+  { terms: ['doxycycline', 'tetracycline'], severity: 'MAJOR', from: 15, effect: "stains and weakens the baby's teeth and bones" },
+  { terms: ['primaquine'], severity: 'MAJOR', effect: 'can break down the red cells of a G6PD-deficient fetus' },
+  { terms: ['griseofulvin'], severity: 'MAJOR', effect: 'can cause birth defects' },
+  { terms: ['carbamazepine', 'phenytoin'], severity: 'MAJOR', effect: 'risks birth defects: it needs folic acid and specialist review' },
+  { terms: ['ethinylestradiol', 'estrogen', 'oestrogen'], severity: 'MAJOR', effect: 'is a hormonal contraceptive, not given in pregnancy' },
+  { terms: ['ibuprofen', 'diclofenac', 'naproxen', 'indomethacin', 'nsaid'], severity: 'MAJOR', from: 20, effect: "after 20 weeks can harm the baby's heart and kidneys (paracetamol is used instead)" },
+  { terms: ['ciprofloxacin', 'norfloxacin', 'levofloxacin', 'fluoroquinolone'], severity: 'MODERATE', effect: 'is usually avoided in pregnancy when another antibiotic will do' },
+  { terms: ['metronidazole', 'tinidazole'], severity: 'MODERATE', to: 13, effect: 'is usually avoided in the first trimester unless clearly needed' },
+  { terms: ['albendazole', 'mebendazole'], severity: 'MODERATE', to: 13, effect: 'is not given in the first trimester' },
+  { terms: ['cotrimoxazole', 'co-trimoxazole', 'sulfamethoxazole', 'trimethoprim'], severity: 'MODERATE', effect: 'is a folate antagonist: avoided in the first trimester and near term unless needed (e.g. HIV prophylaxis)' },
+  { terms: ['fluconazole'], severity: 'MODERATE', effect: 'is avoided in high or long courses' },
+  { terms: ['codeine', 'tramadol'], severity: 'MODERATE', effect: 'near term can cause withdrawal in the newborn' },
+];
+
+/** Medicines to avoid or watch while breastfeeding. */
+export const BREASTFEEDING_RULES: SafetyRule[] = [
+  { terms: ['methotrexate'], severity: 'BLOCK', effect: 'is not given while breastfeeding' },
+  { terms: ['codeine'], severity: 'MAJOR', effect: 'can cause dangerous drowsiness and slowed breathing in the baby' },
+  { terms: ['lithium'], severity: 'MAJOR', effect: 'passes into the milk and can harm the baby' },
+  { terms: ['amiodarone'], severity: 'MAJOR', effect: 'builds up in the baby' },
+  { terms: ['primaquine'], severity: 'MAJOR', effect: 'is given only if the baby is known not to be G6PD deficient' },
+  { terms: ['tramadol'], severity: 'MODERATE', effect: 'passes into the milk: watch the baby for drowsiness' },
+  { terms: ['doxycycline', 'tetracycline'], severity: 'MODERATE', effect: 'is avoided in longer courses while breastfeeding' },
+  { terms: ['ciprofloxacin', 'norfloxacin', 'levofloxacin', 'fluoroquinolone'], severity: 'MODERATE', effect: 'is usually avoided while breastfeeding when another antibiotic will do' },
+  { terms: ['metronidazole', 'tinidazole'], severity: 'MODERATE', effect: 'after a single large dose: breastfeeding stops for 12–24 hours' },
+  { terms: ['ethinylestradiol', 'estrogen', 'oestrogen'], severity: 'MODERATE', effect: 'can reduce the milk supply (progestogen-only methods are preferred)' },
+];
+
+export interface MotherStatus {
+  sex: 'MALE' | 'FEMALE';
+  /** Age in years at the visit, if known. */
+  ageYears: number | null;
+  /** NOT_PREGNANT, POSSIBLE, PREGNANT, or null when not asked. */
+  pregnancyStatus: string | null;
+  /** Weeks of pregnancy from the last period, if known. */
+  weeks: number | null;
+  breastfeeding: boolean | null;
+}
+
+/**
+ * Alerts for prescribing in pregnancy and breastfeeding. A possible pregnancy counts as one. For a
+ * woman of child-bearing age whose status was not asked, a drug that is not given in pregnancy
+ * raises a reminder to ask first.
+ */
+export function pregnancyAlerts(m: MotherStatus, drugs: DrugLike[]): Alert[] {
+  if (m.sex !== 'FEMALE') return [];
+  const alerts: Alert[] = [];
+  const applies = (r: SafetyRule) => m.weeks === null || ((r.from === undefined || m.weeks >= r.from) && (r.to === undefined || m.weeks < r.to));
+  const pregnant = m.pregnancyStatus === 'PREGNANT' || m.pregnancyStatus === 'POSSIBLE';
+  const childBearing = m.ageYears === null || (m.ageYears >= 12 && m.ageYears <= 50);
+  for (const d of drugs) {
+    const rule = PREGNANCY_RULES.find((r) => r.terms.some((t) => has(d, t)) && applies(r));
+    if (rule && pregnant) {
+      const when = m.pregnancyStatus === 'POSSIBLE' ? 'may be pregnant' : m.weeks !== null ? `is ${m.weeks} weeks pregnant` : 'is pregnant';
+      alerts.push({ type: 'PREGNANCY', severity: rule.severity, message: `${d.genericName}: the patient ${when}. It ${rule.effect}.`, drugIds: [d.id] });
+    } else if (rule && m.pregnancyStatus === null && childBearing && rule.severity !== 'MODERATE') {
+      alerts.push({ type: 'PREGNANCY', severity: 'MODERATE', message: `${d.genericName}: ask whether she could be pregnant first. In pregnancy it ${rule.effect}.`, drugIds: [d.id] });
+    }
+    const feeding = m.breastfeeding ? BREASTFEEDING_RULES.find((r) => r.terms.some((t) => has(d, t))) : undefined;
+    if (feeding) alerts.push({ type: 'BREASTFEEDING', severity: feeding.severity, message: `${d.genericName}: she is breastfeeding. It ${feeding.effect}.`, drugIds: [d.id] });
+  }
+  return alerts;
+}
+
+/** Whole weeks since the first day of the last period, on a given day. */
+export function pregnancyWeeks(lmp: Date | null, on: Date) {
+  if (!lmp) return null;
+  return Math.max(0, Math.floor((on.getTime() - lmp.getTime()) / (7 * 86_400_000)));
 }

@@ -21,6 +21,8 @@ import { BillingController } from './billing/billing.controller.js';
 import { LabController } from './lab/lab.controller.js';
 import { LabQcController } from './lab/lab-qc.controller.js';
 import { CoverageController } from './billing/coverage.controller.js';
+import { ClinicalRecordController } from './consultation/clinical-record.controller.js';
+import { PublicHealthController } from './consultation/public-health.controller.js';
 import { SettingsController } from './settings/settings.controller.js';
 import { InventoryController } from './inventory/inventory.controller.js';
 import { CatalogController } from './catalog/catalog.controller.js';
@@ -80,6 +82,8 @@ if (process.env.NODE_ENV === 'production' && (jwtSecret.length < 32 || WEAK_SECR
     LabController,
     LabQcController,
     CoverageController,
+    ClinicalRecordController,
+    PublicHealthController,
     SettingsController,
     InventoryController,
     CatalogController,

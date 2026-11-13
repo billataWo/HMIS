@@ -9,7 +9,7 @@ export const TOKEN_COOKIE = "hmis_token";
 export type DuplicatePatient = Pick<Patient, "id" | "mrn" | "firstName" | "fatherName" | "grandfather" | "sex" | "dateOfBirth" | "phone">;
 
 export interface RxAlert {
-  type: "ALLERGY" | "INTERACTION" | "DUPLICATE";
+  type: "ALLERGY" | "INTERACTION" | "DUPLICATE" | "PREGNANCY" | "BREASTFEEDING";
   severity: "BLOCK" | "MAJOR" | "MODERATE";
   message: string;
   drugIds: string[];
@@ -202,6 +202,8 @@ export interface QueueVisit {
   carriedOver?: boolean; // present on /queue: an unfinished visit from an earlier day
   diagnosed?: boolean; // present on /queue: at least one diagnosis recorded
   owed?: string; // present on /queue: unpaid charges other than the consultation fee
+  /** Triage priority: RED (emergency), ORANGE, YELLOW, GREEN (routine); the queue is in this order. */
+  triageLevel?: "RED" | "ORANGE" | "YELLOW" | "GREEN" | null;
 }
 
 export interface QueueResponse {
@@ -583,6 +585,7 @@ export interface MohReport {
     repeatVisits: number;
     byAge: { ageGroup: string; male: number; female: number }[];
     withoutDiagnosis: number;
+    referralsOut: number;
   };
   morbidity: { code: string; label: string; male: number; female: number; total: number }[];
   malaria: { tested: number; positive: number; byResult: { result: string; count: number }[] };
@@ -601,6 +604,104 @@ export interface ClinicSettings {
   tin?: string | null; // taxpayer identification number, on receipts
 }
 
+/** A condition kept on the patient's record across visits. */
+export interface PatientProblem {
+  id: string;
+  icd11Code: string | null;
+  label: string;
+  status: "ACTIVE" | "RESOLVED";
+  since: string | null;
+  note: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+/** One visit's vitals, for the trend. */
+export interface VitalsRow {
+  id: string;
+  checkedInAt: string;
+  systolicBp: number | null;
+  diastolicBp: number | null;
+  pulse: number | null;
+  temperatureC: string | null;
+  spo2: number | null;
+  weightKg: string | null;
+  heightCm: string | null;
+  muacMm: number | null;
+}
+
+export interface VisitNotifiable {
+  key: string;
+  label: string;
+  labelAm: string;
+  immediate: boolean;
+  notification: { reportedAt: string; reportedTo: string; note: string | null; reportedBy: string | null } | null;
+}
+
+export type ReferralStatus = "SENT" | "ARRIVED" | "FEEDBACK_RECEIVED" | "DID_NOT_GO";
+
+export interface ReferralFollowUp {
+  id: string;
+  status: ReferralStatus;
+  note: string | null;
+  createdAt: string;
+  createdBy: string | null;
+}
+
+export interface ReferralRow {
+  id: string;
+  createdAt: string;
+  visit: { id: string; checkedInAt: string; patient: QueuePatient };
+  to: string;
+  urgency: "ROUTINE" | "URGENT" | "EMERGENCY";
+  reason: string;
+  issuedBy: string | null;
+  status: ReferralStatus;
+  ageDays: number;
+  overdue: boolean;
+  followUps: ReferralFollowUp[];
+}
+
+type IdsrPatient = QueuePatient & { address: string | null };
+
+export interface IdsrReport {
+  facility: { name: string; nameAm: string | null; address: string | null; phone: string | null };
+  week: { year: number; week: number; start: string; end: string; inProgress: boolean };
+  diseases: { key: string; label: string; labelAm: string; immediate: boolean; under5: number; over5: number; unknownAge: number; total: number }[];
+  malaria: { tested: number; positive: number; falciparum: number; vivax: number; mixed: number; notStated: number };
+  immediateCases: {
+    visitId: string;
+    checkedInAt: string;
+    patient: IdsrPatient;
+    disease: string;
+    label: string;
+    notification: { reportedAt: string; reportedTo: string; note: string | null; reportedBy: string | null } | null;
+  }[];
+  unreported: { visitId: string; checkedInAt: string; patient: IdsrPatient; disease: string; label: string }[];
+  unreportedDays: number;
+}
+
+export interface VisitAddendum {
+  id: string;
+  text: string;
+  createdAt: string;
+  author: { id: string; fullName: string | null; role: Role } | null;
+}
+
+/** What the patient takes home from a consultation. */
+export interface VisitSummary {
+  id: string;
+  checkedInAt: string;
+  patientAdvice: string | null;
+  patient: QueuePatient;
+  doctor: { fullName: string } | null;
+  tenant: { name: string; nameAm: string | null; phone: string | null; address: string | null };
+  diagnoses: { icd11Code: string; label: string; isPrimary: boolean }[];
+  medicines: { dose: string; frequency: Frequency; durationDays: number | null; quantity: number; instructions: string | null; drug: { genericName: string; strength: string | null; form: string; unit: string } }[];
+  labOrders: { status: string; resultValue: string | null; resultFlag: string | null; labTest: { name: string; unit: string | null } }[];
+  nextAppointment: { scheduledAt: string; reason: string | null; doctor: { fullName: string } | null } | null;
+}
+
 export interface Diagnosis {
   id: string;
   icd11Code: string;
@@ -608,8 +709,8 @@ export interface Diagnosis {
   isPrimary: boolean;
 }
 
-export const VITAL_FIELDS = ["temperatureC", "pulse", "systolicBp", "diastolicBp", "respRate", "spo2", "weightKg", "heightCm"] as const;
-export const NOTE_FIELDS = ["chiefComplaint", "history", "examination", "plan"] as const;
+export const VITAL_FIELDS = ["temperatureC", "pulse", "systolicBp", "diastolicBp", "respRate", "spo2", "weightKg", "heightCm", "muacMm"] as const;
+export const NOTE_FIELDS = ["chiefComplaint", "history", "examination", "plan", "patientAdvice"] as const;
 export type VitalField = (typeof VITAL_FIELDS)[number];
 export type NoteField = (typeof NOTE_FIELDS)[number];
 
@@ -618,10 +719,18 @@ export type VisitDetail = QueueVisit &
   Record<VitalField, string | number | null> &
   Record<NoteField, string | null> & {
     kind: "OPD" | "WALK_IN" | "LAB";
+    /** Pregnancy (women who could be pregnant): with the first day of the last period. */
+    pregnancyStatus?: "NOT_PREGNANT" | "POSSIBLE" | "PREGNANT" | null;
+    lmpDate?: string | null;
+    breastfeeding?: boolean | null;
     prepayment: boolean;
     consultationPaid: boolean;
     owed: string; // all unpaid charges of the visit
     diagnoses: Diagnosis[];
+    /** Notes added afterwards: signed, timed, never edited. */
+    addenda?: VisitAddendum[];
+    /** Diseases public health must hear about; immediate ones are reported from the visit. */
+    notifiable?: VisitNotifiable[];
     previous: {
       id: string;
       checkedInAt: string;
@@ -950,6 +1059,9 @@ export interface ClinicalDocument {
   type: "MEDICAL_CERTIFICATE" | "REFERRAL";
   data: Record<string, string | number>;
   createdAt: string;
+  /** Referrals only: where it stands, from its follow-ups. */
+  referralStatus?: ReferralStatus | null;
+  followUps?: ReferralFollowUp[];
 }
 
 export interface ClinicalDocumentDetail extends ClinicalDocument {

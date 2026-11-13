@@ -12,6 +12,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Badge, buttonClass, inputClass, linkClass, PageHeader, pillClass, secondaryButtonClass, Skeleton, StatCard } from "@/components/ui";
 import { api, type Doctor, type Me, type Patient, type QueueResponse, type QueueVisit, type Role, type Service, type VisitStatus } from "@/lib/api";
 import { ageFrom, etb, formatDualDate, formatDuration, formatTime, fullName } from "@/lib/format";
+import { TRIAGE } from "../visits/[id]/vital-flags";
 import { type Lang, tr } from "@/lib/i18n";
 import { getLang } from "@/lib/lang";
 
@@ -90,6 +91,10 @@ function VisitRow({ v, role, returnTo, prepayment, lang }: { v: QueueVisit; role
           </span>
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-500">
+          {/* Triage priority: the queue is ordered by it, emergencies first. */}
+          {v.triageLevel && v.status !== "COMPLETED" && v.status !== "CANCELLED" && (
+            <span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${TRIAGE[v.triageLevel].tone}`}>{tr(lang, TRIAGE[v.triageLevel].label)}</span>
+          )}
           {v.status !== "WAITING" && <StatusBadge status={v.status} lang={lang} />}
           {v.carriedOver && <Badge tone="warning">Open since {formatDualDate(v.checkedInAt)}</Badge>}
           {unpaid && <Badge tone="danger">{tr(lang, "Awaiting payment")}</Badge>}

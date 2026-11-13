@@ -132,6 +132,9 @@ export class VisitsController {
       }),
       prepaymentRequired(this.prisma.client, me.tenantId),
     ]);
+    // Seen by triage priority (emergencies first), then in order of arrival.
+    const rank = (l: string | null) => (l === 'RED' ? 0 : l === 'ORANGE' ? 1 : l === 'YELLOW' ? 2 : 3);
+    visits.sort((a, b) => rank(a.triageLevel) - rank(b.triageLevel));
     return {
       day,
       prepayment,

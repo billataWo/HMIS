@@ -158,6 +158,7 @@ model Patient {
   visits       Visit[]
   invoices     Invoice[]
   coverages    PatientCoverage[]
+  problems     PatientProblem[]
 
   @@unique([tenantId, mrn])
   @@index([tenantId, phone])
@@ -238,24 +239,41 @@ model Visit {
   completedAt     DateTime?
 
   // vitals
-  temperatureC Decimal? @db.Decimal(4, 1)
-  pulse        Int?
-  systolicBp   Int?
-  diastolicBp  Int?
-  respRate     Int?
-  spo2         Int?
-  weightKg     Decimal? @db.Decimal(5, 2)
-  heightCm     Decimal? @db.Decimal(5, 1)
+  temperatureC    Decimal?  @db.Decimal(4, 1)
+  pulse           Int?
+  systolicBp      Int?
+  diastolicBp     Int?
+  respRate        Int?
+  spo2            Int?
+  weightKg        Decimal?  @db.Decimal(5, 2)
+  heightCm        Decimal?  @db.Decimal(5, 1)
+  /// Mid-upper arm circumference (mm): malnutrition screening for children 6–59 months, and for
+  /// pregnant and breastfeeding women.
+  muacMm          Int?
+  /// Triage priority set by the nurse: RED (emergency), ORANGE (very urgent), YELLOW (urgent),
+  /// GREEN (routine). The queue is seen in this order, then by arrival.
+  triageLevel     String?
+  triagedAt       DateTime?
+  triagedById     String?
+  /// For women who could be pregnant: NOT_PREGNANT, POSSIBLE or PREGNANT (with the first day of the
+  /// last period), and breastfeeding. Prescribing checks the drugs against them.
+  pregnancyStatus String?
+  lmpDate         DateTime? @db.Date
+  breastfeeding   Boolean?
 
   chiefComplaint String?
   history        String?
   examination    String?
   plan           String?
+  /// Advice for the patient in plain words, printed on their visit summary.
+  patientAdvice  String?
 
   diagnoses     Diagnosis[]
   prescriptions Prescription[]
   labOrders     LabOrder[]
   charges       Charge[]
+  addenda       VisitAddendum[]
+  notifications DiseaseNotification[]
   invoices      Invoice[]
   documents     ClinicalDocument[]
 
@@ -270,6 +288,59 @@ model Diagnosis {
   icd11Code String
   label     String
   isPrimary Boolean @default(false)
+}
+
+/// A condition the patient lives with (hypertension, diabetes, HIV, epilepsy…), kept on their record
+/// across visits and shown at every consultation until it is resolved.
+model PatientProblem {
+  id          String    @id @default(uuid())
+  tenantId    String
+  patientId   String
+  patient     Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  icd11Code   String?
+  label       String
+  /// ACTIVE or RESOLVED
+  status      String    @default("ACTIVE")
+  since       DateTime? @db.Date
+  note        String?
+  createdById String
+  createdAt   DateTime  @default(now())
+  resolvedAt  DateTime?
+
+  @@index([patientId])
+  @@index([tenantId, status])
+}
+
+/// A note added to a visit afterwards (a result reviewed, a phone call): signed and timed, never
+/// edited, so the original record stays as it was.
+model VisitAddendum {
+  id        String   @id @default(uuid())
+  tenantId  String
+  visitId   String
+  visit     Visit    @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  text      String
+  authorId  String
+  createdAt DateTime @default(now())
+
+  @@index([visitId])
+}
+
+/// A case of an immediately reportable disease (IDSR) phoned through to the woreda health office:
+/// who reported it, to whom and when. Recorded once per disease per visit and never changed.
+model DiseaseNotification {
+  id           String   @id @default(uuid())
+  tenantId     String
+  visitId      String
+  visit        Visit    @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  /// A key of NOTIFIABLE in the API (MEASLES, CHOLERA…).
+  disease      String
+  reportedTo   String
+  note         String?
+  reportedById String
+  reportedAt   DateTime @default(now())
+
+  @@unique([visitId, disease])
+  @@index([tenantId, reportedAt])
 }
 
 // ───────────────────────────── Prescriptions & pharmacy ─────────────────────────────
@@ -899,8 +970,25 @@ model ClinicalDocument {
   data        Json
   createdById String
   createdAt   DateTime             @default(now())
+  followUps   ReferralFollowUp[]
 
   @@index([visitId])
+}
+
+/// What became of a referral: the patient arrived, feedback came back, they did not go, or just a
+/// note (a call made). The latest entry is the referral's status; entries are never changed.
+model ReferralFollowUp {
+  id          String           @id @default(uuid())
+  tenantId    String
+  documentId  String
+  document    ClinicalDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  /// SENT (a note only), ARRIVED, FEEDBACK_RECEIVED or DID_NOT_GO
+  status      String
+  note        String?
+  createdById String
+  createdAt   DateTime         @default(now())
+
+  @@index([documentId])
 }
 
 enum ClinicalDocumentType {

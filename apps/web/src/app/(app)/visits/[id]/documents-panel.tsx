@@ -4,9 +4,10 @@ import { FileText, Printer } from "lucide-react";
 import Link from "next/link";
 import { useActionState, useState } from "react";
 import { issueDocument, type FormState } from "@/app/actions";
-import { Alert, buttonClass, Field, Input, inputClass, secondaryButtonClass } from "@/components/ui";
+import { Alert, Badge, buttonClass, Field, Input, inputClass, secondaryButtonClass } from "@/components/ui";
 import type { ClinicalDocument } from "@/lib/api";
 import { clinicToday, formatDualDate } from "@/lib/format";
+import { REFERRAL_STATUS } from "@/lib/referrals";
 
 const LABEL = { MEDICAL_CERTIFICATE: "Medical certificate", REFERRAL: "Referral letter" } as const;
 
@@ -36,11 +37,21 @@ export function DocumentsPanel({ visitId, documents, canIssue, diagnosis }: { vi
         <ul className="divide-y divide-slate-100 text-sm dark:divide-slate-800">
           {documents.map((d) => (
             <li key={d.id} className="flex items-center justify-between gap-2 py-2">
-              <span>
+              <span className="min-w-0">
                 <span className="font-medium">{LABEL[d.type]}</span>
+                {d.type === "REFERRAL" && d.data.to && <span> to {String(d.data.to)}</span>}
                 <span className="text-xs text-slate-500"> · {formatDualDate(d.createdAt)}</span>
+                {d.referralStatus && (
+                  <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                    <Badge tone={REFERRAL_STATUS[d.referralStatus].tone}>{REFERRAL_STATUS[d.referralStatus].label}</Badge>
+                    {d.followUps?.at(-1)?.note && <span className="min-w-0 break-words">{d.followUps.at(-1)!.note}</span>}
+                    <Link href="/referrals?view=all" className="font-medium text-brand-700 hover:underline dark:text-brand-400">
+                      Follow up
+                    </Link>
+                  </span>
+                )}
               </span>
-              <Link href={`/document/${d.id}`} target="_blank" className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline dark:text-brand-400">
+              <Link href={`/document/${d.id}`} target="_blank" className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-700 hover:underline dark:text-brand-400">
                 <Printer aria-hidden className="size-3.5" />
                 Print
               </Link>

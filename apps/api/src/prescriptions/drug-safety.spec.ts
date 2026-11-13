@@ -1,5 +1,5 @@
 import { FORMULARY } from '../inventory/formulary.js';
-import { allergyAlerts, interactionAlerts, INTERACTIONS, type DrugLike } from './drug-safety.js';
+import { allergyAlerts, interactionAlerts, INTERACTIONS, type DrugLike, type MotherStatus, pregnancyAlerts, PREGNANCY_RULES, BREASTFEEDING_RULES } from './drug-safety.js';
 
 let n = 0;
 const drug = (genericName: string, drugClass: string | null = null, extra: Partial<DrugLike> = {}): DrugLike => ({ id: `d${++n}`, genericName, drugClass, ...extra });
@@ -78,5 +78,47 @@ describe('allergy checks', () => {
     expect(allergyAlerts(['sulfa'], [drug('Cotrimoxazole', 'sulfonamide')])).toHaveLength(1);
     expect(allergyAlerts(['Aspirin'], [drug('Ibuprofen', 'nsaid')])).toHaveLength(1);
     expect(allergyAlerts(['Penicillin'], [drug('Ciprofloxacin', 'fluoroquinolone')])).toEqual([]);
+  });
+});
+
+describe('pregnancy and breastfeeding', () => {
+  const woman = (m: Partial<MotherStatus> = {}): MotherStatus => ({ sex: 'FEMALE', ageYears: 28, pregnancyStatus: null, weeks: null, breastfeeding: null, ...m });
+
+  it('blocks what is never given in pregnancy, and asks for a reason', () => {
+    const [a] = pregnancyAlerts(woman({ pregnancyStatus: 'PREGNANT', weeks: 10 }), [drug('Misoprostol')]);
+    expect(a).toMatchObject({ type: 'PREGNANCY', severity: 'BLOCK' });
+    expect(a.message).toMatch(/is 10 weeks pregnant/);
+  });
+
+  it('applies rules by the week: NSAIDs from 20 weeks, metronidazole before 13', () => {
+    expect(pregnancyAlerts(woman({ pregnancyStatus: 'PREGNANT', weeks: 12 }), [drug('Ibuprofen', 'nsaid')])).toEqual([]);
+    expect(pregnancyAlerts(woman({ pregnancyStatus: 'PREGNANT', weeks: 24 }), [drug('Ibuprofen', 'nsaid')])[0].severity).toBe('MAJOR');
+    expect(pregnancyAlerts(woman({ pregnancyStatus: 'PREGNANT', weeks: 8 }), [drug('Metronidazole')])[0].severity).toBe('MODERATE');
+    expect(pregnancyAlerts(woman({ pregnancyStatus: 'PREGNANT', weeks: 20 }), [drug('Metronidazole')])).toEqual([]);
+    // Weeks unknown: every rule applies.
+    expect(pregnancyAlerts(woman({ pregnancyStatus: 'POSSIBLE' }), [drug('Ibuprofen', 'nsaid')])[0].message).toMatch(/may be pregnant/);
+  });
+
+  it('reminds the doctor to ask when the status is not recorded, for women of child-bearing age only', () => {
+    expect(pregnancyAlerts(woman(), [drug('Warfarin')])[0]).toMatchObject({ severity: 'MODERATE', message: expect.stringMatching(/ask whether she could be pregnant/) });
+    expect(pregnancyAlerts(woman({ ageYears: 65 }), [drug('Warfarin')])).toEqual([]);
+    expect(pregnancyAlerts(woman(), [drug('Metronidazole')])).toEqual([]); // a caution only: no reminder
+    expect(pregnancyAlerts(woman({ pregnancyStatus: 'NOT_PREGNANT' }), [drug('Warfarin')])).toEqual([]);
+    expect(pregnancyAlerts({ ...woman(), sex: 'MALE' }, [drug('Warfarin')])).toEqual([]);
+  });
+
+  it('warns about drugs to avoid while breastfeeding', () => {
+    const [a] = pregnancyAlerts(woman({ pregnancyStatus: 'NOT_PREGNANT', breastfeeding: true }), [drug('Codeine phosphate', 'opioid')]);
+    expect(a).toMatchObject({ type: 'BREASTFEEDING', severity: 'MAJOR' });
+    expect(pregnancyAlerts(woman({ breastfeeding: true }), [drug('Paracetamol')])).toEqual([]);
+  });
+
+  it('names drugs of the starter formulary', () => {
+    const names = FORMULARY.map((d) => ` ${d.genericName.toLowerCase()} `);
+    const terms = [...PREGNANCY_RULES, ...BREASTFEEDING_RULES].flatMap((r) => r.terms);
+    // At least the common ones on the starter list are caught by a rule.
+    for (const g of ['ibuprofen', 'doxycycline', 'metronidazole', 'ciprofloxacin']) {
+      if (names.some((n) => n.includes(` ${g}`))) expect(terms).toContain(g);
+    }
   });
 });

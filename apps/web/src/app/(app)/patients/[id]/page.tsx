@@ -10,8 +10,9 @@ import { canRegister, FRONT_DESK } from "@/lib/roles";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge, linkClass, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { LabHistory } from "@/components/lab-history";
+import { ProblemList } from "@/components/problem-list";
 import { ReturnForm } from "@/components/return-form";
-import { api, ApiError, type Appointment, type Doctor, type LabHistoryOrder, type Me, type Medication, type PatientBalance, type PatientCoverage, type PatientDetail, type Payer, type QueueVisit, type Service } from "@/lib/api";
+import { api, ApiError, type Appointment, type Doctor, type LabHistoryOrder, type Me, type Medication, type PatientBalance, type PatientCoverage, type PatientProblem, type PatientDetail, type Payer, type QueueVisit, type Service } from "@/lib/api";
 import { shortDirections } from "@/lib/directions";
 import { ageFrom, clinicToday, etb, formatDualDate, formatTime, fullName } from "@/lib/format";
 
@@ -60,6 +61,8 @@ async function Patient({
   const meds = ["ADMIN", "DOCTOR", "NURSE", "PHARMACIST"].includes(me.role) ? await api<Medication[]>(`/patients/${p.id}/medications`) : null;
   // Lab history: for clinicians and the lab.
   const labs = ["ADMIN", "DOCTOR", "NURSE", "LAB_TECH"].includes(me.role) ? await api<LabHistoryOrder[]>(`/patients/${p.id}/lab-results`) : null;
+  // Long-term conditions: for clinicians.
+  const problems = ["ADMIN", "DOCTOR", "NURSE"].includes(me.role) ? await api<PatientProblem[]>(`/patients/${p.id}/problems`) : null;
   const canRequestLab = canCheckIn || me.role === "LAB_TECH";
   // Who pays for the patient (credit company or insurer): kept by the front desk and the cashier.
   const seesCoverage = ["ADMIN", "RECEPTIONIST", "NURSE", "CASHIER", "DOCTOR"].includes(me.role);
@@ -244,6 +247,11 @@ async function Patient({
           )}
         </section>
 
+        {problems && (
+          <div className="lg:col-span-2">
+            <ProblemList patientId={p.id} problems={problems} canEdit={me.role === "DOCTOR"} />
+          </div>
+        )}
         {labs && <LabHistory history={labs} />}
         {meds && <Medications meds={meds} dispenses={canDispense} canOpenInvoices={me.role === "ADMIN"} />}
       </div>

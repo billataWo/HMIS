@@ -232,11 +232,15 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
 
           {alerts && alerts.length > 0 && (
             <div role="alert" className={`space-y-2 rounded-md border p-3 text-sm ${blocking ? "border-red-300 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-100" : "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100"}`}>
-              <p className="font-medium">{blocking ? "Allergy alert" : "Check before prescribing"}</p>
+              <p className="font-medium">{blocking ? (alerts.some((a) => a.severity === "BLOCK" && a.type === "ALLERGY") ? "Allergy alert" : "Not given in pregnancy or breastfeeding") : "Check before prescribing"}</p>
               <ul className="list-disc pl-5">
                 {alerts.map((a, i) => (
                   <li key={i}>
-                    <span className="font-medium">{a.severity === "BLOCK" ? "Allergy" : a.severity === "MAJOR" ? "Major" : "Moderate"}:</span> {a.message}
+                    <span className="font-medium">
+                      {a.type === "PREGNANCY" ? "Pregnancy" : a.type === "BREASTFEEDING" ? "Breastfeeding" : a.severity === "BLOCK" ? "Allergy" : a.severity === "MAJOR" ? "Major" : "Moderate"}
+                      {(a.type === "PREGNANCY" || a.type === "BREASTFEEDING") && a.severity === "BLOCK" ? " (not given)" : ""}:
+                    </span>{" "}
+                    {a.message}
                   </li>
                 ))}
               </ul>
@@ -245,7 +249,7 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   rows={2}
-                  placeholder="Reason for prescribing despite the allergy (required)"
+                  placeholder="Reason for prescribing despite the alert (required)"
                   className={inputClass}
                 />
               )}

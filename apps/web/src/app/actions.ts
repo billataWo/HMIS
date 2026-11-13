@@ -229,7 +229,7 @@ export async function setAppointmentStatus(id: string, status: "CANCELLED" | "NO
 export async function saveConsultation(_: FormState, form: FormData): Promise<FormState> {
   const visitId = text(form, "visitId");
   const values = Object.fromEntries([...form.entries()].map(([k, v]) => [k, String(v)]));
-  const body: Record<string, number | string | null> = {};
+  const body: Record<string, number | string | boolean | null> = {};
   for (const f of VITAL_FIELDS) {
     if (!form.has(f)) continue;
     const raw = text(form, f);
@@ -238,6 +238,13 @@ export async function saveConsultation(_: FormState, form: FormData): Promise<Fo
   for (const f of NOTE_FIELDS) {
     if (form.has(f)) body[f] = text(form, f) || null;
   }
+  // Triage priority, and pregnancy and breastfeeding (only sent when the form shows them).
+  if (form.has("triageLevel")) body.triageLevel = text(form, "triageLevel") || null;
+  if (form.has("pregnancyStatus")) {
+    body.pregnancyStatus = text(form, "pregnancyStatus") || null;
+    body.lmpDate = body.pregnancyStatus === "PREGNANT" ? text(form, "lmpDate") || null : null;
+  }
+  if (form.has("breastfeedingAsked")) body.breastfeeding = form.get("breastfeeding") === "on";
 
   try {
     await api(`/visits/${visitId}`, { method: "PATCH", body: JSON.stringify(body) });
@@ -851,6 +858,62 @@ export async function closeCash(_: FormState, form: FormData): Promise<FormState
     });
   } catch (e) {
     return toFormState(e, values);
+  }
+  refresh();
+  return { ok: true };
+}
+
+/** The problem list: a condition added (from this visit's diagnosis or typed in). */
+export async function addProblem(patientId: string, body: { label: string; icd11Code?: string | null; since?: string | null }): Promise<{ error?: string }> {
+  try {
+    await api(`/patients/${patientId}/problems`, { method: "POST", body: JSON.stringify(body) });
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.body.errors?.[0]?.message ?? e.message };
+    throw e;
+  }
+  refresh();
+  return {};
+}
+
+export async function setProblemStatus(id: string, status: "ACTIVE" | "RESOLVED") {
+  await api(`/problems/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+  refresh();
+}
+
+/** A signed note added to a visit afterwards (also once it is closed). */
+export async function addAddendum(_: FormState, form: FormData): Promise<FormState> {
+  try {
+    await api(`/visits/${text(form, "visitId")}/addenda`, { method: "POST", body: JSON.stringify({ text: text(form, "text") }) });
+  } catch (e) {
+    return toFormState(e, formValues(form));
+  }
+  refresh();
+  return { ok: true };
+}
+
+/** An immediately reportable disease phoned through to the woreda health office. */
+export async function reportDisease(_: FormState, form: FormData): Promise<FormState> {
+  try {
+    await api(`/visits/${text(form, "visitId")}/notifications`, {
+      method: "POST",
+      body: JSON.stringify({ disease: text(form, "disease"), reportedTo: text(form, "reportedTo"), note: text(form, "note") || null }),
+    });
+  } catch (e) {
+    return toFormState(e, formValues(form));
+  }
+  refresh();
+  return { ok: true };
+}
+
+/** What became of a referral: arrived, feedback received, did not go, or a note of a call. */
+export async function followUpReferral(_: FormState, form: FormData): Promise<FormState> {
+  try {
+    await api(`/documents/${text(form, "documentId")}/follow-ups`, {
+      method: "POST",
+      body: JSON.stringify({ status: text(form, "status"), note: text(form, "note") || undefined }),
+    });
+  } catch (e) {
+    return toFormState(e, formValues(form));
   }
   refresh();
   return { ok: true };

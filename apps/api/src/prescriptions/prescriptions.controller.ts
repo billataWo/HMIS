@@ -5,7 +5,7 @@ import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { allergyAlerts, interactionAlerts } from './drug-safety.js';
+import { allergyAlerts, interactionAlerts, pregnancyAlerts, pregnancyWeeks } from './drug-safety.js';
 
 export const FREQUENCIES = ['OD', 'BID', 'TID', 'QID', 'NOCTE', 'PRN', 'STAT'] as const;
 
@@ -96,7 +96,7 @@ export class PrescriptionsController {
     if (!z.uuid().safeParse(id).success) throw new NotFoundException('Visit not found');
     const visit = await this.prisma.client.visit.findFirst({
       where: { id, tenantId: me.tenantId },
-      include: { patient: { select: { allergies: true } } },
+      include: { patient: { select: { allergies: true, sex: true, dateOfBirth: true } } },
     });
     if (!visit) throw new NotFoundException('Visit not found');
     return visit;
@@ -166,13 +166,25 @@ export class PrescriptionsController {
     const alerts = [
       ...allergyAlerts(visit.patient.allergies, drugs),
       ...interactionAlerts([...before, ...newDrugs], before.length),
+      // Pregnancy and breastfeeding, as recorded at triage or by the doctor for this visit.
+      ...pregnancyAlerts(
+        {
+          sex: visit.patient.sex,
+          ageYears: visit.patient.dateOfBirth ? Math.floor((visit.checkedInAt.getTime() - visit.patient.dateOfBirth.getTime()) / (365.25 * 86_400_000)) : null,
+          pregnancyStatus: visit.pregnancyStatus,
+          weeks: pregnancyWeeks(visit.lmpDate, visit.checkedInAt),
+          breastfeeding: visit.breastfeeding,
+        },
+        newDrugs,
+      ),
     ];
 
     if (alerts.length && !body.acknowledgeAlerts) {
       throw new ConflictException({ message: 'Review the prescribing alerts before continuing', alerts });
     }
     if (alerts.some((a) => a.severity === 'BLOCK') && (!body.overrideReason || body.overrideReason.length < 5)) {
-      throw new ConflictException({ message: 'Give a reason for prescribing despite the allergy', alerts });
+      const what = alerts.find((a) => a.severity === 'BLOCK')!.type === 'ALLERGY' ? 'the allergy' : 'the pregnancy or breastfeeding alert';
+      throw new ConflictException({ message: `Give a reason for prescribing despite ${what}`, alerts });
     }
 
     const prescription = await db.prescription.create({

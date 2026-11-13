@@ -7,7 +7,7 @@ import { Reveal } from "@/components/motion";
 import { Alert, Badge, buttonClass, Field, inputClass, Notice, secondaryButtonClass } from "@/components/ui";
 import type { VisitDetail, VisitStatus } from "@/lib/api";
 import { ageFrom } from "@/lib/format";
-import { vitalFlag } from "./vital-flags";
+import { bmiFlag, suggestTriage, TRIAGE, type TriageLevel, vitalFlag } from "./vital-flags";
 
 type Mode = "doctor" | "nurse";
 
@@ -20,7 +20,26 @@ const VITALS: { name: keyof VisitDetail; label: string; unit: string; step: stri
   { name: "spo2", label: "SpO₂", unit: "%", step: "1", min: 50, max: 100 },
   { name: "weightKg", label: "Weight", unit: "kg", step: "0.1", min: 0.3, max: 300 },
   { name: "heightCm", label: "Height", unit: "cm", step: "0.1", min: 20, max: 250 },
+  { name: "muacMm", label: "MUAC", unit: "mm", step: "1", min: 50, max: 400 },
 ];
+
+/** Whole months from a date of birth to a day (null when the birth date isn't known). */
+function monthsOld(dob: string | null, on: string) {
+  if (!dob) return null;
+  const a = new Date(dob);
+  const b = new Date(on);
+  return Math.max(0, (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth() - (b.getDate() < a.getDate() ? 1 : 0));
+}
+
+/** "9 weeks · due 12 Jun 2027" from the first day of the last period. */
+function gestation(lmp: string, on: string) {
+  if (!lmp) return null;
+  const start = new Date(`${lmp}T00:00:00Z`);
+  const weeks = Math.floor((new Date(on).getTime() - start.getTime()) / (7 * 86_400_000));
+  if (!Number.isFinite(weeks) || weeks < 0 || weeks > 44) return null;
+  const due = new Date(start.getTime() + 280 * 86_400_000).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  return `${weeks} weeks · due ${due}`;
+}
 
 // Quick-insert text for common normal findings; the doctor edits from there.
 const EXAM_TEMPLATES: { label: string; text: string }[] = [
@@ -150,6 +169,18 @@ export function ConsultationForm({
   const [typed, setTyped] = useState<Record<string, string>>(() => Object.fromEntries(VITALS.map((f) => [f.name, initial(f.name)])));
   const age = ageFrom(visit.patient.dateOfBirth);
   const adult = age !== null && age >= 18;
+  const ageMonths = monthsOld(visit.patient.dateOfBirth, visit.checkedInAt);
+  // Pregnancy applies to women who could be pregnant (age unknown counts).
+  const canBePregnant = visit.patient.sex === "FEMALE" && (age === null || (age >= 10 && age <= 55));
+  const [pregnancy, setPregnancy] = useState(initial("pregnancyStatus" as keyof VisitDetail));
+  const [lmp, setLmp] = useState(initial("lmpDate" as keyof VisitDetail).slice(0, 10));
+  const [feeding, setFeeding] = useState(state.error && state.values ? state.values.breastfeeding === "on" : !!visit.breastfeeding);
+  const ctx = { ageMonths, mother: pregnancy === "PREGNANT" || pregnancy === "POSSIBLE" || feeding };
+  // MUAC: for children 6–59 months, and for women who are or may be pregnant or breastfeeding.
+  const showMuac = (ageMonths !== null && ageMonths >= 6 && ageMonths < 60) || canBePregnant;
+  const flagOf = (name: string) => vitalFlag(name, name === "weightKg" ? weight : name === "heightCm" ? height : (typed[name] ?? ""), ctx);
+  const suggestion = suggestTriage(typed, ctx);
+  const [triage, setTriage] = useState(initial("triageLevel" as keyof VisitDetail));
   const [height, setHeight] = useState(initial("heightCm"));
   const exam = useRef<HTMLTextAreaElement>(null);
   const complaint = useRef<HTMLTextAreaElement>(null);
@@ -187,7 +218,7 @@ export function ConsultationForm({
       <section className="surface p-5">
         <h2 className="mb-4 font-semibold text-slate-900 dark:text-white">Vitals</h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {VITALS.map((f) => (
+          {VITALS.filter((f) => f.name !== "muacMm" || showMuac).map((f) => (
             <Field key={f.name} label={`${f.label} (${f.unit})`} error={err[f.name]}>
               <>
               <input
@@ -204,38 +235,91 @@ export function ConsultationForm({
                   else if (f.name === "heightCm") setHeight(e.target.value);
                   else setTyped((t) => ({ ...t, [f.name]: e.target.value }));
                 }}
-                aria-describedby={adult && vitalFlag(f.name, typed[f.name] ?? "") ? `${f.name}-flag` : undefined}
+                aria-describedby={flagOf(f.name) ? `${f.name}-flag` : undefined}
                 className={`${inputClass} ${
-                  adult && vitalFlag(f.name, typed[f.name] ?? "")
-                    ? vitalFlag(f.name, typed[f.name] ?? "")!.urgent
-                      ? "border-red-400! dark:border-red-700!"
-                      : "border-amber-400! dark:border-amber-700!"
-                    : ""
+                  flagOf(f.name) ? (flagOf(f.name)!.urgent ? "border-red-400! dark:border-red-700!" : "border-amber-400! dark:border-amber-700!") : ""
                 }`}
               />
-              {adult && vitalFlag(f.name, typed[f.name] ?? "") && (
+              {flagOf(f.name) && (
                 <span
                   id={`${f.name}-flag`}
                   role="status"
                   className={`mt-1 flex items-center gap-1 text-xs font-medium ${
-                    vitalFlag(f.name, typed[f.name] ?? "")!.urgent ? "text-red-700 dark:text-red-300" : "text-amber-800 dark:text-amber-300"
+                    flagOf(f.name)!.urgent ? "text-red-700 dark:text-red-300" : "text-amber-800 dark:text-amber-300"
                   }`}
                 >
                   <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
-                  {vitalFlag(f.name, typed[f.name] ?? "")!.text}
+                  {flagOf(f.name)!.text}
                 </span>
               )}
               </>
             </Field>
           ))}
         </div>
-        {!adult && age !== null && (
-          <p className="mt-3 text-xs text-slate-500">A child: compare the vitals with the normal range for their age (no automatic flags).</p>
-        )}
-        {bmi(weight, height) && (
-          <p className="mt-3">
-            <Badge tone="brand">BMI {bmi(weight, height)} kg/m²</Badge>
+        {!adult && ageMonths !== null && (
+          <p className="mt-3 text-xs text-slate-500">
+            A child ({ageMonths < 24 ? `${ageMonths} months` : `${Math.floor(ageMonths / 12)} years`}): flags use the usual ranges for this age.
           </p>
+        )}
+        {ageMonths === null && <p className="mt-3 text-xs text-slate-500">Age unknown: only low oxygen is flagged automatically.</p>}
+        {bmi(weight, height) && (
+          <p className="mt-3 flex flex-wrap items-center gap-2">
+            <Badge tone="brand">BMI {bmi(weight, height)} kg/m²</Badge>
+            {adult && bmiFlag(Number(bmi(weight, height))) && (
+              <Badge tone={bmiFlag(Number(bmi(weight, height)))!.urgent ? "danger" : "warning"}>{bmiFlag(Number(bmi(weight, height)))!.text}</Badge>
+            )}
+          </p>
+        )}
+
+        {/* Triage priority: the queue is seen in this order (emergencies first). */}
+        <fieldset className="mt-5 border-t border-slate-100 pt-4 dark:border-slate-800">
+          <legend className="text-sm font-medium">Triage priority</legend>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {(Object.keys(TRIAGE) as TriageLevel[]).map((l) => (
+              <label
+                key={l}
+                className={`flex cursor-pointer items-center gap-2 rounded-lg px-3 py-1.5 text-sm ring-1 ${
+                  triage === l ? `${TRIAGE[l].tone} ring-transparent` : "ring-slate-200 hover:bg-slate-50 dark:ring-slate-700 dark:hover:bg-slate-800"
+                }`}
+              >
+                <input type="radio" name="triageLevel" value={l} checked={triage === l} onChange={() => setTriage(l)} className="sr-only" />
+                <span aria-hidden className={`inline-block size-2.5 rounded-full ${TRIAGE[l].tone.split(" ")[0]} ${triage === l ? "ring-2 ring-white" : ""}`} />
+                <span className="font-medium">{TRIAGE[l].label}</span>
+                <span className={`text-xs ${triage === l ? "opacity-90" : "text-slate-500"}`}>{TRIAGE[l].hint}</span>
+              </label>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Suggested from the vitals: <span className="font-medium">{TRIAGE[suggestion.level].label}</span>
+            {suggestion.because && ` (${suggestion.because.toLowerCase()})`}. Look at the patient too: danger signs the vitals don&apos;t show come first.
+          </p>
+        </fieldset>
+
+        {canBePregnant && (
+          <fieldset className="mt-5 border-t border-slate-100 pt-4 dark:border-slate-800">
+            <legend className="text-sm font-medium">Pregnancy and breastfeeding</legend>
+            <div className="mt-2 flex flex-wrap items-end gap-3">
+              <Field label="Could she be pregnant?" error={err.pregnancyStatus}>
+                <select name="pregnancyStatus" value={pregnancy} onChange={(e) => setPregnancy(e.target.value)} className={`${inputClass} block w-auto`}>
+                  <option value="">Not asked</option>
+                  <option value="NOT_PREGNANT">Not pregnant</option>
+                  <option value="POSSIBLE">Possibly (test pending)</option>
+                  <option value="PREGNANT">Pregnant</option>
+                </select>
+              </Field>
+              {pregnancy === "PREGNANT" && (
+                <Field label="First day of last period" error={err.lmpDate}>
+                  <input name="lmpDate" type="date" value={lmp} onChange={(e) => setLmp(e.target.value)} className={`${inputClass} block w-auto`} />
+                </Field>
+              )}
+              {pregnancy === "PREGNANT" && gestation(lmp, visit.checkedInAt) && <Badge tone="violet">{gestation(lmp, visit.checkedInAt)}</Badge>}
+              <label className="flex items-center gap-2 pb-2 text-sm">
+                <input type="hidden" name="breastfeedingAsked" value="1" />
+                <input type="checkbox" name="breastfeeding" checked={feeding} onChange={(e) => setFeeding(e.target.checked)} /> Breastfeeding
+              </label>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">Prescriptions are checked against this: drugs to avoid in pregnancy or while breastfeeding are flagged.</p>
+          </fieldset>
         )}
       </section>
 
@@ -287,6 +371,9 @@ export function ConsultationForm({
             </div>
             <Field label="Plan" error={err.plan}>
               <textarea ref={plan} name="plan" rows={3} defaultValue={initial("plan")} className={inputClass} />
+            </Field>
+            <Field label="Advice for the patient" error={err.patientAdvice} hint="In plain words: printed on the patient's visit summary">
+              <textarea name="patientAdvice" rows={2} defaultValue={initial("patientAdvice")} placeholder="e.g. Drink plenty of fluids. Less salt. Come back in 2 weeks." className={inputClass} />
             </Field>
           </>
         )}
