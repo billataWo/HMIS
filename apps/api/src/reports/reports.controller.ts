@@ -178,7 +178,8 @@ export class ReportsController {
       lab: {
         ordered: labOrders.length,
         verified: labOrders.filter((o) => o.status === 'VERIFIED').length,
-        abnormal: labOrders.filter((o) => o.resultFlag === 'H' || o.resultFlag === 'L').length,
+        abnormal: labOrders.filter((o) => !!o.resultFlag && o.resultFlag !== 'N').length,
+        critical: labOrders.filter((o) => o.resultFlag === 'LL' || o.resultFlag === 'HH').length,
         topTests: tally(labOrders, (o) => o.labTest.name, 5).map(([name, count]) => ({ name, count })),
       },
       pharmacy: {

@@ -145,6 +145,7 @@ export class PrescriptionsController {
       throw new ConflictException('This visit is closed; prescriptions can no longer be added');
     }
     if (visit.kind === 'WALK_IN') throw new ConflictException('This is a pharmacy counter sale, not a consultation');
+    if (visit.kind === 'LAB') throw new ConflictException('This is a lab-only visit, not a consultation');
     if (visit.status === 'WAITING') throw new ConflictException('Call the patient in before prescribing');
 
     const drugIds = [...new Set(body.items.map((i) => i.drugId))];

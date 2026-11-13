@@ -1,12 +1,13 @@
-import { FlaskConical } from "lucide-react";
+import { ClipboardPlus, FlaskConical } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { Flash } from "@/components/flash";
 import { LabValue } from "@/components/lab-result";
-import { EmptyState, PageHeader, Skeleton } from "@/components/ui";
+import { Badge, buttonClass, EmptyState, PageHeader, Skeleton } from "@/components/ui";
 import { api, ApiError, type LabWorkOrder } from "@/lib/api";
 import { ageFrom, formatDuration, formatTime, fullName } from "@/lib/format";
-import { BenchRow } from "./bench-row";
+import { AmendResult, BenchRow } from "./bench-row";
 
 /** Groups a flat list of orders by visit, keeping the order of first appearance. */
 function byVisit(orders: LabWorkOrder[]) {
@@ -39,11 +40,13 @@ async function Worklist() {
                   <span className="font-medium">{fullName(visit.patient)}</span>
                   <span className="text-sm text-slate-500">
                     {" "}· {visit.patient.mrn} · {visit.patient.sex === "MALE" ? "M" : "F"}
-                    {age !== null && ` · ${age}y`} · queue #{visit.queueNumber}
+                    {age !== null && ` · ${age}y`}
+                    {visit.kind === "LAB" ? "" : ` · queue #${visit.queueNumber}`}
                   </span>
                 </div>
                 <span className="text-xs text-slate-500">
-                  Dr. {orderedBy.fullName} · {formatTime(orderedAt)} · waiting {formatDuration(orderedAt)}
+                  {visit.kind === "LAB" ? `Lab-only request${group[0].requestedBy ? ` from ${group[0].requestedBy}` : ""}` : `Dr. ${orderedBy.fullName}`} · {formatTime(orderedAt)} · waiting{" "}
+                  {formatDuration(orderedAt)}
                 </span>
               </div>
               <ul className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -68,10 +71,11 @@ async function Worklist() {
                   {fullName(o.visit.patient)} · {o.labTest.name}: <LabValue o={o} />
                 </span>
                 <span className="text-xs text-slate-500">
-                  {o.verifiedAt && formatTime(o.verifiedAt)} ·{" "}
+                  {o.amendedAt && <Badge tone="warning">Amended</Badge>} {o.verifiedAt && formatTime(o.verifiedAt)} ·{" "}
                   <Link href={`/lab-report/${o.visit.id}`} target="_blank" className="text-brand-700 hover:underline dark:text-brand-400">
                     Print
-                  </Link>
+                  </Link>{" "}
+                  · <AmendResult o={o} />
                 </span>
               </li>
             ))}
@@ -82,10 +86,26 @@ async function Worklist() {
   );
 }
 
-export default function LabPage() {
+async function Message({ searchParams }: { searchParams: Promise<{ done?: string; error?: string }> }) {
+  return <Flash params={await searchParams} />;
+}
+
+export default function LabPage({ searchParams }: PageProps<"/lab">) {
   return (
     <>
-      <PageHeader title="Laboratory" subtitle="ላብራቶሪ · samples and results" />
+      <PageHeader
+        title="Laboratory"
+        subtitle="ላብራቶሪ · samples and results"
+        actions={
+          <Link href="/lab/request?from=lab" className={buttonClass}>
+            <ClipboardPlus aria-hidden />
+            Lab-only request
+          </Link>
+        }
+      />
+      <Suspense fallback={null}>
+        <Message searchParams={searchParams as Promise<{ done?: string; error?: string }>} />
+      </Suspense>
       <AutoRefresh seconds={20} />
       <Suspense fallback={<Skeleton className="h-64" />}>
         <Worklist />

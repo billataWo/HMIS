@@ -1,5 +1,6 @@
-import { Body, ConflictException, Controller, Get, NotFoundException, Param, Patch, Post } from '@nestjs/common';
+import { Body, ConflictException, Controller, Get, NotFoundException, Param, Patch, Post, Put } from '@nestjs/common';
 import { z } from 'zod';
+import { applyRecommendedRanges, type Db } from '@hmis/db';
 import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
 import { toCents } from '../common/money.js';
@@ -81,6 +82,35 @@ const componentData = (tenantId: string, c: z.infer<typeof ComponentSchema>, sor
   resultOptions: c.resultOptions,
 });
 
+/** Limits must make sense together: low below high, critical beyond normal. */
+const limits = <T extends { refLow?: number | null; refHigh?: number | null; critLow?: number | null; critHigh?: number | null }>(o: z.ZodType<T>) =>
+  o
+    .refine((r) => r.refLow == null || r.refHigh == null || r.refLow < r.refHigh, { message: 'Low must be below high', path: ['refHigh'] })
+    .refine((r) => r.critLow == null || r.critHigh == null || r.critLow < r.critHigh, { message: 'Critical low must be below critical high', path: ['critHigh'] })
+    .refine((r) => r.critLow == null || r.refLow == null || r.critLow <= r.refLow, { message: 'Critical low must be at or below the normal low', path: ['critLow'] })
+    .refine((r) => r.critHigh == null || r.refHigh == null || r.critHigh >= r.refHigh, { message: 'Critical high must be at or above the normal high', path: ['critHigh'] });
+const limit = z.number().min(-1_000_000).max(1_000_000).nullable().optional();
+const RangeSchema = limits(
+  z
+    .object({
+      componentId: z.uuid().nullable().optional(),
+      sex: z.enum(['MALE', 'FEMALE']).nullable().optional(),
+      ageFromDays: z.number().int().min(0).max(150 * 365).default(0),
+      ageToDays: z.number().int().min(1).max(150 * 365).nullable().optional(),
+      refLow: limit,
+      refHigh: limit,
+      critLow: limit,
+      critHigh: limit,
+    })
+    .refine((r) => r.ageToDays == null || r.ageToDays > r.ageFromDays, { message: 'The age group must end after it starts', path: ['ageToDays'] }),
+);
+const RangesSchema = z.object({
+  critLow: limit,
+  critHigh: limit,
+  components: z.array(z.object({ id: z.uuid(), critLow: limit, critHigh: limit })).max(60).default([]),
+  ranges: z.array(RangeSchema).max(100).default([]),
+});
+
 const dec = (n: number | null | undefined, places: number) => (n === undefined ? undefined : n === null ? null : n.toFixed(places));
 const priceChange = (from: { toString(): string }, to: number | undefined) =>
   to !== undefined && toCents(from) !== toCents(to) ? { price: { from: from.toString(), to: to.toFixed(2) } } : {};
@@ -123,7 +153,7 @@ export class CatalogController {
     return this.prisma.client.labTest.findMany({
       where: { tenantId: me.tenantId },
       orderBy: [{ active: 'desc' }, { name: 'asc' }],
-      include: { components: { orderBy: { sortOrder: 'asc' } } },
+      include: { components: { orderBy: { sortOrder: 'asc' }, include: { ranges: true } }, ranges: true },
     });
   }
 
@@ -141,7 +171,7 @@ export class CatalogController {
         refHigh: dec(body.refHigh, 3),
         components: { create: parts.map((c, i) => componentData(me.tenantId, c, i)) },
       },
-      include: { components: { orderBy: { sortOrder: 'asc' } } },
+      include: { components: { orderBy: { sortOrder: 'asc' }, include: { ranges: true } }, ranges: true },
     });
     await this.audit.log(me, 'labtest.create', 'LabTest', t.id, { name: t.name, price: t.price.toString() });
     return t;
@@ -164,10 +194,85 @@ export class CatalogController {
       return tx.labTest.update({
         where: { id },
         data: { ...fields, price: dec(body.price, 2) ?? undefined, refLow: dec(body.refLow, 3), refHigh: dec(body.refHigh, 3) },
-        include: { components: { orderBy: { sortOrder: 'asc' } } },
+        include: { components: { orderBy: { sortOrder: 'asc' }, include: { ranges: true } }, ranges: true },
       });
     });
     await this.audit.log(me, 'labtest.update', 'LabTest', id, { fields: Object.keys(body), ...priceChange(t.price, body.price) });
+    return updated;
+  }
+
+  /**
+   * A test's critical (panic) limits and its ranges for men, women and age groups, for the test
+   * itself or each panel component, saved together (the list replaces the current one). Results
+   * already given keep the range they were judged by (printed with them).
+   */
+  /**
+   * For clinics set up before ranges existed: adds the recommended critical limits and ranges for
+   * men, women and children to the starter tests that have none of their own (never overwrites).
+   */
+  @Post('lab-tests/recommended-ranges')
+  async recommendedRanges(@CurrentUser() me: AuthUser) {
+    const filled = await this.prisma.client.$transaction((tx) => applyRecommendedRanges(tx as unknown as Db, me.tenantId));
+    await this.audit.log(me, 'labtest.recommended-ranges', 'LabTest', undefined, { filled });
+    return { filled };
+  }
+
+  @Put('lab-tests/:id/ranges')
+  async saveRanges(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(RangesSchema)) body: z.infer<typeof RangesSchema>) {
+    const t = await this.prisma.client.labTest.findFirst({ where: { id, tenantId: me.tenantId }, include: { components: true } });
+    if (!t) throw new NotFoundException('Lab test not found');
+    const ids = new Set(t.components.map((c) => c.id));
+    for (const c of body.components) if (!ids.has(c.id)) throw new NotFoundException('That component is not part of this test');
+    for (const r of body.ranges) if (r.componentId && !ids.has(r.componentId)) throw new NotFoundException('That component is not part of this test');
+    if (t.components.length && body.ranges.some((r) => !r.componentId)) throw new ConflictException('This is a panel: give each range a component');
+    // Critical limits sit beyond the normal range of the test (or component) they belong to.
+    const beyond = (name: string, ref: { refLow: unknown; refHigh: unknown }, crit: { critLow?: number | null; critHigh?: number | null }) => {
+      if (crit.critLow != null && ref.refLow != null && crit.critLow > Number(ref.refLow)) {
+        throw new ConflictException(`${name}: the critical low must be at or below the normal low (${Number(ref.refLow)})`);
+      }
+      if (crit.critHigh != null && ref.refHigh != null && crit.critHigh < Number(ref.refHigh)) {
+        throw new ConflictException(`${name}: the critical high must be at or above the normal high (${Number(ref.refHigh)})`);
+      }
+    };
+    beyond(t.name, t, body);
+    for (const c of body.components) beyond(t.components.find((x) => x.id === c.id)!.name, t.components.find((x) => x.id === c.id)!, c);
+    // Two ranges for the same thing, the same people and overlapping ages would leave the choice to chance.
+    for (const [i, a] of body.ranges.entries()) {
+      for (const b of body.ranges.slice(i + 1)) {
+        const overlap = a.ageFromDays < (b.ageToDays ?? Infinity) && b.ageFromDays < (a.ageToDays ?? Infinity);
+        if ((a.componentId ?? null) === (b.componentId ?? null) && (a.sex ?? null) === (b.sex ?? null) && overlap) {
+          const name = a.componentId ? t.components.find((c) => c.id === a.componentId)!.name : t.name;
+          const who = a.sex ? (a.sex === 'MALE' ? 'men' : 'women') : 'patients';
+          throw new ConflictException(`Two ranges for ${name} cover the same ${who} at the same ages`);
+        }
+      }
+    }
+    const updated = await this.prisma.client.$transaction(async (tx) => {
+      // The whole set is replaced: a limit left out is cleared.
+      await tx.labTest.update({ where: { id }, data: { critLow: dec(body.critLow ?? null, 3), critHigh: dec(body.critHigh ?? null, 3) } });
+      for (const c of body.components) {
+        await tx.labTestComponent.update({ where: { id: c.id }, data: { critLow: dec(c.critLow ?? null, 3), critHigh: dec(c.critHigh ?? null, 3) } });
+      }
+      await tx.labRange.deleteMany({ where: { OR: [{ labTestId: id }, { componentId: { in: [...ids] } }] } });
+      if (body.ranges.length) {
+        await tx.labRange.createMany({
+          data: body.ranges.map((r) => ({
+            tenantId: me.tenantId,
+            labTestId: r.componentId ? null : id,
+            componentId: r.componentId ?? null,
+            sex: r.sex ?? null,
+            ageFromDays: r.ageFromDays,
+            ageToDays: r.ageToDays ?? null,
+            refLow: dec(r.refLow, 3) ?? null,
+            refHigh: dec(r.refHigh, 3) ?? null,
+            critLow: dec(r.critLow, 3) ?? null,
+            critHigh: dec(r.critHigh, 3) ?? null,
+          })),
+        });
+      }
+      return tx.labTest.findUniqueOrThrow({ where: { id }, include: { components: { orderBy: { sortOrder: 'asc' }, include: { ranges: true } }, ranges: true } });
+    });
+    await this.audit.log(me, 'labtest.ranges', 'LabTest', id, { critLow: body.critLow, critHigh: body.critHigh, ranges: body.ranges.length });
     return updated;
   }
 }

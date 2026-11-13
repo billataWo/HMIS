@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { api, ApiError, type CatalogLabTest, type CatalogService } from "@/lib/api";
 import { LabTestRow, ServiceRow } from "./price-forms";
+import { RangesEditor, RecommendedRanges } from "./ranges-editor";
 
 async function Prices() {
   let services: CatalogService[], tests: CatalogLabTest[];
@@ -33,9 +34,13 @@ async function Prices() {
           </Link>
           .
         </p>
+        <RecommendedRanges />
         <div className="divide-y divide-slate-100 dark:divide-slate-800">
           {tests.map((t) => (
-            <LabTestRow key={t.id} t={t} />
+            <div key={t.id} className="pb-3">
+              <LabTestRow t={t} />
+              <RangesEditor t={t} />
+            </div>
           ))}
           <LabTestRow />
         </div>

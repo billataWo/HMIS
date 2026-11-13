@@ -45,6 +45,7 @@ export class ProceduresController {
     const visit = await this.visit(me, visitId);
     if (visit.status === 'CANCELLED' || visit.status === 'COMPLETED') throw new ConflictException('This visit is closed');
     if (visit.kind === 'WALK_IN') throw new ConflictException('This is a pharmacy counter sale, not a consultation');
+    if (visit.kind === 'LAB') throw new ConflictException('This is a lab-only visit, not a consultation');
     const service = await this.prisma.client.serviceItem.findFirst({ where: { id: body.serviceId, tenantId: me.tenantId, active: true, kind: 'PROCEDURE' } });
     if (!service) throw new NotFoundException('Procedure not found in the price list');
     const charge = await this.prisma.client.charge.create({

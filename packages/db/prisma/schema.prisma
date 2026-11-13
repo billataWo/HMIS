@@ -420,6 +420,7 @@ model StockBatch {
   movements StockMovement[]
 
   @@index([drugId, expiryDate]) // first-expiry-first-out lookups
+  @@index([storeId])
 }
 
 /// Drugs under special control (Ethiopian Food and Drug Authority): kept in a register with a running balance.
@@ -462,9 +463,14 @@ model LabTest {
   refLow        Decimal? @db.Decimal(12, 3)
   refHigh       Decimal? @db.Decimal(12, 3)
   price         Decimal  @db.Decimal(12, 2)
+  /// Critical (panic) limits: a result beyond them is called to the doctor at once.
+  critLow       Decimal? @db.Decimal(12, 3)
+  critHigh      Decimal? @db.Decimal(12, 3)
   // For qualitative tests (e.g. malaria film): the allowed answers. Empty = numeric or free text.
   resultOptions String[]
   active        Boolean  @default(true)
+  /// Ranges for men, women and age groups; the test's own range is the default.
+  ranges        LabRange[]
 
   orders     LabOrder[]
   // A panel (CBC, urinalysis…) has several components, each with its own range or answers; the
@@ -481,10 +487,13 @@ model LabTestComponent {
   unit          String?
   refLow        Decimal? @db.Decimal(12, 3)
   refHigh       Decimal? @db.Decimal(12, 3)
+  critLow       Decimal? @db.Decimal(12, 3)
+  critHigh      Decimal? @db.Decimal(12, 3)
   resultOptions String[]
   sortOrder     Int      @default(0)
 
   values LabResultValue[]
+  ranges LabRange[]
 
   @@index([labTestId])
 }
@@ -500,9 +509,65 @@ model LabResultValue {
   componentId String
   component   LabTestComponent @relation(fields: [componentId], references: [id])
   value       String
-  flag        String? // H, L, N (numeric components only)
+  flag        String? // HH, H, N, L, LL (numeric components only; double = critical)
+  /// The range this result was judged against, as printed ("13–17 g/dL (men)").
+  rangeText   String?
 
   @@unique([labOrderId, componentId])
+}
+
+/// A reference (and critical) range for men or women and/or an age group. The most specific range
+/// that fits the patient wins; the test's or component's own range applies otherwise.
+model LabRange {
+  id          String            @id @default(uuid())
+  tenantId    String
+  labTestId   String?
+  labTest     LabTest?          @relation(fields: [labTestId], references: [id], onDelete: Cascade)
+  componentId String?
+  component   LabTestComponent? @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  sex         Sex?
+  /// Age band in days, from (inclusive) to (exclusive; null = no upper limit).
+  ageFromDays Int               @default(0)
+  ageToDays   Int?
+  refLow      Decimal?          @db.Decimal(12, 3)
+  refHigh     Decimal?          @db.Decimal(12, 3)
+  critLow     Decimal?          @db.Decimal(12, 3)
+  critHigh    Decimal?          @db.Decimal(12, 3)
+
+  @@index([labTestId])
+  @@index([componentId])
+}
+
+/// A released result that was corrected: what it said before, and why it changed.
+model LabAmendment {
+  id             String   @id @default(uuid())
+  tenantId       String
+  labOrderId     String
+  labOrder       LabOrder @relation(fields: [labOrderId], references: [id], onDelete: Cascade)
+  previousValue  String?
+  previousFlag   String?
+  previousValues Json?
+  reason         String
+  userId         String
+  createdAt      DateTime @default(now())
+
+  @@index([labOrderId])
+}
+
+/// A sample the lab could not use (haemolysed, clotted, too little…): a new one is collected.
+model LabSampleRejection {
+  id         String   @id @default(uuid())
+  tenantId   String
+  labOrderId String
+  labOrder   LabOrder @relation(fields: [labOrderId], references: [id], onDelete: Cascade)
+  sampleId   String?
+  reason     String
+  note       String?
+  userId     String
+  createdAt  DateTime @default(now())
+
+  @@index([labOrderId])
+  @@index([tenantId, createdAt])
 }
 
 enum LabOrderStatus {
@@ -524,12 +589,29 @@ model LabOrder {
   orderedById       String
   orderedBy         User             @relation(fields: [orderedById], references: [id])
   status            LabOrderStatus   @default(ORDERED)
+  /// Lab-only visits: who asked for the test (a doctor or clinic outside), if anyone.
+  requestedBy       String?
   sampleId          String?
   sampleCollectedAt DateTime?
   collectedById     String?
   collectedBy       User?            @relation("LabCollectedBy", fields: [collectedById], references: [id])
   resultValue       String?
-  resultFlag        String? // H, L, N (numeric tests only)
+  resultFlag        String? // HH, H, N, L, LL (numeric only; double letters = critical)
+  /// The range the result was judged against, as printed (single-value tests).
+  rangeText         String?
+  /// A result beyond a critical limit: phoned to the doctor before it is released.
+  critical          Boolean          @default(false)
+  /// Who was told of the critical result, how and when (written by the lab at verification).
+  criticalNotified  String?
+  criticalNotifiedAt DateTime?
+  /// Needs the doctor's attention: CRITICAL result, or AMENDED after release; cleared when they mark it seen.
+  alert             String?
+  alertSeenAt       DateTime?
+  alertSeenById     String?
+  amendedAt         DateTime?
+  /// Samples rejected for this order (haemolysed, clotted…); the last reason, while a new one is awaited.
+  rejections        Int              @default(0)
+  rejectReason      String?
   resultNote        String?
   orderedAt         DateTime         @default(now())
   resultedAt        DateTime?
@@ -539,6 +621,8 @@ model LabOrder {
   verifiedById      String?
   verifiedBy        User?            @relation("LabVerifiedBy", fields: [verifiedById], references: [id])
   values            LabResultValue[] // panel tests: one per component
+  amendments        LabAmendment[]
+  sampleRejections  LabSampleRejection[]
 
   @@index([tenantId, status])
 }
@@ -567,6 +651,7 @@ enum ServiceKind {
 enum VisitKind {
   OPD
   WALK_IN
+  LAB // tests only: a request from another clinic, or the patient's own
 }
 
 /**

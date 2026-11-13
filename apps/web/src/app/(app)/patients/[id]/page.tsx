@@ -8,8 +8,9 @@ import { AllergyEditor } from "@/components/allergy-editor";
 import { canRegister, FRONT_DESK } from "@/lib/roles";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge, linkClass, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
+import { LabHistory } from "@/components/lab-history";
 import { ReturnForm } from "@/components/return-form";
-import { api, ApiError, type Appointment, type Doctor, type Me, type Medication, type PatientDetail, type QueueVisit, type Service } from "@/lib/api";
+import { api, ApiError, type Appointment, type Doctor, type LabHistoryOrder, type Me, type Medication, type PatientDetail, type QueueVisit, type Service } from "@/lib/api";
 import { shortDirections } from "@/lib/directions";
 import { ageFrom, clinicToday, formatDualDate, formatTime, fullName } from "@/lib/format";
 
@@ -27,7 +28,7 @@ async function Patient({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ checkedIn?: string; error?: string }>;
+  searchParams: Promise<{ checkedIn?: string; error?: string; done?: string }>;
 }) {
   const [{ id }, flash] = await Promise.all([params, searchParams]);
   let p: PatientDetail;
@@ -54,6 +55,9 @@ async function Patient({
   const canDispense = me.role === "ADMIN" || me.role === "PHARMACIST";
   // Medication history: for the people who prescribe and dispense.
   const meds = ["ADMIN", "DOCTOR", "NURSE", "PHARMACIST"].includes(me.role) ? await api<Medication[]>(`/patients/${p.id}/medications`) : null;
+  // Lab history: for clinicians and the lab.
+  const labs = ["ADMIN", "DOCTOR", "NURSE", "LAB_TECH"].includes(me.role) ? await api<LabHistoryOrder[]>(`/patients/${p.id}/lab-results`) : null;
+  const canRequestLab = canCheckIn || me.role === "LAB_TECH";
   const age = ageFrom(p.dateOfBirth);
 
   return (
@@ -66,6 +70,11 @@ async function Patient({
             {canBook && (
               <Link href={`/appointments/new?patientId=${p.id}`} className={secondaryButtonClass}>
                 Book appointment
+              </Link>
+            )}
+            {canRequestLab && (
+              <Link href={`/lab/request?patientId=${p.id}`} className={secondaryButtonClass}>
+                Lab tests only
               </Link>
             )}
             {canRegister(me) && (
@@ -186,7 +195,7 @@ async function Patient({
             <ul className="divide-y divide-slate-100 text-sm dark:divide-slate-800">
               {p.visits.map((v) => (
                 <li key={v.id} className="py-2">
-                  {canOpenVisits && v.kind !== "WALK_IN" ? (
+                  {canOpenVisits && v.kind === "OPD" ? (
                     <Link href={`/visits/${v.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-400">
                       {formatDualDate(v.checkedInAt)}
                     </Link>
@@ -194,7 +203,7 @@ async function Patient({
                     <span className="font-medium">{formatDualDate(v.checkedInAt)}</span>
                   )}
                   <span className="ml-2">
-                    {v.kind === "WALK_IN" ? <Badge tone="violet">Pharmacy sale</Badge> : <StatusBadge status={v.status} />}
+                    {v.kind === "WALK_IN" ? <Badge tone="violet">Pharmacy sale</Badge> : v.kind === "LAB" ? <Badge tone="info">Lab only</Badge> : <StatusBadge status={v.status} />}
                   </span>
                   {v.doctor && <span className="text-slate-500"> · Dr. {v.doctor.fullName}</span>}
                   {v.chiefComplaint && <span className="block">{v.chiefComplaint}</span>}
@@ -207,6 +216,7 @@ async function Patient({
           )}
         </section>
 
+        {labs && <LabHistory history={labs} />}
         {meds && <Medications meds={meds} dispenses={canDispense} canOpenInvoices={me.role === "ADMIN"} />}
       </div>
     </>

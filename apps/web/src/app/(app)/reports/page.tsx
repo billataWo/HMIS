@@ -165,7 +165,14 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
           </dl>
         </Panel>
 
-        <Panel title="Lab" action={<span className="text-xs text-slate-500">{d.lab.abnormal} abnormal results</span>}>
+        <Panel
+          title="Lab"
+          action={
+            <span className="text-xs text-slate-500">
+              {d.lab.abnormal} abnormal results{d.lab.critical ? <span className="font-medium text-red-700 dark:text-red-400"> · {d.lab.critical} critical</span> : null}
+            </span>
+          }
+        >
           <p className="mb-3 text-sm">
             {d.lab.ordered} tests ordered · {d.lab.verified} verified
           </p>

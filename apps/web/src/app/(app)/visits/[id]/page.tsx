@@ -9,7 +9,7 @@ import { AllergyEditor } from "@/components/allergy-editor";
 import { StatusBadge } from "@/components/status-badge";
 import { buttonClass, Notice, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { Flash } from "@/components/flash";
-import { api, ApiError, type ClinicalDocument, type LabOrder, type LabTest, type Me, type Prescription, type ProcedureCharge, type Service, type VisitDetail } from "@/lib/api";
+import { api, ApiError, type ClinicalDocument, type LabHistoryOrder, type LabOrder, type LabTest, type Me, type Prescription, type ProcedureCharge, type Service, type VisitDetail } from "@/lib/api";
 import { ageFrom, etb, formatDualDate, formatDuration, formatTime, fullName } from "@/lib/format";
 import { ConsultationForm } from "./consultation-form";
 import { DiagnosisPanel } from "./diagnosis-panel";
@@ -80,9 +80,11 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
     throw e;
   }
 
+  // Earlier results of the same tests (other visits), shown beside this visit's results.
+  const labHistory = (await api<LabHistoryOrder[]>(`/patients/${v.patient.id}/lab-results`).catch(() => [])).filter((o) => o.visit.id !== v.id);
   // A pharmacy counter sale is shown for reference only: it is not a consultation.
-  const closed = v.status === "COMPLETED" || v.status === "CANCELLED" || v.kind === "WALK_IN";
-  const mode = v.kind === "WALK_IN" ? null : me.role === "DOCTOR" ? "doctor" : me.role === "NURSE" ? "nurse" : null;
+  const closed = v.status === "COMPLETED" || v.status === "CANCELLED" || v.kind !== "OPD";
+  const mode = v.kind !== "OPD" ? null : me.role === "DOCTOR" ? "doctor" : me.role === "NURSE" ? "nurse" : null;
   const feeUnpaid = v.prepayment && !v.consultationPaid;
   const age = ageFrom(v.patient.dateOfBirth);
   const returnTo = `/visits/${v.id}`;
@@ -131,6 +133,7 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] xl:gap-8">
         <div className="min-w-0 space-y-6">
           {v.kind === "WALK_IN" && <Notice tone="info">This is a pharmacy counter sale, not a consultation.</Notice>}
+          {v.kind === "LAB" && <Notice tone="info">This is a lab-only visit (tests without a consultation here).</Notice>}
           {v.status === "WAITING" && mode === "doctor" && feeUnpaid && (
             <Notice tone="warning">The consultation fee has not been paid yet. The patient can be called in once the cashier has taken it.</Notice>
           )}
@@ -183,7 +186,7 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
           )}
           <DiagnosisPanel visitId={v.id} diagnoses={v.diagnoses} editable={!closed && mode === "doctor"} />
           {/* Tests and drugs are ordered once the doctor has called the patient in. */}
-          <LabPanel visitId={v.id} orders={labOrders} tests={labTests} editable={!closed && mode === "doctor" && v.status !== "WAITING"} />
+          <LabPanel visitId={v.id} orders={labOrders} tests={labTests} history={labHistory} editable={!closed && mode === "doctor" && v.status !== "WAITING"} />
           <PrescriptionPanel visitId={v.id} prescriptions={prescriptions} editable={!closed && mode === "doctor" && v.status !== "WAITING"} />
           <ProceduresPanel visitId={v.id} items={procedures} procedures={services.filter((s) => s.kind === "PROCEDURE")} editable={!closed && !!mode} />
           {mode === "doctor" || documents.length > 0 ? (

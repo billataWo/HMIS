@@ -8,6 +8,7 @@ import { isSettled, prepaymentRequired, settlementSelect } from '../common/settl
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { queuePatientSelect } from '../visits/visits.controller.js';
+import { type BandRange, type BaseRange, flagValue, isCritical, type Patient, pickRange, rangeText } from './ranges.js';
 
 const OrderSchema = z.object({
   labTestIds: z
@@ -16,18 +17,64 @@ const OrderSchema = z.object({
     .max(30)
     .refine((ids) => new Set(ids).size === ids.length, 'Each test may appear only once'),
 });
+/** Tests for someone who did not see a doctor here: a request from outside, or their own. */
+const WalkInSchema = z.object({
+  patientId: z.uuid(), // results belong on a named patient's record
+  labTestIds: OrderSchema.shape.labTestIds,
+  requestedBy: z
+    .string()
+    .trim()
+    .max(200)
+    .transform((s) => s || undefined)
+    .optional(),
+});
 const CollectSchema = z.object({ sampleId: z.string().trim().max(50).optional() });
-const ResultSchema = z
+const resultFields = {
+  value: z.string().trim().max(2000).optional(), // single-value tests
+  values: z.array(z.object({ componentId: z.uuid(), value: z.string().trim().max(200) })).max(60).optional(), // panels
+  note: z.string().trim().max(1000).optional(),
+};
+const hasResult = (b: { value?: string; values?: { value: string }[] }) => (b.value && b.value.length > 0) || b.values?.some((v) => v.value);
+const ResultSchema = z.object(resultFields).refine(hasResult, { message: 'Enter the result', path: ['value'] });
+/** Who was told of a critical result, how and when ("Dr. Dawit, by phone"). */
+const notified = z
+  .string()
+  .trim()
+  .max(200)
+  .transform((s) => s || undefined)
+  .optional();
+const VerifySchema = z.object({ notified });
+const AmendSchema = z
+  .object({ ...resultFields, notified, reason: z.string().trim().min(5, 'Say what was wrong with the released result').max(500) })
+  .refine(hasResult, { message: 'Enter the corrected result', path: ['value'] });
+
+/** Why a sample can't be used; the lab collects a new one. */
+export const REJECT_REASONS = {
+  HAEMOLYSED: 'Haemolysed',
+  CLOTTED: 'Clotted',
+  INSUFFICIENT: 'Too little sample',
+  WRONG_CONTAINER: 'Wrong tube or container',
+  LABEL: 'Unlabelled or wrongly labelled',
+  CONTAMINATED: 'Contaminated',
+  DELAYED: 'Too old when it reached the lab',
+  OTHER: 'Other',
+} as const;
+const RejectSchema = z
   .object({
-    value: z.string().trim().max(2000).optional(), // single-value tests
-    values: z.array(z.object({ componentId: z.uuid(), value: z.string().trim().max(200) })).max(60).optional(), // panels
-    note: z.string().trim().max(1000).optional(),
+    reason: z.enum(Object.keys(REJECT_REASONS) as [keyof typeof REJECT_REASONS, ...(keyof typeof REJECT_REASONS)[]]),
+    note: z
+      .string()
+      .trim()
+      .max(300)
+      .transform((s) => s || undefined)
+      .optional(),
   })
-  .refine((b) => (b.value && b.value.length > 0) || b.values?.some((v) => v.value), { message: 'Enter the result', path: ['value'] });
+  .refine((b) => b.reason !== 'OTHER' || !!b.note, { message: 'Say what was wrong with the sample', path: ['note'] });
 
 const LAB: Role[] = ['ADMIN', 'LAB_TECH'];
 const OPEN: LabOrderStatus[] = ['ORDERED', 'SAMPLE_COLLECTED', 'RESULTED'];
 
+const rangeSelect = { sex: true, ageFromDays: true, ageToDays: true, refLow: true, refHigh: true, critLow: true, critHigh: true } satisfies Prisma.LabRangeSelect;
 const orderInclude = {
   labTest: {
     select: {
@@ -37,39 +84,52 @@ const orderInclude = {
       unit: true,
       refLow: true,
       refHigh: true,
+      critLow: true,
+      critHigh: true,
       resultOptions: true,
-      components: { orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, unit: true, refLow: true, refHigh: true, resultOptions: true } },
+      ranges: { select: rangeSelect },
+      components: {
+        orderBy: { sortOrder: 'asc' },
+        select: { id: true, name: true, unit: true, refLow: true, refHigh: true, critLow: true, critHigh: true, resultOptions: true, ranges: { select: rangeSelect } },
+      },
     },
   },
-  values: { select: { componentId: true, value: true, flag: true } },
+  values: { select: { componentId: true, value: true, flag: true, rangeText: true } },
   orderedBy: { select: { id: true, fullName: true } },
   collectedBy: { select: { fullName: true } },
   resultedBy: { select: { fullName: true } },
   verifiedBy: { select: { fullName: true } },
+  amendments: { orderBy: { createdAt: 'asc' }, select: { id: true, previousValue: true, previousFlag: true, reason: true, createdAt: true } },
 } satisfies Prisma.LabOrderInclude;
 
-/** Flags a numeric result against the reference range: L (low), H (high) or N (normal). */
+/** Flags a numeric result against a plain reference range: L (low), H (high) or N (normal). */
 export function flagResult(value: number, low: number | null, high: number | null) {
-  if (low !== null && value < low) return 'L';
-  if (high !== null && value > high) return 'H';
-  return 'N';
+  return flagValue(value, { refLow: low, refHigh: high, critLow: null, critHigh: null, who: null });
 }
 
-type Checkable = { name: string; unit: string | null; refLow: { toString(): string } | null; refHigh: { toString(): string } | null; resultOptions: string[] };
+type Checkable = BaseRange & { name: string; resultOptions: string[]; ranges: BandRange[] };
 
 /**
- * Validates one result against its answers or range and returns its flag: H/L/N for numeric
- * results with a range, null for answers and free text.
+ * Validates one result against its answers or range. Numeric results get a flag (LL, L, N, H,
+ * HH; double letters are critical) and the range they were judged by, as printed: the range for
+ * this patient's sex and age where the test has one.
  */
-function checkValue(c: Checkable, value: string): string | null {
+function checkValue(c: Checkable, value: string, patient: Patient | null, at: Date): { flag: string | null; rangeText: string | null } {
   if (c.resultOptions.length) {
     if (!c.resultOptions.includes(value)) throw new ConflictException(`${c.name}: choose one of ${c.resultOptions.join(', ')}`);
-    return null;
+    return { flag: null, rangeText: null };
   }
-  if (c.refLow === null && c.refHigh === null) return null;
-  const n = Number(value.replace(',', '.'));
-  if (!Number.isFinite(n)) throw new ConflictException(`${c.name} needs a number${c.unit ? ` in ${c.unit}` : ''}`);
-  return flagResult(n, c.refLow === null ? null : Number(c.refLow), c.refHigh === null ? null : Number(c.refHigh));
+  const r = pickRange(c, c.ranges, patient, at);
+  if (r.refLow === null && r.refHigh === null && r.critLow === null && r.critHigh === null) return { flag: null, rangeText: null };
+  const v = Number(value.replace(',', '.'));
+  if (!Number.isFinite(v)) throw new ConflictException(`${c.name} needs a number${c.unit ? ` in ${c.unit}` : ''}`);
+  return { flag: flagValue(v, r), rangeText: rangeText(r, c.unit) };
+}
+
+/** The worst flag of a panel, for the one-line summary: critical, then abnormal, then normal. */
+function worstFlag(flags: (string | null)[]) {
+  for (const f of ['HH', 'LL', 'H', 'L', 'N']) if (flags.includes(f)) return f;
+  return null;
 }
 
 /** Clinicians only see a value once the lab has verified it. */
@@ -80,6 +140,8 @@ function forViewer<T extends { status: LabOrderStatus; resultValue: string | nul
   if (LAB.includes(role) || order.status === 'VERIFIED') return order;
   return { ...order, resultValue: null, resultFlag: null, resultNote: null, values: [] };
 }
+
+type Order = Prisma.LabOrderGetPayload<{ include: typeof orderInclude }>;
 
 @Controller()
 export class LabController {
@@ -96,7 +158,7 @@ export class LabController {
   }
 
   @Get('lab/tests')
-  @Roles('ADMIN', 'DOCTOR', 'NURSE', 'LAB_TECH')
+  @Roles('ADMIN', 'DOCTOR', 'NURSE', 'LAB_TECH', 'RECEPTIONIST') // the front desk takes lab-only requests
   tests(@CurrentUser() me: AuthUser) {
     return this.prisma.client.labTest.findMany({ where: { tenantId: me.tenantId, active: true }, orderBy: { name: 'asc' } });
   }
@@ -122,6 +184,7 @@ export class LabController {
       if (!visit) throw new NotFoundException('Visit not found');
       if (visit.status === 'COMPLETED' || visit.status === 'CANCELLED') throw new ConflictException('This visit is closed');
       if (visit.kind === 'WALK_IN') throw new ConflictException('This is a pharmacy counter sale, not a consultation');
+      if (visit.kind === 'LAB') throw new ConflictException('This is a lab-only visit: add its tests at the lab');
       if (visit.status === 'WAITING') throw new ConflictException('Call the patient in before ordering tests');
 
       const tests = await tx.labTest.findMany({ where: { id: { in: labTestIds }, tenantId: me.tenantId, active: true } });
@@ -174,7 +237,7 @@ export class LabController {
   @Roles(...LAB)
   async worklist(@CurrentUser() me: AuthUser) {
     const db = this.prisma.client;
-    const include = { ...orderInclude, visit: { select: { id: true, queueNumber: true, patient: { select: queuePatientSelect } } } };
+    const include = { ...orderInclude, visit: { select: { id: true, queueNumber: true, kind: true, patient: { select: queuePatientSelect } } } };
     const [open, verifiedToday, prepayment] = await Promise.all([
       db.labOrder.findMany({ where: { tenantId: me.tenantId, status: { in: OPEN } }, orderBy: [{ orderedAt: 'asc' }, { id: 'asc' }], include }),
       db.labOrder.findMany({
@@ -209,9 +272,11 @@ export class LabController {
         where: { id },
         data: {
           status: 'SAMPLE_COLLECTED',
-          sampleId: body.sampleId || `L-${id.slice(0, 8).toUpperCase()}`,
+          // A new sample after a rejection gets its own number, so the two are never confused.
+          sampleId: body.sampleId || `L-${id.slice(0, 8).toUpperCase()}${order.rejections ? `-${order.rejections + 1}` : ''}`,
           sampleCollectedAt: new Date(),
           collectedById: me.sub,
+          rejectReason: null,
         },
         include: orderInclude,
       });
@@ -220,72 +285,262 @@ export class LabController {
     });
   }
 
+  /**
+   * The lab can't use the sample (haemolysed, clotted, too little…): it is recorded and the order
+   * goes back to "sample needed". Paid tests stay paid; the new sample gets a new number.
+   */
+  @Post('lab-orders/:id/reject')
+  @Roles(...LAB)
+  async reject(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(RejectSchema)) body: z.infer<typeof RejectSchema>) {
+    return this.prisma.client.$transaction(async (tx) => {
+      const order = await this.order(me, id, tx);
+      if (order.status !== 'SAMPLE_COLLECTED' && order.status !== 'RESULTED') {
+        throw new ConflictException(order.status === 'VERIFIED' ? 'This result is released: amend it instead' : 'There is no sample to reject');
+      }
+      const reason = REJECT_REASONS[body.reason];
+      await tx.labSampleRejection.create({
+        data: { tenantId: me.tenantId, labOrderId: id, sampleId: order.sampleId, reason, note: body.note, userId: me.sub },
+      });
+      await tx.labResultValue.deleteMany({ where: { labOrderId: id } });
+      const updated = await tx.labOrder.update({
+        where: { id },
+        data: {
+          status: 'ORDERED',
+          sampleId: null,
+          sampleCollectedAt: null,
+          collectedById: null,
+          resultValue: null,
+          resultFlag: null,
+          resultNote: null,
+          rangeText: null,
+          critical: false,
+          resultedAt: null,
+          resultedById: null,
+          rejections: { increment: 1 },
+          rejectReason: body.note ? `${reason}: ${body.note}` : reason,
+        },
+        include: orderInclude,
+      });
+      await this.audit.log(me, 'lab.reject', 'LabOrder', id, { sampleId: order.sampleId, reason, note: body.note }, tx);
+      return updated;
+    });
+  }
+
+  /** Checks the result against the test (answers, ranges for this patient) and summarises it. */
+  private async evaluate(order: Order, body: { value?: string; values?: { componentId: string; value: string }[] }) {
+    const t = order.labTest;
+    const visit = await this.prisma.client.visit.findUniqueOrThrow({ where: { id: order.visitId }, select: { patient: { select: { sex: true, dateOfBirth: true } } } });
+    // Judged at the time the sample was taken (a newborn's range on the day of birth, not today).
+    const at = order.sampleCollectedAt ?? new Date();
+    if (t.components.length) {
+      // A panel: each component is checked against its own answers or range. Blank ones are not run.
+      const panel: { componentId: string; value: string; flag: string | null; rangeText: string | null }[] = [];
+      for (const entry of body.values ?? []) {
+        if (!entry.value) continue;
+        const c = t.components.find((x) => x.id === entry.componentId);
+        if (!c) throw new ConflictException('That result does not belong to this test');
+        panel.push({ componentId: c.id, value: entry.value, ...checkValue(c, entry.value, visit.patient, at) });
+      }
+      if (!panel.length) throw new ConflictException('Enter at least one result');
+      // A one-line summary for lists and older screens; the full results are in `values`.
+      const value = panel
+        .map((v) => {
+          const c = t.components.find((x) => x.id === v.componentId)!;
+          return `${c.name} ${v.value}${v.flag && v.flag !== 'N' ? ` ${v.flag}` : ''}`;
+        })
+        .join('; ');
+      const flag = worstFlag(panel.map((v) => v.flag));
+      return { value, flag, rangeText: null, panel, critical: panel.some((v) => isCritical(v.flag)) };
+    }
+    if (!body.value) throw new ConflictException('Enter the result');
+    const checked = checkValue(t, body.value, visit.patient, at);
+    return { value: body.value, flag: checked.flag, rangeText: checked.rangeText, panel: null, critical: isCritical(checked.flag) };
+  }
+
   /** Enters (or corrects, before verification) a result. Numeric results are flagged against the range. */
   @Post('lab-orders/:id/result')
   @Roles(...LAB)
   async result(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(ResultSchema)) body: z.infer<typeof ResultSchema>) {
     const order = await this.order(me, id);
     if (order.status !== 'SAMPLE_COLLECTED' && order.status !== 'RESULTED') {
-      throw new ConflictException(order.status === 'ORDERED' ? 'Collect the sample first' : 'This result is already verified');
+      throw new ConflictException(order.status === 'ORDERED' ? 'Collect the sample first' : 'This result is already verified: amend it instead');
     }
-
-    const t = order.labTest;
-    let value: string;
-    let flag: string | null = null;
-    let panel: { componentId: string; value: string; flag: string | null }[] | null = null;
-
-    if (t.components.length) {
-      // A panel: each component is checked against its own answers or range. Blank ones are not run.
-      panel = [];
-      for (const entry of body.values ?? []) {
-        if (!entry.value) continue;
-        const c = t.components.find((x) => x.id === entry.componentId);
-        if (!c) throw new ConflictException('That result does not belong to this test');
-        panel.push({ componentId: c.id, value: entry.value, flag: checkValue(c, entry.value) });
-      }
-      if (!panel.length) throw new ConflictException('Enter at least one result');
-      const flags = panel.map((v) => v.flag);
-      flag = flags.includes('H') ? 'H' : flags.includes('L') ? 'L' : flags.includes('N') ? 'N' : null;
-      // A one-line summary for lists and older screens; the full results are in `values`.
-      value = panel
-        .map((v) => {
-          const c = t.components.find((x) => x.id === v.componentId)!;
-          return `${c.name} ${v.value}${v.flag === 'H' || v.flag === 'L' ? ` ${v.flag}` : ''}`;
-        })
-        .join('; ');
-    } else {
-      if (!body.value) throw new ConflictException('Enter the result');
-      value = body.value;
-      flag = checkValue(t, body.value);
-    }
-
+    const r = await this.evaluate(order, body);
     const updated = await this.prisma.client.$transaction(async (tx) => {
-      if (panel) {
+      if (r.panel) {
         await tx.labResultValue.deleteMany({ where: { labOrderId: id } });
-        await tx.labResultValue.createMany({ data: panel.map((v) => ({ ...v, tenantId: me.tenantId, labOrderId: id })) });
+        await tx.labResultValue.createMany({ data: r.panel.map((v) => ({ ...v, tenantId: me.tenantId, labOrderId: id })) });
       }
       return tx.labOrder.update({
         where: { id },
-        data: { status: 'RESULTED', resultValue: value, resultFlag: flag, resultNote: body.note || null, resultedAt: new Date(), resultedById: me.sub },
+        data: {
+          status: 'RESULTED',
+          resultValue: r.value,
+          resultFlag: r.flag,
+          rangeText: r.rangeText,
+          critical: r.critical,
+          resultNote: body.note || null,
+          resultedAt: new Date(),
+          resultedById: me.sub,
+        },
         include: orderInclude,
       });
     });
-    await this.audit.log(me, order.status === 'RESULTED' ? 'lab.correct' : 'lab.result', 'LabOrder', id);
+    await this.audit.log(me, order.status === 'RESULTED' ? 'lab.correct' : 'lab.result', 'LabOrder', id, r.critical ? { critical: true } : undefined);
     return updated;
   }
 
+  /**
+   * Releases a result to the doctor. A critical result is first phoned to the doctor (or whoever
+   * is responsible), and the lab records who was told and how; it then shows as an alert on the
+   * queue and the visit until the doctor marks it seen.
+   */
   @Post('lab-orders/:id/verify')
   @Roles(...LAB)
-  async verify(@CurrentUser() me: AuthUser, @Param('id') id: string) {
+  async verify(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(VerifySchema)) body: z.infer<typeof VerifySchema>) {
     const order = await this.order(me, id);
     if (order.status !== 'RESULTED') throw new ConflictException('Only entered results can be verified');
+    if (order.critical && !body.notified) {
+      throw new ConflictException({ message: 'This is a critical result: phone the doctor, then record who was told', code: 'CRITICAL_NOT_NOTIFIED' });
+    }
+    const now = new Date();
     const updated = await this.prisma.client.labOrder.update({
       where: { id },
-      data: { status: 'VERIFIED', verifiedAt: new Date(), verifiedById: me.sub },
+      data: {
+        status: 'VERIFIED',
+        verifiedAt: now,
+        verifiedById: me.sub,
+        ...(order.critical && { criticalNotified: body.notified, criticalNotifiedAt: now, alert: 'CRITICAL', alertSeenAt: null, alertSeenById: null }),
+      },
       include: orderInclude,
     });
-    await this.audit.log(me, 'lab.verify', 'LabOrder', id);
+    await this.finishLabVisit(order.visitId);
+    await this.audit.log(me, 'lab.verify', 'LabOrder', id, order.critical ? { critical: true, notified: body.notified } : undefined);
     return updated;
+  }
+
+  /**
+   * Corrects a released result. The earlier result is kept with the reason, the report shows the
+   * result as amended, and the doctor sees an alert until they mark it seen.
+   */
+  @Post('lab-orders/:id/amend')
+  @Roles(...LAB)
+  async amend(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(AmendSchema)) body: z.infer<typeof AmendSchema>) {
+    const order = await this.order(me, id);
+    if (order.status !== 'VERIFIED') throw new ConflictException('Only released results are amended; correct the result before verifying it');
+    const r = await this.evaluate(order, body);
+    if (r.critical && !body.notified) {
+      throw new ConflictException({ message: 'The corrected result is critical: phone the doctor, then record who was told', code: 'CRITICAL_NOT_NOTIFIED' });
+    }
+    const now = new Date();
+    const updated = await this.prisma.client.$transaction(async (tx) => {
+      await tx.labAmendment.create({
+        data: {
+          tenantId: me.tenantId,
+          labOrderId: id,
+          previousValue: order.resultValue,
+          previousFlag: order.resultFlag,
+          previousValues: order.values.length ? (order.values as unknown as Prisma.InputJsonValue) : undefined,
+          reason: body.reason,
+          userId: me.sub,
+        },
+      });
+      if (r.panel) {
+        await tx.labResultValue.deleteMany({ where: { labOrderId: id } });
+        await tx.labResultValue.createMany({ data: r.panel.map((v) => ({ ...v, tenantId: me.tenantId, labOrderId: id })) });
+      }
+      return tx.labOrder.update({
+        where: { id },
+        data: {
+          resultValue: r.value,
+          resultFlag: r.flag,
+          rangeText: r.rangeText,
+          critical: r.critical,
+          resultNote: body.note || null,
+          verifiedAt: now,
+          verifiedById: me.sub,
+          amendedAt: now,
+          alert: r.critical ? 'CRITICAL' : 'AMENDED',
+          alertSeenAt: null,
+          alertSeenById: null,
+          ...(r.critical && { criticalNotified: body.notified, criticalNotifiedAt: now }),
+        },
+        include: orderInclude,
+      });
+    });
+    await this.audit.log(me, 'lab.amend', 'LabOrder', id, { reason: body.reason, from: order.resultValue, to: r.value, critical: r.critical });
+    return updated;
+  }
+
+  /** The doctor (or nurse) has seen a critical or amended result. */
+  @Post('lab-orders/:id/seen')
+  @Roles('ADMIN', 'DOCTOR', 'NURSE')
+  async seen(@CurrentUser() me: AuthUser, @Param('id') id: string) {
+    const order = await this.order(me, id);
+    if (!order.alert || order.alertSeenAt) return forViewer(order, me.role);
+    const updated = await this.prisma.client.labOrder.update({ where: { id }, data: { alertSeenAt: new Date(), alertSeenById: me.sub }, include: orderInclude });
+    await this.audit.log(me, 'lab.alert-seen', 'LabOrder', id, { alert: order.alert });
+    return forViewer(updated, me.role);
+  }
+
+  /** A lab-only visit is finished once every test is released (or cancelled). */
+  private async finishLabVisit(visitId: string) {
+    const db = this.prisma.client;
+    const visit = await db.visit.findUniqueOrThrow({ where: { id: visitId }, select: { kind: true, status: true } });
+    if (visit.kind !== 'LAB' || visit.status === 'COMPLETED') return;
+    const open = await db.labOrder.count({ where: { visitId, status: { in: OPEN } } });
+    if (!open) await db.visit.update({ where: { id: visitId }, data: { status: 'COMPLETED', completedAt: new Date() } });
+  }
+
+  /**
+   * Tests without a consultation: the patient brings a request from another clinic, or asks for a
+   * test themselves. Makes a lab-only visit (not in the doctor's queue) with its tests and
+   * charges; from there it is the usual path: cashier (pay first), sample, result, release. The
+   * visit closes by itself when the last result is released.
+   */
+  @Post('lab/walk-in')
+  @Roles('ADMIN', 'LAB_TECH', 'RECEPTIONIST')
+  async walkIn(@CurrentUser() me: AuthUser, @Body(new ZodPipe(WalkInSchema)) body: z.infer<typeof WalkInSchema>) {
+    return this.prisma.client.$transaction(async (tx) => {
+      const patient = await tx.patient.findFirst({ where: { id: body.patientId, tenantId: me.tenantId } });
+      if (!patient) throw new NotFoundException('Patient not found');
+      const tests = await tx.labTest.findMany({ where: { id: { in: body.labTestIds }, tenantId: me.tenantId, active: true } });
+      if (tests.length !== body.labTestIds.length) throw new NotFoundException('One or more tests were not found');
+      const visit = await tx.visit.create({
+        data: { tenantId: me.tenantId, patientId: patient.id, kind: 'LAB', status: 'AWAITING_LAB', queueNumber: 0, calledAt: new Date() },
+      });
+      const byId = new Map(tests.map((t) => [t.id, t]));
+      const now = Date.now();
+      for (const [i, testId] of body.labTestIds.entries()) {
+        const t = byId.get(testId)!;
+        const order = await tx.labOrder.create({
+          data: { tenantId: me.tenantId, visitId: visit.id, labTestId: t.id, orderedById: me.sub, orderedAt: new Date(now + i), requestedBy: body.requestedBy },
+        });
+        if (Number(t.price) > 0) {
+          await tx.charge.create({ data: { visitId: visit.id, source: 'LAB', sourceId: order.id, description: t.name, unitPrice: t.price } });
+        }
+      }
+      await this.audit.log(me, 'lab.walk-in', 'Visit', visit.id, { tests: tests.map((t) => t.name), requestedBy: body.requestedBy }, tx);
+      return { visitId: visit.id, tests: tests.length };
+    });
+  }
+
+  /**
+   * A patient's released results, newest first, from every visit: for trends (is the haemoglobin
+   * rising?) and so nothing is repeated needlessly.
+   */
+  @Get('patients/:id/lab-results')
+  @Roles('ADMIN', 'DOCTOR', 'NURSE', 'LAB_TECH')
+  async history(@CurrentUser() me: AuthUser, @Param('id') id: string) {
+    if (!z.uuid().safeParse(id).success) throw new NotFoundException('Patient not found');
+    const patient = await this.prisma.client.patient.findFirst({ where: { id, tenantId: me.tenantId }, select: { id: true } });
+    if (!patient) throw new NotFoundException('Patient not found');
+    return this.prisma.client.labOrder.findMany({
+      where: { tenantId: me.tenantId, status: 'VERIFIED', visit: { patientId: id } },
+      orderBy: [{ verifiedAt: 'desc' }, { id: 'asc' }],
+      take: 200,
+      include: { ...orderInclude, visit: { select: { id: true, kind: true } } },
+    });
   }
 
   /** Everything needed to print a visit's verified results. */
@@ -297,6 +552,7 @@ export class LabController {
       where: { id, tenantId: me.tenantId },
       select: {
         id: true,
+        kind: true,
         checkedInAt: true,
         patient: { select: queuePatientSelect },
         doctor: { select: { fullName: true } },

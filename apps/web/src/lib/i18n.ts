@@ -71,6 +71,9 @@ const AM: Record<string, string> = {
   "Awaiting payment": "ክፍያ ይጠበቃል",
   "Results ready": "ውጤት ደርሷል",
   "Lab results pending": "የላብራቶሪ ውጤት ይጠበቃል",
+  "Critical lab result": "አስቸኳይ የላብራቶሪ ውጤት",
+  "Lab result corrected": "የላብራቶሪ ውጤት ተስተካክሏል",
+  "New lab sample needed": "አዲስ የላብራቶሪ ናሙና ያስፈልጋል",
   Owes: "ቀሪ ክፍያ",
   "No diagnosis yet": "ዲያግኖሲስ ገና አልተመዘገበም",
 

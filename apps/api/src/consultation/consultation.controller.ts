@@ -73,6 +73,7 @@ const isClosed = (status: string) => status === 'COMPLETED' || status === 'CANCE
 /** Notes and diagnoses belong to consultations: closed visits and pharmacy counter sales refuse them. */
 function assertEditable(visit: { status: string; kind: string }) {
   if (visit.kind === 'WALK_IN') throw new ConflictException('This is a pharmacy counter sale, not a consultation');
+  if (visit.kind === 'LAB') throw new ConflictException('This is a lab-only visit, not a consultation');
   if (isClosed(visit.status)) throw new ConflictException('This visit is closed and can no longer be edited');
 }
 

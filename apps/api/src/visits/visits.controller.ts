@@ -117,7 +117,7 @@ export class VisitsController {
           doctor: { select: { id: true, fullName: true, room: true } },
           charges: { where: { voidedAt: null }, select: { source: true, quantity: true, unitPrice: true, ...settlementSelect } },
           _count: { select: { diagnoses: true } },
-          labOrders: { where: { status: { not: 'CANCELLED' } }, select: { status: true } },
+          labOrders: { where: { status: { not: 'CANCELLED' } }, select: { status: true, alert: true, alertSeenAt: true, rejectReason: true } },
           prescriptions: { where: { status: { in: OPEN_RX } }, select: { id: true } },
         },
       }),
@@ -137,6 +137,10 @@ export class VisitsController {
         labReady: labOrders.length > 0 && labOrders.every((o) => o.status === 'VERIFIED'),
         // What the visit is still waiting for, so the queue only offers moves that can succeed.
         labPending: labOrders.some((o) => OPEN_LAB.includes(o.status)),
+        // A released result the doctor must look at now: CRITICAL first, then AMENDED.
+        labAlert: labOrders.some((o) => o.alert === 'CRITICAL' && !o.alertSeenAt) ? 'CRITICAL' : labOrders.some((o) => o.alert && !o.alertSeenAt) ? 'AMENDED' : null,
+        // The lab rejected a sample: the patient must give a new one.
+        labRecollect: labOrders.some((o) => o.status === 'ORDERED' && !!o.rejectReason),
         rxPending: prescriptions.length > 0,
       })),
     };
@@ -231,6 +235,8 @@ export class VisitsController {
     return this.prisma.client.$transaction(async (tx) => {
       const visit = await tx.visit.findFirst({ where: { id, tenantId: me.tenantId } });
       if (!visit) throw new NotFoundException('Visit not found');
+      // Counter sales and lab-only visits close by themselves (dispensed, results released).
+      if (visit.kind !== 'OPD') throw new ConflictException('Only consultations are moved through the queue');
       if (!TRANSITIONS[visit.status].includes(status)) {
         throw new ConflictException(`Cannot move a visit from ${visit.status} to ${status}`);
       }

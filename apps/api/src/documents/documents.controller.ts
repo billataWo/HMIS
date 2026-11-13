@@ -61,7 +61,7 @@ export class DocumentsController {
     if (!z.uuid().safeParse(id).success) throw new NotFoundException('Visit not found');
     const visit = await this.prisma.client.visit.findFirst({ where: { id, tenantId: me.tenantId } });
     if (!visit) throw new NotFoundException('Visit not found');
-    if (visit.status === 'CANCELLED' || visit.status === 'WAITING' || visit.kind === 'WALK_IN') throw new ConflictException('Documents are issued after the patient has been seen');
+    if (visit.status === 'CANCELLED' || visit.status === 'WAITING' || visit.kind !== 'OPD') throw new ConflictException('Documents are issued after the patient has been seen');
     const { type, ...data } = body;
     const doc = await this.prisma.client.clinicalDocument.create({
       data: { tenantId: me.tenantId, visitId: id, type, data: { ...data, issuedBy: me.name }, createdById: me.sub },

@@ -1,4 +1,5 @@
 import type { PrismaClient } from "./generated/prisma/client.js";
+import { applyRecommendedRanges } from "./lab-ranges.js";
 
 // Adult reference ranges; review them with the lab (some differ by sex, age and analyser).
 // LOINC codes are given only where well established.
@@ -113,4 +114,6 @@ export async function addStarterCatalog(db: PrismaClient, tenantId: string, log:
       await db.labTest.update({ where: { id: existing.id }, data: { resultOptions: t.resultOptions } });
     }
   }
+  // Critical limits and ranges for men, women and children, where a test has none of its own.
+  for (const key of await applyRecommendedRanges(db, tenantId)) log(`+ ranges for ${key}`);
 }

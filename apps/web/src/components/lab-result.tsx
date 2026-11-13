@@ -1,4 +1,4 @@
-import type { LabOrder } from "@/lib/api";
+import type { LabFlag, LabOrder } from "@/lib/api";
 
 export const LAB_STATUS: Record<LabOrder["status"], string> = {
   ORDERED: "Ordered",
@@ -19,14 +19,26 @@ export function rangeText(t: Ranged) {
   return `${range}${t.unit ? ` ${t.unit}` : ""}`;
 }
 
-function Flag({ flag }: { flag: string | null }) {
-  if (flag !== "H" && flag !== "L") return null;
-  return <span className="ml-1 rounded bg-red-100 px-1 text-xs font-semibold text-red-800 dark:bg-red-950 dark:text-red-200">{flag === "H" ? "HIGH" : "LOW"}</span>;
+export const isCritical = (flag: string | null | undefined) => flag === "LL" || flag === "HH";
+export const isAbnormal = (flag: string | null | undefined) => !!flag && flag !== "N";
+export const FLAG_TEXT: Record<LabFlag, string> = { LL: "CRITICAL LOW", L: "LOW", N: "", H: "HIGH", HH: "CRITICAL HIGH" };
+
+export function Flag({ flag }: { flag: string | null }) {
+  if (!isAbnormal(flag)) return null;
+  return (
+    <span
+      className={`ml-1 rounded px-1 text-xs font-semibold ${
+        isCritical(flag) ? "bg-red-700 text-white dark:bg-red-600" : "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200"
+      }`}
+    >
+      {FLAG_TEXT[flag as LabFlag]}
+    </span>
+  );
 }
 
 /**
- * A result with its unit and a high/low flag, e.g. "9.5 g/dL LOW". For a panel, each component on
- * its own line, abnormal ones highlighted.
+ * A result with its unit and a flag, e.g. "9.5 g/dL LOW" (critical ones stand out). For a panel,
+ * each component on its own line with the range it was judged by.
  */
 export function LabValue({ o }: { o: LabOrder }) {
   if (o.resultValue === null) return null;
@@ -37,14 +49,14 @@ export function LabValue({ o }: { o: LabOrder }) {
         {parts.map((c) => {
           const v = o.values!.find((x) => x.componentId === c.id);
           if (!v) return null;
-          const abnormal = v.flag === "H" || v.flag === "L";
           return (
             <span key={c.id} className="contents">
               <span className="text-slate-500">{c.name}</span>
-              <span className={abnormal ? "font-semibold text-red-700 dark:text-red-400" : "font-medium"}>
+              <span className={isAbnormal(v.flag) ? "font-semibold text-red-700 dark:text-red-400" : "font-medium"}>
                 {v.value}
                 {c.unit && ` ${c.unit}`}
                 <Flag flag={v.flag} />
+                {v.rangeText && <span className="ml-1 text-xs font-normal text-slate-500">({v.rangeText})</span>}
               </span>
             </span>
           );
@@ -52,9 +64,8 @@ export function LabValue({ o }: { o: LabOrder }) {
       </span>
     );
   }
-  const abnormal = o.resultFlag === "H" || o.resultFlag === "L";
   return (
-    <span className={abnormal ? "font-semibold text-red-700 dark:text-red-400" : "font-medium"}>
+    <span className={isAbnormal(o.resultFlag) ? "font-semibold text-red-700 dark:text-red-400" : "font-medium"}>
       {o.resultValue}
       {o.labTest.unit && ` ${o.labTest.unit}`}
       <Flag flag={o.resultFlag} />

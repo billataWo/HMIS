@@ -2,13 +2,27 @@
 
 import Link from "next/link";
 import { useState, useTransition } from "react";
-import { cancelLabOrder, orderLabTests } from "@/app/actions";
+import { cancelLabOrder, labAlertSeen, orderLabTests } from "@/app/actions";
 import { LAB_STATUS, LabValue, rangeText } from "@/components/lab-result";
 import { Alert, buttonClass } from "@/components/ui";
-import type { LabOrder, LabTest } from "@/lib/api";
+import { Earlier } from "@/components/lab-history";
+import type { LabHistoryOrder, LabOrder, LabTest } from "@/lib/api";
 import { ConfirmCancel } from "@/components/confirm-cancel";
 
-export function LabPanel({ visitId, orders, tests, editable }: { visitId: string; orders: LabOrder[]; tests: LabTest[]; editable: boolean }) {
+export function LabPanel({
+  visitId,
+  orders,
+  tests,
+  editable,
+  history = [],
+}: {
+  visitId: string;
+  orders: LabOrder[];
+  tests: LabTest[];
+  editable: boolean;
+  /** The patient's released results from other visits, newest first. */
+  history?: LabHistoryOrder[];
+}) {
   const [picked, setPicked] = useState<string[]>([]);
   const [error, setError] = useState<string>();
   const [pending, start] = useTransition();
@@ -47,11 +61,38 @@ export function LabPanel({ visitId, orders, tests, editable }: { visitId: string
                   <>
                     {": "}
                     <LabValue o={o} />
-                    {rangeText(o.labTest) && <span className="text-xs text-slate-500"> (ref {rangeText(o.labTest)})</span>}
+                    {(o.rangeText ?? rangeText(o.labTest)) && <span className="text-xs text-slate-500"> (ref {o.rangeText ?? rangeText(o.labTest)})</span>}
                     {o.resultNote && <span className="block text-xs text-slate-500">{o.resultNote}</span>}
+                    <Earlier orders={history.filter((h) => h.labTest.id === o.labTest.id)} />
+                    {o.amendedAt && o.amendments && o.amendments.length > 0 && (
+                      <span className="block text-xs text-amber-800 dark:text-amber-300">
+                        Amended: was {o.amendments.at(-1)!.previousValue} · {o.amendments.at(-1)!.reason}
+                      </span>
+                    )}
+                    {o.critical && o.criticalNotified && <span className="block text-xs text-slate-500">Critical result phoned to {o.criticalNotified}</span>}
                   </>
+                ) : o.status === "ORDERED" && o.rejectReason ? (
+                  <span className="text-xs font-medium text-amber-800 dark:text-amber-300"> · New sample needed ({o.rejectReason})</span>
                 ) : (
                   <span className="text-xs text-slate-500"> · {LAB_STATUS[o.status]}</span>
+                )}
+                {o.alert && !o.alertSeenAt && (
+                  <span
+                    role="alert"
+                    className={`mt-1 flex flex-wrap items-center gap-2 rounded-md px-2 py-1 text-xs font-medium ${
+                      o.alert === "CRITICAL" ? "bg-red-700 text-white dark:bg-red-600" : "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+                    }`}
+                  >
+                    {o.alert === "CRITICAL" ? "Critical result: act on it now" : "This result was corrected after release"}
+                    <button
+                      type="button"
+                      disabled={pending}
+                      onClick={() => start(() => labAlertSeen(o.id))}
+                      className="rounded bg-white/90 px-2 py-0.5 text-slate-900 hover:bg-white"
+                    >
+                      Mark as seen
+                    </button>
+                  </span>
                 )}
               </span>
               {editable && o.status === "ORDERED" && (

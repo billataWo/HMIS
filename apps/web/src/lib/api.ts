@@ -143,7 +143,7 @@ export interface PatientDetail extends Patient {
     checkedInAt: string;
     status: string;
     queueNumber: number;
-    kind?: "OPD" | "WALK_IN"; // WALK_IN: a pharmacy counter sale, not a consultation
+    kind?: "OPD" | "WALK_IN" | "LAB"; // WALK_IN: a pharmacy counter sale, not a consultation
     doctor: { fullName: string } | null;
     // Only sent to clinical staff (admin, doctor, nurse).
     chiefComplaint?: string | null;
@@ -170,6 +170,8 @@ export interface QueueVisit {
   consultationPaid?: boolean; // present on /queue
   labReady?: boolean; // present on /queue: every ordered test is verified
   labPending?: boolean; // present on /queue: some test has no verified result yet
+  labAlert?: "CRITICAL" | "AMENDED" | null; // present on /queue: a released result the doctor hasn't seen yet
+  labRecollect?: boolean; // present on /queue: the lab rejected a sample; a new one is needed
   rxPending?: boolean; // present on /queue: drugs still to hand over
   carriedOver?: boolean; // present on /queue: an unfinished visit from an earlier day
   diagnosed?: boolean; // present on /queue: at least one diagnosis recorded
@@ -189,10 +191,26 @@ export interface LabTest {
   unit: string | null;
   refLow: string | null;
   refHigh: string | null;
+  critLow?: string | null; // critical (panic) limits
+  critHigh?: string | null;
   price: string;
   resultOptions: string[];
   /** Panel tests (CBC, urinalysis…): one result per component, each with its own range or answers. */
   components?: LabComponent[];
+  /** Ranges for men, women and age groups (the test's own range is the default). */
+  ranges?: LabRange[];
+}
+
+export interface LabRange {
+  id?: string;
+  componentId?: string | null;
+  sex: "MALE" | "FEMALE" | null;
+  ageFromDays: number;
+  ageToDays: number | null;
+  refLow: string | null;
+  refHigh: string | null;
+  critLow: string | null;
+  critHigh: string | null;
 }
 
 export interface LabComponent {
@@ -201,24 +219,47 @@ export interface LabComponent {
   unit: string | null;
   refLow: string | null;
   refHigh: string | null;
+  critLow?: string | null;
+  critHigh?: string | null;
   resultOptions: string[];
+  ranges?: LabRange[];
 }
 
 export interface LabValueEntry {
   componentId: string;
   value: string;
-  flag: "L" | "H" | "N" | null;
+  flag: LabFlag | null;
+  rangeText?: string | null;
 }
 
 export type LabStatus = "ORDERED" | "SAMPLE_COLLECTED" | "RESULTED" | "VERIFIED" | "CANCELLED";
 
+/** LL / L / N / H / HH: double letters are beyond a critical limit. */
+export type LabFlag = "LL" | "L" | "N" | "H" | "HH";
+
 export interface LabOrder {
   id: string;
   status: LabStatus;
+  /** Lab-only visits: who asked for the test (a doctor or clinic outside). */
+  requestedBy?: string | null;
   sampleId: string | null;
   sampleCollectedAt: string | null;
   resultValue: string | null;
-  resultFlag: "L" | "H" | "N" | null;
+  resultFlag: LabFlag | null;
+  /** The range the result was judged by, as printed ("13–17 g/dL (men)"). */
+  rangeText?: string | null;
+  /** Beyond a critical limit: phoned to the doctor before release. */
+  critical?: boolean;
+  criticalNotified?: string | null;
+  criticalNotifiedAt?: string | null;
+  /** A released result the doctor must look at: CRITICAL or AMENDED, until marked seen. */
+  alert?: "CRITICAL" | "AMENDED" | null;
+  alertSeenAt?: string | null;
+  amendedAt?: string | null;
+  amendments?: { id: string; previousValue: string | null; previousFlag: string | null; reason: string; createdAt: string }[];
+  /** Rejected samples, and the last reason while a new sample is awaited. */
+  rejections?: number;
+  rejectReason?: string | null;
   resultNote: string | null;
   orderedAt: string;
   resultedAt: string | null;
@@ -233,11 +274,17 @@ export interface LabOrder {
 
 export interface LabWorkOrder extends LabOrder {
   paid?: boolean;
-  visit: { id: string; queueNumber: number; patient: QueuePatient };
+  visit: { id: string; queueNumber: number; kind?: "OPD" | "WALK_IN" | "LAB"; patient: QueuePatient };
+}
+
+/** A released result in a patient's lab history. */
+export interface LabHistoryOrder extends LabOrder {
+  visit: { id: string; kind: "OPD" | "WALK_IN" | "LAB" };
 }
 
 export interface LabReport {
   id: string;
+  kind?: "OPD" | "WALK_IN" | "LAB";
   checkedInAt: string;
   patient: QueuePatient;
   doctor: { fullName: string } | null;
@@ -359,7 +406,7 @@ export interface Dashboard {
     receivables: { payer: string; due: string }[];
   };
   topDiagnoses: { code: string; label: string; count: number }[];
-  lab: { ordered: number; verified: number; abnormal: number; topTests: { name: string; count: number }[] };
+  lab: { ordered: number; verified: number; abnormal: number; critical?: number; topTests: { name: string; count: number }[] };
   pharmacy: { sales: string; unitsDispensed: number; topDrugs: { name: string; units: number }[] };
   stock: { value: string; low: number; expiring: number; expiredOnShelf: number; expiredLoss: string; adjustmentLoss: string };
   daily: { day: string; visits: number; collected: string }[];
@@ -408,7 +455,7 @@ export type NoteField = (typeof NOTE_FIELDS)[number];
 export type VisitDetail = QueueVisit &
   Record<VitalField, string | number | null> &
   Record<NoteField, string | null> & {
-    kind: "OPD" | "WALK_IN";
+    kind: "OPD" | "WALK_IN" | "LAB";
     prepayment: boolean;
     consultationPaid: boolean;
     owed: string; // all unpaid charges of the visit
@@ -554,17 +601,17 @@ export interface Prescription {
 }
 
 export interface PharmacyPrescription extends Prescription {
-  visit: { id: string; queueNumber: number; status: VisitStatus; kind?: "OPD" | "WALK_IN"; patient: QueuePatient };
+  visit: { id: string; queueNumber: number; status: VisitStatus; kind?: "OPD" | "WALK_IN" | "LAB"; patient: QueuePatient };
 }
 
 /** One entry of a patient's medication history. */
 export interface Medication extends Prescription {
-  visit: { id: string; kind: "OPD" | "WALK_IN"; checkedInAt: string };
+  visit: { id: string; kind: "OPD" | "WALK_IN" | "LAB"; checkedInAt: string };
 }
 
 /** What a medicine label prints. */
 export interface RxLabel extends Omit<Prescription, "items"> {
-  visit: { id: string; kind: "OPD" | "WALK_IN"; patient: QueuePatient };
+  visit: { id: string; kind: "OPD" | "WALK_IN" | "LAB"; patient: QueuePatient };
   tenant: { name: string; nameAm: string | null; phone: string | null; address: string | null };
   dispensedBy: string | null;
   items: (PrescriptionItem & { batches: string[]; expiresAt: string | null })[];

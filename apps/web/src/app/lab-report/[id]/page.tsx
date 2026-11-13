@@ -1,10 +1,21 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Fragment, Suspense } from "react";
-import { rangeText } from "@/components/lab-result";
-import { api, ApiError, type LabReport } from "@/lib/api";
+import { FLAG_TEXT, isAbnormal, rangeText } from "@/components/lab-result";
+import { api, ApiError, type LabOrder, type LabReport } from "@/lib/api";
 import { ageFrom, formatDualDate, formatTime, fullName } from "@/lib/format";
 import { PrintButton } from "@/components/print-button";
+
+/** A corrected result says so on paper: when, what it was, and why. */
+function Amended({ o }: { o: LabOrder }) {
+  const last = o.amendments?.at(-1);
+  if (!o.amendedAt || !last) return null;
+  return (
+    <span className="block text-xs font-bold">
+      AMENDED {formatDualDate(o.amendedAt)} {formatTime(o.amendedAt)}: previously {last.previousValue}. {last.reason}
+    </span>
+  );
+}
 
 export const metadata: Metadata = { title: "Lab results" };
 
@@ -43,6 +54,11 @@ async function Report({ params }: { params: Promise<{ id: string }> }) {
         <p>
           <span className="text-slate-600">Visit:</span> {formatDualDate(r.checkedInAt)}
         </p>
+        {r.kind === "LAB" && r.labOrders[0]?.requestedBy && (
+          <p>
+            <span className="text-slate-600">Requested by:</span> {r.labOrders[0].requestedBy}
+          </p>
+        )}
         {r.doctor && (
           <p>
             <span className="text-slate-600">Requested by:</span> Dr. {r.doctor.fullName}
@@ -72,6 +88,7 @@ async function Report({ params }: { params: Promise<{ id: string }> }) {
                     <td colSpan={4} className="pt-2 font-semibold">
                       {o.labTest.name}
                       {o.resultNote && <span className="block text-xs font-normal">{o.resultNote}</span>}
+                      <Amended o={o} />
                     </td>
                     <td className="pt-2 font-mono text-xs">
                       {o.sampleId}
@@ -81,7 +98,7 @@ async function Report({ params }: { params: Promise<{ id: string }> }) {
                   {o.labTest.components.map((c) => {
                     const v = o.values?.find((x) => x.componentId === c.id);
                     if (!v) return null;
-                    const abnormal = v.flag === "H" || v.flag === "L";
+                    const abnormal = isAbnormal(v.flag);
                     return (
                       <tr key={c.id} className="border-b border-slate-200 align-top">
                         <td className="py-1 pr-2 pl-4">{c.name}</td>
@@ -89,8 +106,8 @@ async function Report({ params }: { params: Promise<{ id: string }> }) {
                           {v.value}
                           {c.unit && ` ${c.unit}`}
                         </td>
-                        <td className="py-1 pr-2 font-bold">{v.flag === "H" ? "HIGH" : v.flag === "L" ? "LOW" : ""}</td>
-                        <td className="py-1 pr-2">{rangeText(c) ?? ""}</td>
+                        <td className="py-1 pr-2 font-bold">{v.flag ? FLAG_TEXT[v.flag] : ""}</td>
+                        <td className="py-1 pr-2">{v.rangeText ?? rangeText(c) ?? ""}</td>
                         <td />
                       </tr>
                     );
@@ -99,13 +116,14 @@ async function Report({ params }: { params: Promise<{ id: string }> }) {
               ) : (
               <tr key={o.id} className="border-b border-slate-300 align-top">
                 <td className="py-1.5 pr-2">{o.labTest.name}</td>
-                <td className={`py-1.5 pr-2 ${o.resultFlag === "H" || o.resultFlag === "L" ? "font-bold" : ""}`}>
+                <td className={`py-1.5 pr-2 ${isAbnormal(o.resultFlag) ? "font-bold" : ""}`}>
                   {o.resultValue}
                   {o.labTest.unit && ` ${o.labTest.unit}`}
                   {o.resultNote && <span className="block text-xs font-normal">{o.resultNote}</span>}
+                  <Amended o={o} />
                 </td>
-                <td className="py-1.5 pr-2 font-bold">{o.resultFlag === "H" ? "HIGH" : o.resultFlag === "L" ? "LOW" : ""}</td>
-                <td className="py-1.5 pr-2">{rangeText(o.labTest) ?? ""}</td>
+                <td className="py-1.5 pr-2 font-bold">{o.resultFlag ? FLAG_TEXT[o.resultFlag] : ""}</td>
+                <td className="py-1.5 pr-2">{o.rangeText ?? rangeText(o.labTest) ?? ""}</td>
                 <td className="py-1.5 font-mono text-xs">
                   {o.sampleId}
                   {o.sampleCollectedAt && <span className="block">{formatTime(o.sampleCollectedAt)}</span>}

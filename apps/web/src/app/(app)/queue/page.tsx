@@ -100,6 +100,9 @@ function VisitRow({ v, role, returnTo, prepayment, lang }: { v: QueueVisit; role
             </Badge>
           )}
           {v.status !== "AWAITING_LAB" && v.labPending && <Badge tone="info">{tr(lang, "Lab results pending")}</Badge>}
+          {v.labAlert === "CRITICAL" && <Badge tone="danger">{tr(lang, "Critical lab result")}</Badge>}
+          {v.labAlert === "AMENDED" && <Badge tone="warning">{tr(lang, "Lab result corrected")}</Badge>}
+          {v.labRecollect && <Badge tone="warning">{tr(lang, "New lab sample needed")}</Badge>}
           {Number(v.owed ?? 0) > 0 && <Badge tone="danger">{tr(lang, "Owes")} {etb(v.owed!)}</Badge>}
           {v.status === "IN_CONSULTATION" && !v.diagnosed && CLINICAL.includes(role) && <Badge>{tr(lang, "No diagnosis yet")}</Badge>}
           <span>Arrived {formatTime(v.checkedInAt)}</span>

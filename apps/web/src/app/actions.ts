@@ -441,25 +441,91 @@ export async function cancelLabOrder(id: string) {
   refresh();
 }
 
+/** Settings: a lab test's critical limits and its ranges for men, women and age groups (replaces them all). */
+export async function saveLabRanges(
+  testId: string,
+  body: {
+    critLow: number | null;
+    critHigh: number | null;
+    components: { id: string; critLow: number | null; critHigh: number | null }[];
+    ranges: { componentId: string | null; sex: "MALE" | "FEMALE" | null; ageFromDays: number; ageToDays: number | null; refLow: number | null; refHigh: number | null; critLow: number | null; critHigh: number | null }[];
+  },
+): Promise<{ error?: string }> {
+  try {
+    await api(`/catalog/lab-tests/${testId}/ranges`, { method: "PUT", body: JSON.stringify(body) });
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.body.errors?.length ? e.body.errors.map((x) => x.message).join("; ") : e.message };
+    throw e;
+  }
+  refresh();
+  return {};
+}
+
+/** Settings: adds the recommended ranges and critical limits to tests that have none. */
+export async function applyRecommendedLabRanges(): Promise<{ filled?: string[]; error?: string }> {
+  try {
+    const res = await api<{ filled: string[] }>("/catalog/lab-tests/recommended-ranges", { method: "POST" });
+    refresh();
+    return res;
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.message };
+    throw e;
+  }
+}
+
+/**
+ * Tests without a consultation: a request from another clinic, or the patient's own. Makes a
+ * lab-only visit; the patient then pays and gives the sample as for any test.
+ */
+export async function labWalkIn(_: FormState, form: FormData): Promise<FormState> {
+  const values = Object.fromEntries([...form.entries()].map(([k, v]) => [k, String(v)]));
+  const patientId = text(form, "patientId");
+  const labTestIds = form.getAll("labTestIds").map(String);
+  if (!patientId) return { error: "Choose the patient first.", values };
+  if (!labTestIds.length) return { error: "Tick at least one test.", values };
+  try {
+    await api("/lab/walk-in", { method: "POST", body: JSON.stringify({ patientId, labTestIds, requestedBy: text(form, "requestedBy") || undefined }) });
+  } catch (e) {
+    return toFormState(e, values);
+  }
+  const done = encodeURIComponent("Lab tests added. Send the patient to the cashier, then to the lab.");
+  redirect(text(form, "returnTo") === "lab" ? `/lab?done=${done}` : `/patients/${patientId}?done=${done}`);
+}
+
+/** The doctor has seen a critical or amended result (clears its alert on the queue). */
+export async function labAlertSeen(id: string) {
+  await api(`/lab-orders/${id}/seen`, { method: "POST" });
+  refresh();
+}
+
 /** One form per lab order; the "step" field says which bench action to take. */
 export async function labStep(_: FormState, form: FormData): Promise<FormState> {
   const id = text(form, "orderId");
   const step = text(form, "step");
+  const result = {
+    // Panels post one field per component, named c_<componentId>.
+    value: text(form, "value") || undefined,
+    values: [...form.entries()]
+      .filter(([k]) => k.startsWith("c_"))
+      .map(([k, v]) => ({ componentId: k.slice(2), value: String(v).trim() }))
+      .filter((v) => v.value),
+    note: text(form, "note") || undefined,
+  };
+  // Who was told of a critical result, written by the lab when releasing it.
+  const notified = text(form, "notified") || undefined;
   const body =
     step === "collect"
       ? { sampleId: text(form, "sampleId") || undefined }
       : step === "result"
-        ? {
-            // Panels post one field per component, named c_<componentId>.
-            value: text(form, "value") || undefined,
-            values: [...form.entries()]
-              .filter(([k]) => k.startsWith("c_"))
-              .map(([k, v]) => ({ componentId: k.slice(2), value: String(v).trim() }))
-              .filter((v) => v.value),
-            note: text(form, "note") || undefined,
-          }
-        : {};
-  if (!["collect", "result", "verify"].includes(step)) return { error: "Unknown action." };
+        ? result
+        : step === "verify"
+          ? { notified }
+          : step === "amend"
+            ? { ...result, reason: text(form, "reason"), notified }
+            : step === "reject"
+              ? { reason: text(form, "reason"), note: text(form, "note") || undefined }
+              : null;
+  if (!body) return { error: "Unknown action." };
   try {
     await api(`/lab-orders/${id}/${step}`, { method: "POST", body: JSON.stringify(body) });
   } catch (e) {
