@@ -41,7 +41,13 @@ export function PayerForm({ payer }: { payer?: Payer }) {
         <Field label="Contact person">
           <Input name="contactPerson" defaultValue={v.contactPerson} />
         </Field>
+        <Field label="Patient's co-payment (%)" error={state.fieldErrors?.coPayPercent}>
+          <Input name="coPayPercent" type="number" min={0} max={100} step="0.5" defaultValue={state.values?.coPayPercent ?? (payer?.coPayPercent ? String(Number(payer.coPayPercent)) : "0")} />
+        </Field>
       </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="requiresAuthorization" defaultChecked={state.values ? state.values.requiresAuthorization === "on" : payer?.requiresAuthorization} /> Each visit needs their authorization number
+      </label>
       {payer && (
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" name="active" defaultChecked={payer.active} /> Active (offered when invoicing)

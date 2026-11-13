@@ -1,12 +1,26 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { closeCash, createInvoice, recordPayment, removeInvoiceLine, voidInvoice, type FormState } from "@/app/actions";
+import { closeCash, createInvoice, recordPayment, removeInvoiceLine, setVisitCoverage, voidInvoice, type FormState } from "@/app/actions";
+import { CoverageChoice } from "@/components/coverage-choice";
 import { Alert, buttonClass, Field, Input, inputClass, secondaryButtonClass } from "@/components/ui";
-import type { Payer } from "@/lib/api";
+import type { CoverageOption, Payer } from "@/lib/api";
 import { etb, PAYMENT_METHODS } from "@/lib/format";
 
-export function InvoiceForm({ visitId, subtotal, canDiscount, payers = [] }: { visitId: string; subtotal: string; canDiscount: boolean; payers?: Payer[] }) {
+export function InvoiceForm({
+  visitId,
+  subtotal,
+  canDiscount,
+  payers = [],
+  sponsor,
+}: {
+  visitId: string;
+  subtotal: string;
+  canDiscount: boolean;
+  payers?: Payer[];
+  /** The visit is billed to a payer: covered lines go to it; this form settles who pays the rest. */
+  sponsor?: { name: string; allCovered: boolean };
+}) {
   const [state, action, pending] = useActionState<FormState, FormData>(createInvoice, {});
   const [payer, setPayer] = useState(state.values?.payerType ?? "SELF");
   const [payerId, setPayerId] = useState(state.values?.payerId ?? "");
@@ -18,8 +32,19 @@ export function InvoiceForm({ visitId, subtotal, canDiscount, payers = [] }: { v
     <form action={action} className="space-y-2">
       <input type="hidden" name="visitId" value={visitId} />
       {state.error && <Alert>{state.error}</Alert>}
+      {sponsor && (
+        <p className="text-xs text-slate-500">
+          Covered lines go on an invoice to {sponsor.name}, with the patient&apos;s co-payment on it.{!sponsor.allCovered && " Who pays the other lines:"}
+        </p>
+      )}
       <div className="flex flex-wrap items-start gap-2">
-        <select name="payerType" value={payer} onChange={(e) => setPayer(e.target.value)} aria-label="Who pays" className={`${inputClass} w-auto`}>
+        <select
+          name="payerType"
+          value={payer}
+          onChange={(e) => setPayer(e.target.value)}
+          aria-label="Who pays"
+          className={`${inputClass} w-auto ${sponsor?.allCovered ? "hidden" : ""}`}
+        >
           <option value="SELF">Patient pays</option>
           <option value="CREDIT">Credit (company)</option>
           <option value="INSURANCE">Insurance</option>
@@ -43,7 +68,7 @@ export function InvoiceForm({ visitId, subtotal, canDiscount, payers = [] }: { v
           </div>
         )}
         <button type="submit" disabled={pending} className={buttonClass}>
-          {pending ? "Creating…" : `Create invoice · ${etb(subtotal)}`}
+          {pending ? "Creating…" : sponsor ? `Create invoices · ${etb(subtotal)}` : `Create invoice · ${etb(subtotal)}`}
         </button>
       </div>
       {canDiscount &&
@@ -67,7 +92,36 @@ export function InvoiceForm({ visitId, subtotal, canDiscount, payers = [] }: { v
   );
 }
 
-export function PaymentForm({ invoiceId, balance }: { invoiceId: string; balance: string }) {
+/**
+ * Changes who pays for a visit before it is billed (the patient shows their company card at the
+ * counter, or it was chosen by mistake): its lines are priced again for the new payer.
+ */
+export function VisitPayerForm({ visitId, coverages }: { visitId: string; coverages: CoverageOption[] }) {
+  const [state, action, pending] = useActionState<FormState, FormData>(setVisitCoverage, {});
+  const [open, setOpen] = useState(false);
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="text-xs text-brand-700 hover:underline dark:text-brand-400">
+        Change who pays
+      </button>
+    );
+  }
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2 text-sm">
+      <input type="hidden" name="visitId" value={visitId} />
+      <CoverageChoice coverages={coverages} className="w-auto min-w-48" />
+      <button disabled={pending} className={`${secondaryButtonClass} px-3 py-1 text-xs`}>
+        {pending ? "Saving…" : "Apply"}
+      </button>
+      <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500 hover:underline">
+        Cancel
+      </button>
+      {state.error && <span className="w-full text-xs text-red-700 dark:text-red-400">{state.error}</span>}
+    </form>
+  );
+}
+
+export function PaymentForm({ invoiceId, balance }: { invoiceId: string; /** What the patient pays now: the balance, or their co-payment left on a payer's invoice. */ balance: string }) {
   const [state, action, pending] = useActionState<FormState, FormData>(recordPayment, {});
   const [method, setMethod] = useState("CASH");
   const err = state.fieldErrors ?? {};

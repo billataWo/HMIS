@@ -5,10 +5,11 @@ import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { labWalkIn, searchPatients, type FormState } from "@/app/actions";
 import { Alert, buttonClass, Field, Input, inputClass, linkClass, secondaryButtonClass } from "@/components/ui";
+import { CoverageChoice } from "@/components/coverage-choice";
 import type { LabTest, Patient } from "@/lib/api";
 import { etb, fullName } from "@/lib/format";
 
-type Who = Pick<Patient, "id" | "mrn" | "firstName" | "fatherName" | "grandfather">;
+type Who = Pick<Patient, "id" | "mrn" | "firstName" | "fatherName" | "grandfather" | "coverages">;
 
 /**
  * Tests for someone who is not seeing a doctor here: pick the patient (registered first, so the
@@ -52,7 +53,13 @@ export function RequestForm({ tests, patient: preset, returnTo }: { tests: LabTe
               <X aria-hidden className="size-4" />
             </button>
           </p>
-        ) : (
+        ) : null}
+        {patient?.coverages?.length ? (
+          <div className="flex max-w-xl flex-wrap gap-2">
+            <CoverageChoice key={patient.id} coverages={patient.coverages} className="w-auto min-w-48 flex-1" />
+          </div>
+        ) : null}
+        {!patient && (
           <>
             <div className="relative max-w-md">
               <Search aria-hidden className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />

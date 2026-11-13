@@ -26,4 +26,15 @@ export class LookupsController {
       orderBy: [{ kind: 'asc' }, { name: 'asc' }],
     });
   }
+
+  /** Credit companies and insurers in use: for recording a patient's coverage (no balances). */
+  @AllStaff()
+  @Get('payers')
+  payers(@CurrentUser() me: AuthUser) {
+    return this.prisma.client.payer.findMany({
+      where: { tenantId: me.tenantId, active: true },
+      select: { id: true, name: true, type: true, coPayPercent: true, requiresAuthorization: true },
+      orderBy: { name: 'asc' },
+    });
+  }
 }

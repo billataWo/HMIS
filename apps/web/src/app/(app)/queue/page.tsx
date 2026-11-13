@@ -225,7 +225,7 @@ async function CheckInPanel({ find, doctors, services, lang }: { find: string; d
                   {p.phone && ` · ${p.phone}`}
                 </span>
               </div>
-              <CheckInForm patientId={p.id} doctors={doctors} services={services} returnTo="/queue" />
+              <CheckInForm patientId={p.id} doctors={doctors} services={services} coverages={p.coverages} returnTo="/queue" />
             </li>
           ))}
         </ul>

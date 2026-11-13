@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { PageHeader, Skeleton } from "@/components/ui";
-import { api, ApiError, type LabTest, type Patient } from "@/lib/api";
+import { api, ApiError, type LabTest, type Patient, type PatientCoverage } from "@/lib/api";
 import { RequestForm } from "./request-form";
 
 type Search = { patientId?: string; from?: string };
@@ -12,6 +12,8 @@ async function load(patientId?: string) {
       api<LabTest[]>("/lab/tests"),
       patientId ? api<Patient>(`/patients/${patientId}`).catch(() => null) : null,
     ]);
+    // Who can pay for the tests (the coverage list is for the front desk and the lab).
+    if (patient) patient.coverages = (await api<PatientCoverage[]>(`/patients/${patient.id}/coverages`).catch(() => [])).filter((c) => c.active);
     return { tests, patient };
   } catch (e) {
     if (e instanceof ApiError && e.status === 403) return null;

@@ -5,6 +5,7 @@ import { AuditService } from '../common/audit.service.js';
 import { clinicDay, DAY_PATTERN, dayRange } from '../common/clinic-day.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { usableCoverages } from '../billing/coverage.js';
 import { queuePatientSelect } from '../visits/visits.controller.js';
 
 const BookSchema = z.object({
@@ -27,7 +28,8 @@ const ListSchema = z.object({
 const UpdateSchema = z.object({ status: z.enum(['CANCELLED', 'NO_SHOW']) });
 
 const include = {
-  patient: { select: queuePatientSelect },
+  // With the coverages the patient can use today, for check-in on their payer.
+  patient: { select: { ...queuePatientSelect, coverages: usableCoverages() } },
   doctor: { select: { id: true, fullName: true } },
   visit: { select: { id: true, queueNumber: true, status: true } },
 } as const;

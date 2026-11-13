@@ -4,11 +4,12 @@ import { z } from 'zod';
 import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
 import { clinicDay, DAY_PATTERN, dayRange } from '../common/clinic-day.js';
-import { isSettled, prepaymentRequired, settlementSelect } from '../common/settlement.js';
+import { chargeTerms, isSettled, prepaymentRequired, settlementSelect } from '../common/settlement.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { queuePatientSelect } from '../visits/visits.controller.js';
 import { qcStates, reagentShortTests, useReagents } from './qc.js';
+import { visitCoverage } from '../billing/coverage.js';
 import { type Specimen, SPECIMENS } from './specimens.js';
 import { type BandRange, type BaseRange, flagValue, isCritical, type Patient, pickRange, rangeText } from './ranges.js';
 
@@ -30,6 +31,14 @@ const WalkInSchema = z.object({
     .string()
     .trim()
     .max(200)
+    .transform((s) => s || undefined)
+    .optional(),
+  /** Billed to one of the patient's coverages (credit company or insurer). */
+  coverageId: z.uuid().optional(),
+  authorizationNo: z
+    .string()
+    .trim()
+    .max(100)
     .transform((s) => s || undefined)
     .optional(),
 });
@@ -240,7 +249,8 @@ export class LabController {
         });
         // Free tests (e.g. programme-funded HIV testing) create no charge, so nobody is sent to the cashier.
         if (Number(t.price) > 0) {
-          await tx.charge.create({ data: { visitId: id, source: 'LAB', sourceId: order.id, description: t.name, unitPrice: t.price } });
+          const terms = await chargeTerms(tx, visit, 'LAB', t.id, t.price);
+          await tx.charge.create({ data: { visitId: id, source: 'LAB', sourceId: order.id, description: t.name, ...terms } });
         }
         created.push(order.id);
       }
@@ -721,8 +731,17 @@ export class LabController {
       if (!patient) throw new NotFoundException('Patient not found');
       const tests = await tx.labTest.findMany({ where: { id: { in: body.labTestIds }, tenantId: me.tenantId, active: true } });
       if (tests.length !== body.labTestIds.length) throw new NotFoundException('One or more tests were not found');
+      const coverage = body.coverageId ? await visitCoverage(tx, me.tenantId, patient.id, body.coverageId, body.authorizationNo) : null;
       const visit = await tx.visit.create({
-        data: { tenantId: me.tenantId, patientId: patient.id, kind: 'LAB', status: 'AWAITING_LAB', queueNumber: 0, calledAt: new Date() },
+        data: {
+          tenantId: me.tenantId,
+          patientId: patient.id,
+          kind: 'LAB',
+          status: 'AWAITING_LAB',
+          queueNumber: 0,
+          calledAt: new Date(),
+          ...(coverage && { payerId: coverage.payerId, memberId: coverage.memberId, coPayPercent: coverage.coPayPercent, authorizationNo: coverage.authorizationNo }),
+        },
       });
       const byId = new Map(tests.map((t) => [t.id, t]));
       const now = Date.now();
@@ -740,7 +759,8 @@ export class LabController {
           },
         });
         if (Number(t.price) > 0) {
-          await tx.charge.create({ data: { visitId: visit.id, source: 'LAB', sourceId: order.id, description: t.name, unitPrice: t.price } });
+          const terms = await chargeTerms(tx, visit, 'LAB', t.id, t.price);
+          await tx.charge.create({ data: { visitId: visit.id, source: 'LAB', sourceId: order.id, description: t.name, ...terms } });
         }
       }
       await this.audit.log(me, 'lab.walk-in', 'Visit', visit.id, { tests: tests.map((t) => t.name), requestedBy: body.requestedBy, ...(body.urgent && { urgent: true }) }, tx);

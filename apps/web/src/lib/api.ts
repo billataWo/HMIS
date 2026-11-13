@@ -134,6 +134,23 @@ export interface Patient {
   familyId: string | null;
   allergies: string[];
   createdAt: string;
+  /** In search results: the coverages they can be checked in on. */
+  coverages?: CoverageOption[];
+}
+
+/** A coverage the front desk can check the patient in on (their payer, member number, end date). */
+export interface CoverageOption {
+  id: string;
+  memberId: string | null;
+  validUntil: string | null;
+  payer: { id: string; name: string; type: "CREDIT" | "INSURANCE"; coPayPercent: string; requiresAuthorization: boolean; active?: boolean };
+}
+
+/** A patient's coverage as kept on their record. */
+export interface PatientCoverage extends CoverageOption {
+  holder: string | null;
+  active: boolean;
+  createdAt: string;
 }
 
 export interface PatientDetail extends Patient {
@@ -777,6 +794,8 @@ export interface Charge {
   description: string;
   quantity: number;
   unitPrice: string;
+  /** Covered by this payer (at its price); null: the patient pays it. */
+  payerId?: string | null;
   createdAt: string;
   voidedAt?: string | null; // removed from the invoice and refunded: never delivered
   voidReason?: string | null;
@@ -787,10 +806,14 @@ export interface PendingBill {
   queueNumber: number;
   checkedInAt: string;
   status: VisitStatus;
-  patient: QueuePatient;
+  patient: QueuePatient & { coverages?: CoverageOption[] };
   doctor: { fullName: string } | null;
   charges: Charge[];
   subtotal: string;
+  /** Billed to a payer: how much it covers, and what the patient pays (co-payment and anything not covered). */
+  payer?: { id: string; name: string; type: "CREDIT" | "INSURANCE" } | null;
+  covered?: string;
+  patientPart?: string;
 }
 
 export type PaymentMethod = "CASH" | "TELEBIRR" | "CHAPA" | "BANK_TRANSFER";
@@ -808,6 +831,11 @@ export interface Invoice {
   total: string;
   paid: string;
   balance: string;
+  /** On a payer's invoice: the patient's co-payment, what of it is paid, and what each side still owes. */
+  patientShare?: string;
+  patientPaid?: string;
+  patientDue?: string;
+  payerDue?: string;
   createdAt: string;
   voidedAt: string | null;
   voidReason: string | null;
@@ -818,8 +846,8 @@ export interface Invoice {
 export interface InvoiceDetail extends Invoice {
   charges: Charge[];
   // A negative amount is a refund; `note` says why.
-  payments: { id: string; method: PaymentMethod; amount: string; reference: string | null; note: string | null; receivedAt: string; cashier: { id: string; fullName: string } }[];
-  visit: { id: string; queueNumber: number; checkedInAt: string } | null;
+  payments: { id: string; method: PaymentMethod; amount: string; reference: string | null; note: string | null; byPayer?: boolean; receivedAt: string; cashier: { id: string; fullName: string } }[];
+  visit: { id: string; queueNumber: number; checkedInAt: string; memberId?: string | null; authorizationNo?: string | null; coPayPercent?: string | null } | null;
   tenant: { name: string; nameAm: string | null; phone: string | null; address: string | null };
 }
 
@@ -837,7 +865,7 @@ export interface Appointment {
   scheduledAt: string;
   reason: string | null;
   status: "BOOKED" | "ARRIVED" | "CANCELLED" | "NO_SHOW";
-  patient: QueuePatient;
+  patient: QueuePatient & { coverages?: CoverageOption[] };
   doctor: { id: string; fullName: string } | null;
   visit: { id: string; queueNumber: number; status: VisitStatus } | null;
 }
@@ -900,8 +928,17 @@ export interface Payer {
   phone: string | null;
   contactPerson: string | null;
   active: boolean;
+  /** The patient's share of each covered bill, in percent. */
+  coPayPercent?: string;
+  requiresAuthorization?: boolean;
   balance?: string;
   openInvoices?: number;
+}
+
+/** A payer's price list: every item with the clinic's price, and the payer's own price or exclusion. */
+export interface PayerTariff {
+  payer: Payer;
+  items: { itemType: "SERVICE" | "LAB" | "DRUG"; itemId: string; name: string; cashPrice: string; price: string | null; excluded: boolean }[];
 }
 
 export interface PayerStatement {
@@ -922,8 +959,19 @@ export interface StatementInvoice {
   status: InvoiceStatus;
   total: string;
   paid: string;
+  /** What the payer owes on it (its share, less what it paid). */
   balance: string;
+  payerShare?: string;
+  patientShare?: string;
   patient: QueuePatient;
+  /** What a claim needs: the member and authorization numbers, the doctor and the diagnoses. */
+  visit?: {
+    checkedInAt: string;
+    memberId: string | null;
+    authorizationNo: string | null;
+    doctor: { fullName: string } | null;
+    diagnoses: { icd11Code: string; label: string; isPrimary: boolean }[];
+  } | null;
   charges: { description: string; quantity: number; unitPrice: string }[];
 }
 

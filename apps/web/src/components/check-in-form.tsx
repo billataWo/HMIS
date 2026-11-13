@@ -2,7 +2,8 @@
 
 import { useActionState } from "react";
 import { checkIn, type FormState } from "@/app/actions";
-import type { Doctor, Service } from "@/lib/api";
+import type { CoverageOption, Doctor, Service } from "@/lib/api";
+import { CoverageChoice } from "./coverage-choice";
 import { Alert, buttonClass, inputClass } from "./ui";
 
 export function CheckInForm({
@@ -11,6 +12,7 @@ export function CheckInForm({
   defaultDoctorId,
   doctors,
   services,
+  coverages = [],
   returnTo,
 }: {
   patientId: string;
@@ -18,6 +20,8 @@ export function CheckInForm({
   defaultDoctorId?: string;
   doctors: Doctor[];
   services: Service[];
+  /** The patient's coverages: the visit can be billed to one of them. */
+  coverages?: CoverageOption[];
   returnTo: string;
 }) {
   const [state, action, pending] = useActionState<FormState, FormData>(checkIn, {});
@@ -49,6 +53,8 @@ export function CheckInForm({
             </option>
           ))}
         </select>
+        {/* A covered patient is checked in on their payer unless the desk chooses otherwise. */}
+        <CoverageChoice coverages={coverages} className="w-auto min-w-64 flex-1" />
         <button type="submit" disabled={pending} className={buttonClass}>
           {pending ? "Checking in…" : "Check in"}
         </button>

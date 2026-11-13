@@ -36,7 +36,12 @@ async function Receipt({ params }: { params: Promise<{ id: string }> }) {
         <p>
           {fullName(inv.patient)} · {inv.patient.mrn}
         </p>
-        {inv.payerType !== "SELF" && <p>Payer: {inv.payerName}</p>}
+        {inv.payerType !== "SELF" && (
+          <p>
+            Payer: {inv.payerName}
+            {inv.visit?.memberId && ` · ${inv.visit.memberId}`}
+          </p>
+        )}
       </div>
       <table className="w-full">
         <tbody>
@@ -69,7 +74,19 @@ async function Receipt({ params }: { params: Promise<{ id: string }> }) {
           <span>TOTAL</span>
           <span>{etb(inv.total)}</span>
         </p>
-        {inv.payments.map((p) => (
+        {inv.payerType !== "SELF" && (
+          <>
+            <p className="flex justify-between">
+              <span>Covered by {inv.payerName}</span>
+              <span>{(Number(inv.total) - Number(inv.patientShare ?? 0)).toFixed(2)}</span>
+            </p>
+            <p className="flex justify-between font-bold">
+              <span>YOUR CO-PAYMENT</span>
+              <span>{etb(inv.patientShare ?? "0")}</span>
+            </p>
+          </>
+        )}
+        {inv.payments.filter((p) => !p.byPayer).map((p) => (
           <p key={p.id} className="flex justify-between">
             <span>
               {Number(p.amount) < 0 ? "Refund · " : ""}
@@ -79,10 +96,10 @@ async function Receipt({ params }: { params: Promise<{ id: string }> }) {
             <span>{Number(p.amount).toFixed(2)}</span>
           </p>
         ))}
-        {Number(inv.balance) > 0 && (
+        {Number(inv.payerType === "SELF" ? inv.balance : (inv.patientDue ?? 0)) > 0 && (
           <p className="flex justify-between font-bold">
             <span>BALANCE DUE</span>
-            <span>{etb(inv.balance)}</span>
+            <span>{etb(inv.payerType === "SELF" ? inv.balance : inv.patientDue!)}</span>
           </p>
         )}
       </div>

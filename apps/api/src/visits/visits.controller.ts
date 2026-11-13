@@ -16,7 +16,8 @@ import { type AuthUser, CurrentUser, Roles, AllStaff } from '../auth/auth.decora
 import { AuditService } from '../common/audit.service.js';
 import { clinicDay, DAY_PATTERN, dayRange } from '../common/clinic-day.js';
 import { fromCents, toCents } from '../common/money.js';
-import { isSettled, prepaymentRequired, settlementSelect } from '../common/settlement.js';
+import { chargeTerms, coPayOf, isSettled, prepaymentRequired, settlementSelect } from '../common/settlement.js';
+import { visitCoverage } from '../billing/coverage.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -25,6 +26,14 @@ const CheckInSchema = z.object({
   doctorId: z.uuid().optional(),
   serviceId: z.uuid().optional(), // consultation fee to charge on arrival
   appointmentId: z.uuid().optional(),
+  /** Billed to one of the patient's coverages (credit company or insurer). */
+  coverageId: z.uuid().optional(),
+  authorizationNo: z
+    .string()
+    .trim()
+    .max(100)
+    .transform((s) => s || undefined)
+    .optional(),
 });
 
 const QueueQuerySchema = z.object({
@@ -132,7 +141,12 @@ export class VisitsController {
         consultationPaid: charges.filter((c) => c.source === 'CONSULTATION').every(isSettled),
         diagnosed: _count.diagnoses > 0,
         // Anything else the patient still has to pay (procedures, tests, drugs), so nobody leaves owing.
-        owed: fromCents(charges.filter((c) => c.source !== 'CONSULTATION' && !isSettled(c)).reduce((s, c) => s + toCents(c.unitPrice) * c.quantity, 0)),
+        // (On a covered charge, only the patient's co-payment.)
+        owed: fromCents(
+          charges
+            .filter((c) => c.source !== 'CONSULTATION' && !isSettled(c))
+            .reduce((s, c) => s + (c.payerId ? coPayOf(toCents(c.unitPrice) * c.quantity, v.coPayPercent) : toCents(c.unitPrice) * c.quantity), 0),
+        ),
         // Every ordered test has a verified result, so the doctor can resume.
         labReady: labOrders.length > 0 && labOrders.every((o) => o.status === 'VERIFIED'),
         // What the visit is still waiting for, so the queue only offers moves that can succeed.
@@ -175,6 +189,8 @@ export class VisitsController {
         ? await tx.serviceItem.findFirst({ where: { id: body.serviceId, tenantId: me.tenantId, active: true } })
         : null;
       if (body.serviceId && !service) throw new NotFoundException('Service not found');
+      const coverage = body.coverageId ? await visitCoverage(tx, me.tenantId, patient.id, body.coverageId, body.authorizationNo) : null;
+      const fee = service && (await chargeTerms(tx, { payerId: coverage?.payerId ?? null }, 'SERVICE', service.id, service.price));
 
       // One open visit per patient: an unfinished one from an earlier day must be closed first.
       const open = await tx.visit.findFirst({
@@ -204,21 +220,29 @@ export class VisitsController {
           doctorId,
           appointmentId: body.appointmentId,
           queueNumber: last,
-          ...(service && {
-            charges: {
-              create: {
-                source: 'CONSULTATION',
-                sourceId: service.id,
-                description: service.name,
-                unitPrice: service.price,
-              },
-            },
+          ...(coverage && {
+            payerId: coverage.payerId,
+            memberId: coverage.memberId,
+            coPayPercent: coverage.coPayPercent,
+            authorizationNo: coverage.authorizationNo,
           }),
+          ...(service &&
+            fee && {
+              charges: {
+                create: {
+                  source: 'CONSULTATION',
+                  sourceId: service.id,
+                  description: service.name,
+                  unitPrice: fee.unitPrice,
+                  payerId: fee.payerId,
+                },
+              },
+            }),
         },
         include: { patient: { select: queuePatientSelect }, doctor: { select: { id: true, fullName: true } }, charges: true },
       });
 
-      await this.audit.log(me, 'visit.checkin', 'Visit', visit.id, { queueNumber: last, patientId: patient.id }, tx);
+      await this.audit.log(me, 'visit.checkin', 'Visit', visit.id, { queueNumber: last, patientId: patient.id, ...(coverage && { payer: coverage.payer.name }) }, tx);
       return visit;
     });
   }

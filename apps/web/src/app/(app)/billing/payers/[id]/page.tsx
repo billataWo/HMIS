@@ -18,8 +18,8 @@ function InvoiceTable({ rows }: { rows: StatementInvoice[] }) {
           <th className="py-2 pr-3">Date</th>
           <th className="py-2 pr-3">Invoice</th>
           <th className="py-2 pr-3">Patient</th>
-          <th className="py-2 pr-3">Services</th>
-          <th className="py-2 pr-3 text-right">Total</th>
+          <th className="py-2 pr-3">Services and diagnosis</th>
+          <th className="py-2 pr-3 text-right">Their share</th>
           <th className="py-2 pr-3 text-right">Balance</th>
           <th className="py-2 print:hidden">Status</th>
         </tr>
@@ -35,10 +35,23 @@ function InvoiceTable({ rows }: { rows: StatementInvoice[] }) {
             </td>
             <td className="py-2 pr-3">
               {fullName(i.patient)}
-              <span className="block text-xs text-slate-500">{i.patient.mrn}</span>
+              <span className="block text-xs text-slate-500">
+                {i.patient.mrn}
+                {i.visit?.memberId && ` · member ${i.visit.memberId}`}
+                {i.visit?.authorizationNo && ` · auth. ${i.visit.authorizationNo}`}
+              </span>
             </td>
-            <td className="py-2 pr-3 text-xs text-slate-600 dark:text-slate-400">{i.charges.map((c) => (c.quantity > 1 ? `${c.description} ×${c.quantity}` : c.description)).join(", ")}</td>
-            <td className="py-2 pr-3 text-right tabular-nums">{etb(i.total)}</td>
+            <td className="py-2 pr-3 text-xs text-slate-600 dark:text-slate-400">
+              {i.charges.map((c) => (c.quantity > 1 ? `${c.description} ×${c.quantity}` : c.description)).join(", ")}
+              {i.visit?.diagnoses.length ? (
+                <span className="block">Dx: {i.visit.diagnoses.map((d) => `${d.icd11Code} ${d.label}`).join("; ")}</span>
+              ) : null}
+              {i.visit?.doctor && <span className="block">Dr. {i.visit.doctor.fullName}</span>}
+            </td>
+            <td className="py-2 pr-3 text-right tabular-nums">
+              {etb(i.payerShare ?? i.total)}
+              {i.patientShare && Number(i.patientShare) > 0 && <span className="block text-xs text-slate-500">of {etb(i.total)}; patient&apos;s share {etb(i.patientShare)}</span>}
+            </td>
             <td className="py-2 pr-3 text-right tabular-nums">{etb(i.balance)}</td>
             <td className="py-2 print:hidden">
               <InvoiceBadge status={i.status} />
@@ -67,10 +80,15 @@ async function Statement({ params, searchParams }: { params: Promise<{ id: strin
     <>
       <PageHeader
         title={s.payer.name}
-        subtitle={`${s.payer.type === "CREDIT" ? "Credit" : "Insurance"} · ${[s.payer.contactPerson, s.payer.phone].filter(Boolean).join(" · ") || "no contact recorded"}`}
+        subtitle={`${s.payer.type === "CREDIT" ? "Credit" : "Insurance"} · ${Number(s.payer.coPayPercent ?? 0) > 0 ? `patient pays ${Number(s.payer.coPayPercent)}%` : "fully covered"}${s.payer.requiresAuthorization ? " · authorization per visit" : ""} · ${[s.payer.contactPerson, s.payer.phone].filter(Boolean).join(" · ") || "no contact recorded"}`}
         actions={
           <div className="flex flex-wrap gap-2 print:hidden">
             {me.role === "ADMIN" && <PayerForm payer={s.payer} />}
+            {me.role === "ADMIN" && (
+              <Link href={`/billing/payers/${s.payer.id}/tariff`} className={secondaryButtonClass}>
+                Price list
+              </Link>
+            )}
             <PrintButton inline />
           </div>
         }
@@ -79,7 +97,7 @@ async function Statement({ params, searchParams }: { params: Promise<{ id: strin
         <div className="hidden text-sm print:block">
           <p className="font-bold">{s.tenant.name}</p>
           <p>{[s.tenant.address, s.tenant.phone].filter(Boolean).join(" · ")}</p>
-          <p className="mt-2 font-semibold">STATEMENT OF ACCOUNT</p>
+          <p className="mt-2 font-semibold">STATEMENT OF ACCOUNT AND CLAIM · {s.payer.name}</p>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 print:grid-cols-2">

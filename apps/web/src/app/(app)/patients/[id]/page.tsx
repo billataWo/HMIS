@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { CheckInForm } from "@/components/check-in-form";
+import { CoverageSection } from "@/components/coverage-section";
 import { Flash } from "@/components/flash";
 import { AllergyAlert } from "@/components/allergy-alert";
 import { AllergyEditor } from "@/components/allergy-editor";
@@ -10,7 +11,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Badge, linkClass, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { LabHistory } from "@/components/lab-history";
 import { ReturnForm } from "@/components/return-form";
-import { api, ApiError, type Appointment, type Doctor, type LabHistoryOrder, type Me, type Medication, type PatientDetail, type QueueVisit, type Service } from "@/lib/api";
+import { api, ApiError, type Appointment, type Doctor, type LabHistoryOrder, type Me, type Medication, type PatientCoverage, type PatientDetail, type Payer, type QueueVisit, type Service } from "@/lib/api";
 import { shortDirections } from "@/lib/directions";
 import { ageFrom, clinicToday, formatDualDate, formatTime, fullName } from "@/lib/format";
 
@@ -22,6 +23,8 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     </div>
   );
 }
+
+type PayerOption = Pick<Payer, "id" | "name" | "type"> & { coPayPercent: string; requiresAuthorization: boolean };
 
 async function Patient({
   params,
@@ -58,6 +61,11 @@ async function Patient({
   // Lab history: for clinicians and the lab.
   const labs = ["ADMIN", "DOCTOR", "NURSE", "LAB_TECH"].includes(me.role) ? await api<LabHistoryOrder[]>(`/patients/${p.id}/lab-results`) : null;
   const canRequestLab = canCheckIn || me.role === "LAB_TECH";
+  // Who pays for the patient (credit company or insurer): kept by the front desk and the cashier.
+  const seesCoverage = ["ADMIN", "RECEPTIONIST", "NURSE", "CASHIER", "DOCTOR"].includes(me.role);
+  const [coverages, payers] = seesCoverage
+    ? await Promise.all([api<PatientCoverage[]>(`/patients/${p.id}/coverages`), api<PayerOption[]>("/lookups/payers")])
+    : [[], []];
   const age = ageFrom(p.dateOfBirth);
 
   return (
@@ -122,6 +130,7 @@ async function Patient({
               defaultDoctorId={todaysAppt?.doctor?.id}
               doctors={doctors}
               services={services}
+              coverages={coverages.filter((c) => c.active)}
               returnTo={`/patients/${p.id}`}
             />
           </>
@@ -143,6 +152,11 @@ async function Patient({
           </div>
         )}
       </section>
+      {seesCoverage && (coverages.length > 0 || payers.length > 0) && (
+        <div className="mb-6">
+          <CoverageSection patientId={p.id} coverages={coverages} payers={payers} canEdit={me.role !== "DOCTOR"} />
+        </div>
+      )}
 
       <AllergyAlert allergies={p.allergies} className={canEditAllergies ? "mb-2" : "mb-6"} />
       {canEditAllergies && (

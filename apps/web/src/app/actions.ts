@@ -169,6 +169,9 @@ export async function checkIn(_: FormState, form: FormData): Promise<FormState> 
         doctorId: text(form, "doctorId") || undefined,
         serviceId: text(form, "serviceId") || undefined,
         appointmentId: text(form, "appointmentId") || undefined,
+        // Billed to the patient's credit company or insurer.
+        coverageId: text(form, "coverageId") || undefined,
+        authorizationNo: text(form, "authorizationNo") || undefined,
       }),
     });
   } catch (e) {
@@ -496,7 +499,14 @@ export async function labWalkIn(_: FormState, form: FormData): Promise<FormState
   if (!patientId) return { error: "Choose the patient first.", values };
   if (!labTestIds.length) return { error: "Tick at least one test.", values };
   try {
-    await api("/lab/walk-in", { method: "POST", body: JSON.stringify({ patientId, labTestIds, requestedBy: text(form, "requestedBy") || undefined, urgent: form.get("urgent") === "on" }) });
+    await api("/lab/walk-in", { method: "POST", body: JSON.stringify({
+        patientId,
+        labTestIds,
+        requestedBy: text(form, "requestedBy") || undefined,
+        urgent: form.get("urgent") === "on",
+        coverageId: text(form, "coverageId") || undefined,
+        authorizationNo: text(form, "authorizationNo") || undefined,
+      }) });
   } catch (e) {
     return toFormState(e, values);
   }
@@ -982,6 +992,8 @@ export async function savePayer(_: FormState, form: FormData): Promise<FormState
     name: text(form, "name"),
     phone: text(form, "phone"),
     contactPerson: text(form, "contactPerson"),
+    coPayPercent: text(form, "coPayPercent") === "" ? 0 : Number(text(form, "coPayPercent")),
+    requiresAuthorization: form.get("requiresAuthorization") === "on",
     ...(id && { active: form.get("active") === "on" }),
   };
   try {
@@ -991,6 +1003,51 @@ export async function savePayer(_: FormState, form: FormData): Promise<FormState
   }
   refresh();
   return { ok: true };
+}
+
+/** Admin: a payer's price list: its own price per item, or not covered (replaces the list). */
+export async function savePayerTariff(
+  payerId: string,
+  items: { itemType: "SERVICE" | "LAB" | "DRUG"; itemId: string; price: number | null; excluded: boolean }[],
+): Promise<{ error?: string; saved?: number }> {
+  try {
+    const res = await api<{ saved: number }>(`/payers/${payerId}/tariff`, { method: "PUT", body: JSON.stringify({ items }) });
+    refresh();
+    return res;
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.message };
+    throw e;
+  }
+}
+
+/** A patient's coverage: their credit company or insurer, member number and end date (new, or changed). */
+export async function saveCoverage(_: FormState, form: FormData): Promise<FormState> {
+  const values = formValues(form);
+  const id = text(form, "id");
+  const common = { memberId: text(form, "memberId") || null, holder: text(form, "holder") || null, validUntil: text(form, "validUntil") || null };
+  try {
+    if (id) await api(`/coverages/${id}`, { method: "PATCH", body: JSON.stringify({ ...common, active: form.get("active") === "on" }) });
+    else await api(`/patients/${text(form, "patientId")}/coverages`, { method: "POST", body: JSON.stringify({ ...common, payerId: text(form, "payerId") }) });
+  } catch (e) {
+    return toFormState(e, values);
+  }
+  refresh();
+  return { ok: true, values: id ? values : {} };
+}
+
+/** Who pays for a visit, changed after check-in: what isn't invoiced is priced again. */
+export async function setVisitCoverage(_: FormState, form: FormData): Promise<FormState> {
+  const values = formValues(form);
+  try {
+    await api(`/visits/${text(form, "visitId")}/coverage`, {
+      method: "POST",
+      body: JSON.stringify({ coverageId: text(form, "coverageId") || null, authorizationNo: text(form, "authorizationNo") || undefined }),
+    });
+  } catch (e) {
+    return toFormState(e, values);
+  }
+  refresh();
+  return { ok: true, values };
 }
 
 export async function settlePayer(_: FormState, form: FormData): Promise<FormState> {

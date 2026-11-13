@@ -6,7 +6,7 @@ import { InvoiceBadge } from "@/components/invoice-badge";
 import { EmptyState, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { api, ApiError, type Invoice, type Me, type Payer, type PendingBill } from "@/lib/api";
 import { etb, formatDualDate, formatTime, fullName } from "@/lib/format";
-import { InvoiceForm } from "./billing-forms";
+import { InvoiceForm, VisitPayerForm } from "./billing-forms";
 
 async function Billing() {
   let me: Me, pending: PendingBill[], invoices: Invoice[], payers: Payer[];
@@ -43,11 +43,20 @@ async function Billing() {
                     {v.doctor && ` · Dr. ${v.doctor.fullName}`}
                   </span>
                 </div>
+                {v.payer && (
+                  <p className="rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:bg-sky-950/40 dark:text-sky-100">
+                    Billed to <span className="font-medium">{v.payer.name}</span>: covers {etb(v.covered ?? "0")}. The patient pays{" "}
+                    <span className="font-medium">{etb(v.patientPart ?? "0")}</span> (their co-payment and anything not covered).
+                  </p>
+                )}
                 <table className="w-full text-sm">
                   <tbody>
                     {v.charges.map((c) => (
                       <tr key={c.id} className="border-t border-slate-100 dark:border-slate-800">
-                        <td className="py-1.5">{c.description}</td>
+                        <td className="py-1.5">
+                          {c.description}
+                          {v.payer && <span className="ml-2 text-xs text-slate-500">{c.payerId ? `${v.payer.name}` : "patient (not covered)"}</span>}
+                        </td>
                         <td className="py-1.5 text-right text-slate-500 tabular-nums">
                           {c.quantity > 1 && `${c.quantity} × ${Number(c.unitPrice).toFixed(2)}`}
                         </td>
@@ -56,7 +65,14 @@ async function Billing() {
                     ))}
                   </tbody>
                 </table>
-                <InvoiceForm visitId={v.id} subtotal={v.subtotal} canDiscount={me.role === "ADMIN"} payers={payers.filter((p) => p.active)} />
+                {v.patient.coverages && v.patient.coverages.length > 0 && <VisitPayerForm visitId={v.id} coverages={v.patient.coverages} />}
+                <InvoiceForm
+                  visitId={v.id}
+                  subtotal={v.subtotal}
+                  canDiscount={me.role === "ADMIN"}
+                  payers={payers.filter((p) => p.active)}
+                  sponsor={v.payer ? { name: v.payer.name, allCovered: v.charges.every((c) => c.payerId) } : undefined}
+                />
               </div>
             ))}
           </div>
@@ -94,7 +110,10 @@ async function Billing() {
                     <td className="px-4 py-3">{fullName(i.patient)}</td>
                     <td className="px-4 py-3">{i.payerType === "SELF" ? "Patient" : i.payerName}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{etb(i.total)}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{i.status === "VOID" ? "—" : etb(i.balance)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {i.status === "VOID" ? "—" : etb(i.balance)}
+                      {i.payerType !== "SELF" && Number(i.patientDue ?? 0) > 0 && <span className="block text-xs text-amber-700 dark:text-amber-400">patient owes {etb(i.patientDue!)}</span>}
+                    </td>
                     <td className="px-4 py-3">
                       <InvoiceBadge status={i.status} />
                     </td>

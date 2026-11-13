@@ -5,10 +5,11 @@ import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
 import { clinicDay, DAY_PATTERN, dayRange } from '../common/clinic-day.js';
 import { fromCents, toCents } from '../common/money.js';
-import { liveCharge } from '../common/settlement.js';
+import { coPayOf, liveCharge } from '../common/settlement.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { queuePatientSelect } from '../visits/visits.controller.js';
+import { usableCoverages } from './coverage.js';
 
 const money = z
   .number()
@@ -78,14 +79,36 @@ const invoiceInclude = {
   charges: { orderBy: { createdAt: 'asc' } },
   payments: { orderBy: { receivedAt: 'asc' }, include: { cashier: { select: { id: true, fullName: true } } } },
   createdBy: { select: { id: true, fullName: true } },
-  visit: { select: { id: true, queueNumber: true, checkedInAt: true } },
+  visit: { select: { id: true, queueNumber: true, checkedInAt: true, memberId: true, authorizationNo: true, coPayPercent: true } },
   tenant: { select: { name: true, nameAm: true, phone: true, address: true } },
 } satisfies Prisma.InvoiceInclude;
 
 const lineTotal = (c: { quantity: number; unitPrice: { toString(): string } }) => toCents(c.unitPrice) * c.quantity;
 
-function withBalance<T extends { total: { toString(): string }; paid: { toString(): string } }>(inv: T) {
-  return { ...inv, balance: fromCents(toCents(inv.total) - toCents(inv.paid)) };
+type Money = { toString(): string };
+type InvoiceMoney = { payerType: string; total: Money; paid: Money; patientShare: Money; patientPaid: Money };
+
+/**
+ * What the patient still owes on an invoice: the balance of their own, or what is left of their
+ * co-payment on a payer's (in cents).
+ */
+export function patientDue(i: InvoiceMoney) {
+  return i.payerType === 'SELF' ? toCents(i.total) - toCents(i.paid) : Math.max(0, toCents(i.patientShare) - toCents(i.patientPaid));
+}
+
+/** What the credit company or insurer still owes on its invoice (in cents): its share less what it paid. */
+export function payerDue(i: InvoiceMoney) {
+  if (i.payerType === 'SELF') return 0;
+  return Math.max(0, toCents(i.total) - toCents(i.patientShare) - (toCents(i.paid) - toCents(i.patientPaid)));
+}
+
+function withBalance<T extends InvoiceMoney>(inv: T) {
+  return {
+    ...inv,
+    balance: fromCents(toCents(inv.total) - toCents(inv.paid)),
+    patientDue: fromCents(patientDue(inv)),
+    payerDue: fromCents(payerDue(inv)),
+  };
 }
 
 @Controller()
@@ -96,19 +119,28 @@ export class BillingController {
     private readonly audit: AuditService,
   ) {}
 
-  /** Visits with charges that have not been invoiced yet, oldest first. */
+  /**
+   * Visits with charges that have not been invoiced yet, oldest first; for a visit billed to a payer,
+   * how much is covered and the patient's part (their co-payment and anything not covered).
+   */
   @Get('billing/pending')
   async pending(@CurrentUser() me: AuthUser) {
     const visits = await this.prisma.client.visit.findMany({
       where: { tenantId: me.tenantId, charges: { some: { invoiceId: null } } },
       orderBy: { checkedInAt: 'asc' },
       include: {
-        patient: { select: queuePatientSelect },
+        // With their coverages, so the cashier can change who pays before billing.
+        patient: { select: { ...queuePatientSelect, coverages: usableCoverages() } },
         doctor: { select: { fullName: true } },
+        payer: { select: { id: true, name: true, type: true } },
         charges: { where: { invoiceId: null }, orderBy: { createdAt: 'asc' } },
       },
     });
-    return visits.map((v) => ({ ...v, subtotal: fromCents(v.charges.reduce((s, c) => s + lineTotal(c), 0)) }));
+    return visits.map((v) => {
+      const covered = v.charges.filter((c) => c.payerId).reduce((s, c) => s + lineTotal(c), 0);
+      const own = v.charges.filter((c) => !c.payerId).reduce((s, c) => s + lineTotal(c), 0);
+      return { ...v, subtotal: fromCents(covered + own), covered: fromCents(covered), patientPart: fromCents(own + coPayOf(covered, v.coPayPercent)) };
+    });
   }
 
   /**
@@ -117,7 +149,7 @@ export class BillingController {
    */
   @Get('billing/owed')
   async owed(@CurrentUser() me: AuthUser) {
-    const open = { payerType: 'SELF' as const, status: { in: ['OPEN' as const, 'PARTIALLY_PAID' as const] } };
+    const open = { status: { in: ['OPEN' as const, 'PARTIALLY_PAID' as const] } };
     const visits = await this.prisma.client.visit.findMany({
       where: { tenantId: me.tenantId, OR: [{ charges: { some: { invoiceId: null } } }, { invoices: { some: open } }] },
       orderBy: { checkedInAt: 'asc' },
@@ -125,16 +157,20 @@ export class BillingController {
       include: {
         patient: { select: queuePatientSelect },
         doctor: { select: { fullName: true } },
+        payer: { select: { id: true, name: true, type: true } },
         charges: { where: { ...liveCharge, OR: [{ invoiceId: null }, { invoice: open }] }, orderBy: { createdAt: 'asc' } },
-        invoices: { where: open, select: { total: true, paid: true } },
+        invoices: { where: open, select: { payerType: true, total: true, paid: true, patientShare: true, patientPaid: true } },
       },
     });
     return visits
       .map(({ invoices, ...v }) => {
-        const unbilled = v.charges.filter((c) => c.invoiceId === null).reduce((s, c) => s + lineTotal(c), 0);
-        const balance = invoices.reduce((s, i) => s + toCents(i.total) - toCents(i.paid), 0);
-        const paid = invoices.reduce((s, i) => s + toCents(i.paid), 0);
-        return { ...v, subtotal: fromCents(unbilled + balance), paid: fromCents(paid) };
+        // Not invoiced yet: all of the patient's own charges, and their co-payment on covered ones.
+        const unbilled = v.charges.filter((c) => c.invoiceId === null);
+        const own = unbilled.filter((c) => !c.payerId).reduce((s, c) => s + lineTotal(c), 0);
+        const covered = unbilled.filter((c) => c.payerId).reduce((s, c) => s + lineTotal(c), 0);
+        const due = invoices.reduce((s, i) => s + patientDue(i), 0);
+        const paid = invoices.reduce((s, i) => s + (i.payerType === 'SELF' ? toCents(i.paid) : toCents(i.patientPaid)), 0);
+        return { ...v, subtotal: fromCents(own + coPayOf(covered, v.coPayPercent) + due), paid: fromCents(paid) };
       })
       .filter((b) => toCents(b.subtotal) > 0);
   }
@@ -143,7 +179,7 @@ export class BillingController {
   async createInvoice(@CurrentUser() me: AuthUser, @Body(new ZodPipe(InvoiceSchema)) body: z.infer<typeof InvoiceSchema>) {
     if (body.discount && me.role !== 'ADMIN') throw new ForbiddenException('Only an admin can give a discount');
 
-    const invoice = await this.prisma.client.$transaction(async (tx) => {
+    const invoices = await this.prisma.client.$transaction(async (tx) => {
       const visit = await tx.visit.findFirst({ where: { id: body.visitId, tenantId: me.tenantId } });
       if (!visit) throw new NotFoundException('Visit not found');
       const charges = await tx.charge.findMany({ where: { visitId: visit.id, invoiceId: null } });
@@ -160,23 +196,65 @@ export class BillingController {
             });
         if (!payer) throw new NotFoundException('Payer not found');
       }
-      return this.invoiceCharges(tx, me, visit, charges, {
+      return this.billVisit(tx, me, visit, charges, {
         payerType: body.payerType,
         payer,
         discount: body.discount ? toCents(body.discount) : 0,
         discountReason: body.discountReason,
       });
     });
-    return this.get(me, invoice.id);
+    // The patient's own invoice if there is one (that is what they pay at the counter), else the payer's.
+    const main = invoices.find((i) => i.payerType === body.payerType) ?? invoices[0];
+    return { ...(await this.get(me, main.id)), invoices: invoices.map((i) => ({ id: i.id, number: i.number, payerType: i.payerType })) };
   }
 
-  /** Puts a visit's charges on a new invoice, inside the caller's transaction. */
+  /**
+   * Invoices a visit's charges. Charges covered by a payer go on an invoice to that payer, with the
+   * patient's co-payment as their share of it; the rest are billed as asked (the patient by default,
+   * or a payer chosen at the counter), with any discount. Inside the caller's transaction.
+   */
+  private async billVisit(
+    tx: Prisma.TransactionClient,
+    me: AuthUser,
+    visit: { id: string; patientId: string; coPayPercent: Money | null },
+    charges: { id: string; quantity: number; unitPrice: Money; payerId: string | null }[],
+    rest: { payerType: 'SELF' | 'CREDIT' | 'INSURANCE'; payer: { id: string; name: string } | null; discount: number; discountReason?: string },
+  ) {
+    const created = [];
+    const covered = new Map<string, typeof charges>();
+    for (const c of charges.filter((x) => x.payerId)) covered.set(c.payerId!, [...(covered.get(c.payerId!) ?? []), c]);
+    for (const [payerId, lines] of covered) {
+      const payer = await tx.payer.findUniqueOrThrow({ where: { id: payerId }, select: { id: true, name: true, type: true } });
+      const subtotal = lines.reduce((s, c) => s + lineTotal(c), 0);
+      created.push(
+        await this.invoiceCharges(tx, me, visit, lines, {
+          payerType: payer.type,
+          payer,
+          discount: 0,
+          patientShare: coPayOf(subtotal, visit.coPayPercent),
+        }),
+      );
+    }
+    const own = charges.filter((c) => !c.payerId);
+    if (own.length) created.push(await this.invoiceCharges(tx, me, visit, own, rest));
+    else if (rest.discount) throw new ConflictException('Everything on this visit is billed to its payer; there is nothing to discount');
+    return created;
+  }
+
+  /** Puts charges on a new invoice, inside the caller's transaction. */
   private async invoiceCharges(
     tx: Prisma.TransactionClient,
     me: AuthUser,
     visit: { id: string; patientId: string },
     charges: { id: string; quantity: number; unitPrice: { toString(): string } }[],
-    opts: { payerType: 'SELF' | 'CREDIT' | 'INSURANCE'; payer: { id: string; name: string } | null; discount: number; discountReason?: string },
+    opts: {
+      payerType: 'SELF' | 'CREDIT' | 'INSURANCE';
+      payer: { id: string; name: string } | null;
+      discount: number;
+      discountReason?: string;
+      /** On a payer's invoice: the patient's co-payment (cents). */
+      patientShare?: number;
+    },
   ) {
     const subtotal = charges.reduce((s, c) => s + lineTotal(c), 0);
     const discount = opts.discount;
@@ -200,6 +278,7 @@ export class BillingController {
         discount: fromCents(discount),
         discountReason: discount ? opts.discountReason : undefined,
         total: fromCents(subtotal - discount),
+        patientShare: fromCents(Math.min(opts.patientShare ?? 0, subtotal - discount)),
         // A fully discounted bill has nothing left to collect.
         status: subtotal - discount === 0 ? 'PAID' : 'OPEN',
         createdById: me.sub,
@@ -271,9 +350,16 @@ export class BillingController {
     const invoice = await tx.invoice.findUniqueOrThrow({ where: { id } });
 
     if (invoice.status === 'VOID') throw new ConflictException('This invoice is void');
-    const balance = toCents(invoice.total) - toCents(invoice.paid);
-    if (balance <= 0) throw new ConflictException('This invoice is already paid');
-    if (amount > balance) throw new ConflictException(`Amount is more than the balance of ${fromCents(balance)} ETB`);
+    // At the counter the patient pays their own invoice, or their co-payment on a payer's (the payer
+    // settles its part from its account).
+    const own = invoice.payerType === 'SELF';
+    const balance = patientDue(invoice);
+    if (balance <= 0) {
+      throw new ConflictException(
+        own ? 'This invoice is already paid' : `The patient's share of this invoice is paid; the rest is billed to ${invoice.payerName}`,
+      );
+    }
+    if (amount > balance) throw new ConflictException(`Amount is more than the ${own ? 'balance' : "patient's share"} of ${fromCents(balance)} ETB`);
 
     const closed = await tx.cashClosing.findFirst({ where: { tenantId: me.tenantId, cashierId: me.sub, day: new Date(clinicDay()) } });
     if (closed) throw new ConflictException("You have already closed today's cash; ask another cashier or an admin");
@@ -289,7 +375,11 @@ export class BillingController {
     const paid = toCents(invoice.paid) + amount;
     await tx.invoice.update({
       where: { id },
-      data: { paid: fromCents(paid), status: paid >= toCents(invoice.total) ? 'PAID' : 'PARTIALLY_PAID' },
+      data: {
+        paid: fromCents(paid),
+        ...(!own && { patientPaid: fromCents(toCents(invoice.patientPaid) + amount) }),
+        status: paid >= toCents(invoice.total) ? 'PAID' : 'PARTIALLY_PAID',
+      },
     });
     await this.audit.log(me, 'payment.create', 'Invoice', id, { method, amount: fromCents(amount) }, tx);
   }
@@ -304,17 +394,21 @@ export class BillingController {
     if (!z.uuid().safeParse(id).success) throw new NotFoundException('Visit not found');
     const invoiceIds = await this.prisma.client.$transaction(async (tx) => {
       // One payment toward a visit at a time.
-      const [visit] = await tx.$queryRaw<{ id: string; patientId: string }[]>`
-        SELECT "id", "patientId" FROM "Visit" WHERE "id" = ${id} AND "tenantId" = ${me.tenantId} FOR UPDATE`;
-      if (!visit) throw new NotFoundException('Visit not found');
+      const [locked] = await tx.$queryRaw<{ id: string }[]>`
+        SELECT "id" FROM "Visit" WHERE "id" = ${id} AND "tenantId" = ${me.tenantId} FOR UPDATE`;
+      if (!locked) throw new NotFoundException('Visit not found');
+      const visit = await tx.visit.findUniqueOrThrow({ where: { id }, select: { id: true, patientId: true, coPayPercent: true } });
       const unbilled = await tx.charge.findMany({ where: { visitId: id, invoiceId: null } });
-      if (unbilled.length) await this.invoiceCharges(tx, me, visit, unbilled, { payerType: 'SELF', payer: null, discount: 0 });
+      if (unbilled.length) await this.billVisit(tx, me, visit, unbilled, { payerType: 'SELF', payer: null, discount: 0 });
 
-      const open = await tx.invoice.findMany({
-        where: { visitId: id, tenantId: me.tenantId, payerType: 'SELF', status: { in: ['OPEN', 'PARTIALLY_PAID'] } },
-        orderBy: { createdAt: 'asc' },
-      });
-      const owed = open.reduce((s, i) => s + toCents(i.total) - toCents(i.paid), 0);
+      // What the patient owes: their own invoices, and their co-payment on the payer's.
+      const open = (
+        await tx.invoice.findMany({
+          where: { visitId: id, tenantId: me.tenantId, status: { in: ['OPEN', 'PARTIALLY_PAID'] } },
+          orderBy: { createdAt: 'asc' },
+        })
+      ).filter((i) => patientDue(i) > 0);
+      const owed = open.reduce((s, i) => s + patientDue(i), 0);
       if (owed <= 0) throw new ConflictException({ message: 'Nothing is owed on this visit any more', code: 'NOTHING_OWED' });
       let amount = toCents(body.amount);
       if (amount > owed) {
@@ -323,7 +417,7 @@ export class BillingController {
 
       const paid: string[] = [];
       for (const inv of open) {
-        const portion = Math.min(amount, toCents(inv.total) - toCents(inv.paid));
+        const portion = Math.min(amount, patientDue(inv));
         if (portion <= 0) continue;
         // A transaction reference belongs to one payment row (duplicates are refused).
         await this.payInvoice(tx, me, inv.id, portion, body.method, paid.length ? undefined : body.reference);
@@ -430,7 +524,21 @@ export class BillingController {
       const subtotal = live.reduce((s, c) => s + lineTotal(c), 0);
       const discount = Math.min(toCents(invoice.discount), subtotal);
       const total = subtotal - discount;
-      const refund = Math.max(0, toCents(invoice.paid) - total);
+      let refund: number;
+      let patientShare = toCents(invoice.patientShare);
+      let patientPaid = toCents(invoice.patientPaid);
+      if (invoice.payerType === 'SELF') {
+        refund = Math.max(0, toCents(invoice.paid) - total);
+      } else {
+        // A payer's invoice: the co-payment shrinks with the bill; the patient gets back what they
+        // paid beyond their new share. What the payer already paid can't be undone here.
+        const visit = invoice.visitId ? await tx.visit.findUnique({ where: { id: invoice.visitId }, select: { coPayPercent: true } }) : null;
+        patientShare = Math.min(coPayOf(total, visit?.coPayPercent), total);
+        refund = Math.max(0, patientPaid - patientShare);
+        patientPaid -= refund;
+        const byPayer = toCents(invoice.paid) - toCents(invoice.patientPaid);
+        if (byPayer > total - patientShare) throw new ConflictException(`${invoice.payerName} has already paid for this; settle the difference with them first`);
+      }
       const paid = toCents(invoice.paid) - refund;
 
       if (refund > 0) {
@@ -454,6 +562,8 @@ export class BillingController {
           discount: fromCents(discount),
           total: fromCents(total),
           paid: fromCents(paid),
+          patientShare: fromCents(patientShare),
+          patientPaid: fromCents(patientPaid),
           ...(live.length === 0
             ? { status: 'VOID', voidedAt: new Date(), voidReason: `All lines removed: ${body.reason}` }
             : { status: paid >= total ? 'PAID' : paid > 0 ? 'PARTIALLY_PAID' : 'OPEN' }),

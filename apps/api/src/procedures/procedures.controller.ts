@@ -2,6 +2,7 @@ import { Body, ConflictException, Controller, Delete, Get, NotFoundException, Pa
 import { z } from 'zod';
 import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
+import { chargeTerms } from '../common/settlement.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -48,8 +49,9 @@ export class ProceduresController {
     if (visit.kind === 'LAB') throw new ConflictException('This is a lab-only visit, not a consultation');
     const service = await this.prisma.client.serviceItem.findFirst({ where: { id: body.serviceId, tenantId: me.tenantId, active: true, kind: 'PROCEDURE' } });
     if (!service) throw new NotFoundException('Procedure not found in the price list');
+    const terms = await chargeTerms(this.prisma.client, visit, 'SERVICE', service.id, service.price);
     const charge = await this.prisma.client.charge.create({
-      data: { visitId, source: 'PROCEDURE', sourceId: service.id, description: service.name, quantity: body.quantity, unitPrice: service.price },
+      data: { visitId, source: 'PROCEDURE', sourceId: service.id, description: service.name, quantity: body.quantity, ...terms },
       select: { id: true, description: true, quantity: true, unitPrice: true, invoiceId: true, createdAt: true },
     });
     await this.audit.log(me, 'procedure.add', 'Visit', visitId, { code: service.code, quantity: body.quantity });

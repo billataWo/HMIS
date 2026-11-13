@@ -6,6 +6,7 @@ import { AuditService } from '../common/audit.service.js';
 import { normalizePhone } from '../common/phone.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { usableCoverages } from '../billing/coverage.js';
 
 const optionalText = z
   .string()
@@ -106,7 +107,8 @@ export class PatientsController {
         };
       }),
     };
-    return this.prisma.client.patient.findMany({ where, take, orderBy: { createdAt: 'desc' } });
+    // With the coverages they can use today, so the front desk can check them in on their payer.
+    return this.prisma.client.patient.findMany({ where, take, orderBy: { createdAt: 'desc' }, include: { coverages: usableCoverages() } });
   }
 
   @AllStaff()

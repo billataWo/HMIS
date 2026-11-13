@@ -88,6 +88,7 @@ async function Day({ searchParams }: { searchParams: Promise<Search> }) {
                         patientId={a.patient.id}
                         appointmentId={a.id}
                         defaultDoctorId={a.doctor?.id}
+                        coverages={a.patient.coverages}
                         doctors={doctors}
                         services={services}
                         returnTo={returnTo}

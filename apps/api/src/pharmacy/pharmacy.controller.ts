@@ -1,7 +1,7 @@
 import { Body, ConflictException, Controller, Get, NotFoundException, Param, Post, Query } from '@nestjs/common';
 import type { Prisma } from '@hmis/db';
 import { z } from 'zod';
-import { isSettled, prepaymentRequired, settlementSelect } from '../common/settlement.js';
+import { chargeTerms, isSettled, prepaymentRequired, settlementSelect } from '../common/settlement.js';
 import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
 import { clinicDay, dayRange } from '../common/clinic-day.js';
@@ -183,25 +183,28 @@ export class PharmacyController {
         if (updated !== 1) {
           throw new ConflictException(`Only ${item.quantity - item.billedQty} ${item.drug.unit} of ${item.drug.genericName} are left to bill`);
         }
-        await tx.charge.create({ data: this.chargeFor(p.visitId, item, req.quantity) });
+        await tx.charge.create({ data: await this.chargeFor(tx, p.visitId, item, req.quantity) });
       }
       await this.audit.log(me, 'prescription.bill', 'Prescription', id, { items: body.items }, tx);
       return tx.prescription.findUniqueOrThrow({ where: { id }, include: prescriptionInclude });
     });
   }
 
-  private chargeFor(
+  /** A drug charge, at the visit's payer's tariff when it is billed to one. */
+  private async chargeFor(
+    tx: Prisma.TransactionClient,
     visitId: string,
-    item: { id: string; drug: { genericName: string; strength: string | null; form: string; sellPrice: Prisma.Decimal } },
+    item: { id: string; drug: { id: string; genericName: string; strength: string | null; form: string; sellPrice: Prisma.Decimal } },
     quantity: number,
   ) {
+    const visit = await tx.visit.findUniqueOrThrow({ where: { id: visitId }, select: { payerId: true } });
     return {
       visitId,
       source: 'PHARMACY' as const,
       sourceId: item.id,
       description: [item.drug.genericName, item.drug.strength, item.drug.form].filter(Boolean).join(' '),
       quantity,
-      unitPrice: item.drug.sellPrice,
+      ...(await chargeTerms(tx, visit, 'DRUG', item.drug.id, item.drug.sellPrice)),
     };
   }
 
@@ -279,7 +282,7 @@ export class PharmacyController {
         // Bill-at-the-end clinics: charge whatever is handed over beyond what was already billed.
         const unbilled = item.dispensedQty + req.quantity - item.billedQty;
         if (!prepay && unbilled > 0) {
-          await tx.charge.create({ data: this.chargeFor(p.visitId, item, unbilled) });
+          await tx.charge.create({ data: await this.chargeFor(tx, p.visitId, item, unbilled) });
         }
         await tx.prescriptionItem.update({
           where: { id: item.id },

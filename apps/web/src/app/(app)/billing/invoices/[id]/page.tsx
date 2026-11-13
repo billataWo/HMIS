@@ -17,7 +17,10 @@ async function InvoiceView({ params }: { params: Promise<{ id: string }> }) {
     if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">Only cashiers and admins can view invoices.</p>;
     throw e;
   }
-  const open = inv.status !== "VOID" && Number(inv.balance) > 0;
+  // On a payer's invoice the counter takes only the patient's co-payment; the payer settles the rest.
+  const sponsored = inv.payerType !== "SELF";
+  const dueHere = sponsored ? (inv.patientDue ?? "0") : inv.balance;
+  const open = inv.status !== "VOID" && Number(dueHere) > 0;
   const canRemove = me.role === "ADMIN" && inv.status !== "VOID";
 
   return (
@@ -51,6 +54,8 @@ async function InvoiceView({ params }: { params: Promise<{ id: string }> }) {
           <section className="surface p-4 dark:border-slate-800">
             <p className="mb-2 text-sm text-slate-500">
               Payer: {inv.payerType === "SELF" ? "Patient" : `${inv.payerType === "CREDIT" ? "Credit" : "Insurance"} · ${inv.payerName}`} · created by {inv.createdBy.fullName}
+              {inv.visit?.memberId && ` · member ${inv.visit.memberId}`}
+              {inv.visit?.authorizationNo && ` · authorization ${inv.visit.authorizationNo}`}
             </p>
             <table className="w-full text-sm">
               <tbody>
@@ -89,18 +94,42 @@ async function InvoiceView({ params }: { params: Promise<{ id: string }> }) {
                   <td colSpan={2} className="py-1.5 text-slate-500">Paid</td>
                   <td className="py-1.5">{etb(inv.paid)}</td>
                 </tr>
-                <tr className="font-semibold">
-                  <td colSpan={2} className="py-1.5">Balance</td>
-                  <td className="py-1.5">{inv.status === "VOID" ? "—" : etb(inv.balance)}</td>
-                </tr>
+                {!sponsored && (
+                  <tr className="font-semibold">
+                    <td colSpan={2} className="py-1.5">Balance</td>
+                    <td className="py-1.5">{inv.status === "VOID" ? "—" : etb(inv.balance)}</td>
+                  </tr>
+                )}
+                {sponsored && inv.status !== "VOID" && (
+                  <>
+                    <tr className="border-t border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                      <td colSpan={2} className="py-1.5">
+                        Patient&apos;s co-payment{inv.visit?.coPayPercent ? ` (${Number(inv.visit.coPayPercent)}%)` : ""}
+                      </td>
+                      <td className="py-1.5">
+                        {etb(inv.patientShare ?? "0")}
+                        {Number(inv.patientDue ?? 0) > 0 && <span className="block text-xs text-amber-700 dark:text-amber-400">{etb(inv.patientDue!)} still to pay</span>}
+                      </td>
+                    </tr>
+                    <tr className="text-slate-600 dark:text-slate-300">
+                      <td colSpan={2} className="py-1.5">{inv.payerName} owes</td>
+                      <td className="py-1.5">{etb(inv.payerDue ?? "0")}</td>
+                    </tr>
+                  </>
+                )}
               </tfoot>
             </table>
           </section>
 
+          {sponsored && inv.status !== "VOID" && !open && (
+            <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100">
+              The patient&apos;s co-payment is paid. {Number(inv.payerDue ?? 0) > 0 ? `${inv.payerName} settles the rest from its account.` : `${inv.payerName} has paid its share.`}
+            </p>
+          )}
           {open && (
             <section className="surface p-4 dark:border-slate-800">
-              <h2 className="mb-3 font-medium">Take payment</h2>
-              <PaymentForm invoiceId={inv.id} balance={inv.balance} />
+              <h2 className="mb-3 font-medium">{sponsored ? "Take the patient's co-payment" : "Take payment"}</h2>
+              <PaymentForm invoiceId={inv.id} balance={dueHere} />
             </section>
           )}
         </div>
