@@ -10,6 +10,18 @@ import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { queuePatientSelect } from '../visits/visits.controller.js';
 import { usableCoverages } from './coverage.js';
+import { referenceUsed } from './balance.js';
+
+/** Why a bill is reduced or waived (reported by category). */
+export const DISCOUNT_CATEGORIES = {
+  STAFF: 'Staff or their family',
+  POOR: 'Cannot pay (fee waiver)',
+  FOLLOW_UP: 'Free follow-up',
+  PROGRAMME: 'Free programme service (TB, HIV, family planning…)',
+  GOODWILL: 'Goodwill',
+  OTHER: 'Other',
+} as const;
+const DISCOUNT_CATEGORY_CODES = Object.keys(DISCOUNT_CATEGORIES) as [keyof typeof DISCOUNT_CATEGORIES, ...(keyof typeof DISCOUNT_CATEGORIES)[]];
 
 const money = z
   .number()
@@ -24,13 +36,15 @@ const InvoiceSchema = z
     payerId: z.uuid().optional(), // a payer from the list (preferred)
     payerName: z.string().trim().max(200).optional(), // or a name: a payer of that name is found or added
     discount: money.optional(),
+    discountCategory: z.enum(DISCOUNT_CATEGORY_CODES).optional(),
     discountReason: z.string().trim().max(300).optional(),
   })
   .refine((b) => b.payerType === 'SELF' || !!b.payerId || (b.payerName && b.payerName.length >= 2), {
     message: 'Name the credit company or insurer',
     path: ['payerName'],
   })
-  .refine((b) => !b.discount || (b.discountReason && b.discountReason.length >= 3), {
+  .refine((b) => !b.discount || !!b.discountCategory, { message: 'Say what kind of discount or exemption this is', path: ['discountCategory'] })
+  .refine((b) => !b.discount || b.discountCategory !== 'OTHER' || (b.discountReason && b.discountReason.length >= 3), {
     message: 'Give a reason for the discount',
     path: ['discountReason'],
   });
@@ -69,10 +83,19 @@ const ListSchema = z.object({
   patientId: z.uuid().optional(),
 });
 const DaySchema = z.object({ day: z.string().regex(DAY_PATTERN).optional() });
-const ClosingSchema = z.object({
-  countedCash: z.number().min(0).max(100_000_000),
-  note: z.string().trim().max(500).optional(),
-});
+const cash = z.number().min(0).max(100_000_000);
+const ClosingSchema = z
+  .object({
+    countedCash: cash,
+    /** The change the drawer started the shift with (default: what the last closing left in it). */
+    openingFloat: cash.optional(),
+    /** Left in the drawer for the next shift; the rest is handed over. */
+    floatLeft: cash.optional(),
+    handedTo: z.string().trim().max(200).optional(),
+    note: z.string().trim().max(500).optional(),
+  })
+  .refine((b) => (b.floatLeft ?? 0) <= b.countedCash, { message: 'The float left in the drawer is more than the cash counted', path: ['floatLeft'] });
+const ReverseSchema = z.object({ reason: z.string().trim().min(5, 'Say what was wrong with the payment').max(300) });
 
 const invoiceInclude = {
   patient: { select: queuePatientSelect },
@@ -80,7 +103,7 @@ const invoiceInclude = {
   payments: { orderBy: { receivedAt: 'asc' }, include: { cashier: { select: { id: true, fullName: true } } } },
   createdBy: { select: { id: true, fullName: true } },
   visit: { select: { id: true, queueNumber: true, checkedInAt: true, memberId: true, authorizationNo: true, coPayPercent: true } },
-  tenant: { select: { name: true, nameAm: true, phone: true, address: true } },
+  tenant: { select: { name: true, nameAm: true, phone: true, address: true, tin: true } },
 } satisfies Prisma.InvoiceInclude;
 
 const lineTotal = (c: { quantity: number; unitPrice: { toString(): string } }) => toCents(c.unitPrice) * c.quantity;
@@ -201,6 +224,7 @@ export class BillingController {
         payer,
         discount: body.discount ? toCents(body.discount) : 0,
         discountReason: body.discountReason,
+        discountCategory: body.discountCategory,
       });
     });
     // The patient's own invoice if there is one (that is what they pay at the counter), else the payer's.
@@ -218,7 +242,7 @@ export class BillingController {
     me: AuthUser,
     visit: { id: string; patientId: string; coPayPercent: Money | null },
     charges: { id: string; quantity: number; unitPrice: Money; payerId: string | null }[],
-    rest: { payerType: 'SELF' | 'CREDIT' | 'INSURANCE'; payer: { id: string; name: string } | null; discount: number; discountReason?: string },
+    rest: { payerType: 'SELF' | 'CREDIT' | 'INSURANCE'; payer: { id: string; name: string } | null; discount: number; discountReason?: string; discountCategory?: string },
   ) {
     const created = [];
     const covered = new Map<string, typeof charges>();
@@ -252,6 +276,7 @@ export class BillingController {
       payer: { id: string; name: string } | null;
       discount: number;
       discountReason?: string;
+      discountCategory?: string;
       /** On a payer's invoice: the patient's co-payment (cents). */
       patientShare?: number;
     },
@@ -277,6 +302,7 @@ export class BillingController {
         subtotal: fromCents(subtotal),
         discount: fromCents(discount),
         discountReason: discount ? opts.discountReason : undefined,
+        discountCategory: discount ? opts.discountCategory : undefined,
         total: fromCents(subtotal - discount),
         patientShare: fromCents(Math.min(opts.patientShare ?? 0, subtotal - discount)),
         // A fully discounted bill has nothing left to collect.
@@ -297,7 +323,7 @@ export class BillingController {
       'invoice.create',
       'Invoice',
       created.id,
-      { number: created.number, total: fromCents(subtotal - discount), discount: fromCents(discount) },
+      { number: created.number, total: fromCents(subtotal - discount), discount: fromCents(discount), ...(discount && { category: opts.discountCategory }) },
       tx,
     );
     return created;
@@ -317,6 +343,20 @@ export class BillingController {
       include: { patient: { select: queuePatientSelect }, createdBy: { select: { fullName: true } } },
     });
     return invoices.map(withBalance);
+  }
+
+  /**
+   * The receipt was printed (its Print button): the first print is the original, every later one
+   * says COPY, so a receipt can't be printed again as if new.
+   */
+  @Post('invoices/:id/printed')
+  async printed(@CurrentUser() me: AuthUser, @Param('id') id: string) {
+    if (!z.uuid().safeParse(id).success) throw new NotFoundException('Invoice not found');
+    const inv = await this.prisma.client.invoice.findFirst({ where: { id, tenantId: me.tenantId }, select: { id: true, number: true } });
+    if (!inv) throw new NotFoundException('Invoice not found');
+    const { receiptPrints } = await this.prisma.client.invoice.update({ where: { id }, data: { receiptPrints: { increment: 1 } }, select: { receiptPrints: true } });
+    await this.audit.log(me, 'receipt.print', 'Invoice', id, { number: inv.number, copy: receiptPrints > 1 ? receiptPrints - 1 : undefined });
+    return { prints: receiptPrints };
   }
 
   @Get('invoices/:id')
@@ -361,12 +401,9 @@ export class BillingController {
     }
     if (amount > balance) throw new ConflictException(`Amount is more than the ${own ? 'balance' : "patient's share"} of ${fromCents(balance)} ETB`);
 
-    const closed = await tx.cashClosing.findFirst({ where: { tenantId: me.tenantId, cashierId: me.sub, day: new Date(clinicDay()) } });
-    if (closed) throw new ConflictException("You have already closed today's cash; ask another cashier or an admin");
-
-    if (reference) {
-      const dup = await tx.payment.findFirst({ where: { tenantId: me.tenantId, method, reference } });
-      if (dup) throw new ConflictException('This transaction reference has already been recorded');
+    // (After a closing, a payment simply starts the cashier's next shift.)
+    if (reference && (await referenceUsed(tx, me.tenantId, method, reference))) {
+      throw new ConflictException('This transaction reference has already been recorded');
     }
 
     await tx.payment.create({
@@ -593,7 +630,11 @@ export class BillingController {
         include: { cashier: { select: { id: true, fullName: true } } },
       }),
       db.invoice.findMany({ where: { tenantId: me.tenantId, createdAt: { gte: start, lt: end } } }),
-      db.cashClosing.findMany({ where: { tenantId: me.tenantId, day: new Date(day) }, include: { cashier: { select: { id: true, fullName: true } } } }),
+      db.cashClosing.findMany({
+        where: { tenantId: me.tenantId, day: new Date(day) },
+        orderBy: { createdAt: 'asc' }, // a cashier's shifts in order
+        include: { cashier: { select: { id: true, fullName: true } } },
+      }),
     ]);
 
     const byCashier = new Map<string, { cashier: { id: string; fullName: string }; byMethod: Record<string, number>; total: number }>();
@@ -624,35 +665,120 @@ export class BillingController {
     };
   }
 
-  /** Closes the signed-in cashier's drawer for today. */
+  /**
+   * The signed-in cashier's current shift: since their last closing (if it was today or yesterday,
+   * so a night shift carries over) or else since the start of today; the money taken in it by
+   * method, and the float the drawer was left with at the last closing.
+   */
+  private async currentShift(me: AuthUser) {
+    const db = this.prisma.client;
+    const today = dayRange(clinicDay()).start;
+    const yesterday = new Date(today.getTime() - 86_400_000);
+    const [last, drawer] = await Promise.all([
+      db.cashClosing.findFirst({ where: { tenantId: me.tenantId, cashierId: me.sub }, orderBy: { createdAt: 'desc' } }),
+      db.cashClosing.findFirst({ where: { tenantId: me.tenantId, createdAt: { gte: yesterday } }, orderBy: { createdAt: 'desc' }, select: { floatLeft: true } }),
+    ]);
+    const start = last && last.createdAt >= yesterday ? last.createdAt : today;
+    const payments = await db.payment.findMany({ where: { tenantId: me.tenantId, cashierId: me.sub, receivedAt: { gt: start } } });
+    const totals: Record<string, string> = {};
+    for (const m of ['CASH', 'TELEBIRR', 'CHAPA', 'BANK_TRANSFER']) {
+      totals[m] = fromCents(payments.filter((p) => p.method === m).reduce((s, p) => s + toCents(p.amount), 0));
+    }
+    return { start, last, payments: payments.length, totals, cash: toCents(totals.CASH), suggestedFloat: toCents(drawer?.floatLeft ?? 0) };
+  }
+
+  /** What the closing form shows: the shift so far and the float to start from. */
+  @Get('billing/shift')
+  async shift(@CurrentUser() me: AuthUser) {
+    const s = await this.currentShift(me);
+    return {
+      periodStart: s.start,
+      payments: s.payments,
+      totals: s.totals,
+      cash: fromCents(s.cash),
+      suggestedFloat: fromCents(s.suggestedFloat),
+      lastClosing: s.last && { id: s.last.id, createdAt: s.last.createdAt, day: s.last.day },
+    };
+  }
+
+  /**
+   * Closes the signed-in cashier's shift: the cash counted against the float it started with plus
+   * the cash taken, what is left in the drawer for the next shift, and who took the rest. A cashier
+   * may close several shifts a day; a shift with nothing taken can't be closed twice.
+   */
   @Post('billing/closings')
   async close(@CurrentUser() me: AuthUser, @Body(new ZodPipe(ClosingSchema)) body: z.infer<typeof ClosingSchema>) {
     const day = clinicDay();
-    const { start, end } = dayRange(day);
-    const db = this.prisma.client;
-    const existing = await db.cashClosing.findFirst({ where: { tenantId: me.tenantId, cashierId: me.sub, day: new Date(day) } });
-    if (existing) throw new ConflictException("You have already closed today's cash");
-
-    const mine = await db.payment.findMany({ where: { tenantId: me.tenantId, cashierId: me.sub, receivedAt: { gte: start, lt: end } } });
-    const totals: Record<string, string> = {};
-    for (const m of ['CASH', 'TELEBIRR', 'CHAPA', 'BANK_TRANSFER']) {
-      totals[m] = fromCents(mine.filter((p) => p.method === m).reduce((s, p) => s + toCents(p.amount), 0));
+    const s = await this.currentShift(me);
+    if (s.payments === 0 && s.last && clinicDay(s.last.createdAt) === day) {
+      throw new ConflictException('Nothing has been taken since your last closing');
     }
-    const expected = toCents(totals.CASH);
+    const float = body.openingFloat === undefined ? s.suggestedFloat : toCents(body.openingFloat);
+    const expected = float + s.cash;
     const counted = toCents(body.countedCash);
 
-    const closing = await db.cashClosing.create({
+    const closing = await this.prisma.client.cashClosing.create({
       data: {
         tenantId: me.tenantId,
         cashierId: me.sub,
         day: new Date(day),
+        periodStart: s.start,
+        openingFloat: fromCents(float),
         expectedCash: fromCents(expected),
         countedCash: fromCents(counted),
-        totals,
+        floatLeft: fromCents(toCents(body.floatLeft ?? 0)),
+        handedTo: body.handedTo || undefined,
+        totals: s.totals,
         note: body.note || undefined,
       },
     });
-    await this.audit.log(me, 'cash.close', 'CashClosing', closing.id, { expected: fromCents(expected), counted: fromCents(counted) });
+    await this.audit.log(me, 'cash.close', 'CashClosing', closing.id, { expected: fromCents(expected), counted: fromCents(counted), handedTo: body.handedTo });
     return { ...closing, variance: fromCents(counted - expected) };
+  }
+
+  /**
+   * Admin only. Undoes a payment recorded by mistake (wrong amount, wrong method, wrong patient): a
+   * reversing entry is added against the same cashier, nothing is edited or deleted, and the invoice
+   * owes again what the payment had covered. The money is then recorded again correctly.
+   */
+  @Post('payments/:id/reverse')
+  @Roles('ADMIN')
+  async reverse(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(ReverseSchema)) { reason }: z.infer<typeof ReverseSchema>) {
+    if (!z.uuid().safeParse(id).success) throw new NotFoundException('Payment not found');
+    const invoiceId = await this.prisma.client.$transaction(async (tx) => {
+      const p = await tx.payment.findFirst({ where: { id, tenantId: me.tenantId } });
+      if (!p) throw new NotFoundException('Payment not found');
+      if (toCents(p.amount) <= 0 || p.reversalOfId) throw new ConflictException('Only a payment received can be reversed (not a refund or a reversal)');
+      const [row] = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Invoice" WHERE "id" = ${p.invoiceId} FOR UPDATE`;
+      if (!row) throw new NotFoundException('Invoice not found');
+      if (await tx.payment.findUnique({ where: { reversalOfId: id } })) throw new ConflictException('This payment was already reversed');
+      const inv = await tx.invoice.findUniqueOrThrow({ where: { id: p.invoiceId } });
+      const amount = toCents(p.amount);
+      await tx.payment.create({
+        data: {
+          tenantId: me.tenantId,
+          invoiceId: p.invoiceId,
+          cashierId: p.cashierId, // it comes off that cashier's takings
+          method: p.method,
+          amount: fromCents(-amount),
+          note: `Reversed: ${reason}`,
+          byPayer: p.byPayer,
+          reversalOfId: id,
+        },
+      });
+      const paid = toCents(inv.paid) - amount;
+      const fromPatient = inv.payerType !== 'SELF' && !p.byPayer;
+      await tx.invoice.update({
+        where: { id: inv.id },
+        data: {
+          paid: fromCents(paid),
+          ...(fromPatient && { patientPaid: fromCents(Math.max(0, toCents(inv.patientPaid) - amount)) }),
+          ...(inv.status !== 'VOID' && { status: paid >= toCents(inv.total) ? 'PAID' : paid > 0 ? 'PARTIALLY_PAID' : 'OPEN' }),
+        },
+      });
+      await this.audit.log(me, 'payment.reverse', 'Invoice', inv.id, { number: inv.number, amount: fromCents(amount), method: p.method, reason }, tx);
+      return inv.id;
+    });
+    return this.get(me, invoiceId);
   }
 }

@@ -1,11 +1,11 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { closeCash, createInvoice, recordPayment, removeInvoiceLine, setVisitCoverage, voidInvoice, type FormState } from "@/app/actions";
+import { closeCash, createInvoice, recordPayment, removeInvoiceLine, reversePayment, setVisitCoverage, voidInvoice, type FormState } from "@/app/actions";
 import { CoverageChoice } from "@/components/coverage-choice";
 import { Alert, buttonClass, Field, Input, inputClass, secondaryButtonClass } from "@/components/ui";
 import type { CoverageOption, Payer } from "@/lib/api";
-import { etb, PAYMENT_METHODS } from "@/lib/format";
+import { DISCOUNT_CATEGORIES, etb, PAYMENT_METHODS } from "@/lib/format";
 
 export function InvoiceForm({
   visitId,
@@ -78,8 +78,23 @@ export function InvoiceForm({
               <Input name="discount" type="number" min={0} step="0.01" placeholder="Discount (ETB)" defaultValue={state.values?.discount} aria-label="Discount" className="w-36" />
               {err.discount && <span className="text-xs text-red-600">{err.discount}</span>}
             </div>
+            <div>
+              <select name="discountCategory" defaultValue={state.values?.discountCategory ?? ""} aria-label="Kind of discount" className={`${inputClass} w-auto`}>
+                <option value="" disabled>
+                  Why…
+                </option>
+                {Object.entries(DISCOUNT_CATEGORIES)
+                  .filter(([k]) => k !== "UNCATEGORISED")
+                  .map(([k, label]) => (
+                    <option key={k} value={k}>
+                      {label}
+                    </option>
+                  ))}
+              </select>
+              {err.discountCategory && <span className="block text-xs text-red-600">{err.discountCategory}</span>}
+            </div>
             <div className="min-w-48 flex-1">
-              <Input name="discountReason" placeholder="Reason for discount" defaultValue={state.values?.discountReason} aria-label="Discount reason" />
+              <Input name="discountReason" placeholder="Details (letter number, name…; needed for “Other”)" defaultValue={state.values?.discountReason} aria-label="Discount details" />
               {err.discountReason && <span className="text-xs text-red-600">{err.discountReason}</span>}
             </div>
           </div>
@@ -236,25 +251,78 @@ export function RemoveLineForm({ invoiceId, chargeId, isDrug, quantity, refundDu
   );
 }
 
-export function CloseCashForm({ expectedCash }: { expectedCash: string }) {
+/**
+ * Closes the cashier's shift: the float the drawer started with plus the cash taken is what should
+ * be there; what was counted, what stays in the drawer for the next shift, and who took the rest.
+ */
+export function CloseCashForm({ cashTaken, suggestedFloat }: { cashTaken: string; suggestedFloat: string }) {
   const [state, action, pending] = useActionState<FormState, FormData>(closeCash, {});
+  const [float, setFloat] = useState(state.values?.openingFloat ?? suggestedFloat);
+  const [counted, setCounted] = useState(state.values?.countedCash ?? "");
+  const [left, setLeft] = useState(state.values?.floatLeft ?? "0");
+  const expected = (Number(float) || 0) + Number(cashTaken);
+  const handOver = Math.max(0, (Number(counted) || 0) - (Number(left) || 0));
+  const err = state.fieldErrors ?? {};
   return (
     <form action={action} className="space-y-3">
       {state.error && <Alert>{state.error}</Alert>}
+      {state.ok && !pending && <p className="text-sm text-emerald-700 dark:text-emerald-400">Shift closed. Any payment from now on starts your next shift.</p>}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Field label="Float at the start (ETB)" hint="Change the drawer started with" error={err.openingFloat}>
+          <Input name="openingFloat" type="number" min={0} step="0.01" value={float} onChange={(e) => setFloat(e.target.value)} />
+        </Field>
+        <Field label="Cash counted in the drawer (ETB)" error={err.countedCash}>
+          <Input name="countedCash" type="number" min={0} step="0.01" required value={counted} onChange={(e) => setCounted(e.target.value)} />
+        </Field>
+        <Field label="Left in the drawer (ETB)" hint="Float for the next shift" error={err.floatLeft}>
+          <Input name="floatLeft" type="number" min={0} step="0.01" value={left} onChange={(e) => setLeft(e.target.value)} />
+        </Field>
+      </div>
       <p className="text-sm">
-        Cash you should have: <strong>{etb(expectedCash)}</strong>
+        Cash you should have: <strong>{etb(expected)}</strong> (float {etb(Number(float) || 0)} + taken {etb(cashTaken)})
+        {counted !== "" && Number(counted) !== expected && (
+          <strong className="text-red-700 dark:text-red-400"> · {Number(counted) > expected ? "over" : "short"} {etb(Math.abs(Number(counted) - expected))}</strong>
+        )}
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Cash counted in the drawer (ETB)">
-          <Input name="countedCash" type="number" min={0} step="0.01" required defaultValue={state.values?.countedCash} />
+        <Field label={`Handed over (${etb(handOver)}) to`} hint="The next cashier, the admin, the bank">
+          <Input name="handedTo" defaultValue={state.values?.handedTo} />
         </Field>
         <Field label="Note" hint="Explain any difference">
           <Input name="note" defaultValue={state.values?.note} />
         </Field>
       </div>
       <button type="submit" disabled={pending} className={buttonClass}>
-        {pending ? "Closing…" : "Close my cash for today"}
+        {pending ? "Closing…" : "Close my shift"}
       </button>
+    </form>
+  );
+}
+
+/** Admin: undo a payment recorded by mistake, saying why. */
+export function ReversePaymentForm({ paymentId }: { paymentId: string }) {
+  const [state, action, pending] = useActionState<FormState, FormData>(reversePayment, {});
+  const [open, setOpen] = useState(false);
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="text-xs text-red-700 hover:underline dark:text-red-400">
+        Reverse
+      </button>
+    );
+  }
+  return (
+    <form action={action} className="mt-1 space-y-1">
+      <input type="hidden" name="paymentId" value={paymentId} />
+      <input name="reason" required minLength={5} placeholder="What was wrong (amount, method, patient)" aria-label="Why it is reversed" className={`${inputClass} py-1 text-xs`} />
+      <div className="flex gap-2">
+        <button disabled={pending} className={`${buttonClass} bg-red-700 px-2 py-1 text-xs hover:bg-red-800`}>
+          {pending ? "Reversing…" : "Reverse payment"}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500 hover:underline">
+          Cancel
+        </button>
+      </div>
+      {state.error && <p className="text-xs text-red-700">{state.error}</p>}
     </form>
   );
 }

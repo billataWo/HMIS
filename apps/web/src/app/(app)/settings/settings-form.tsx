@@ -31,6 +31,9 @@ export function SettingsForm({ settings }: { settings: ClinicSettings }) {
           <Field label="Address" error={err.address}>
             <Input name="address" defaultValue={settings.address ?? ""} />
           </Field>
+          <Field label="TIN (taxpayer number)" error={err.tin} hint="Printed on receipts">
+            <Input name="tin" inputMode="numeric" defaultValue={settings.tin ?? ""} />
+          </Field>
         </div>
       </fieldset>
 

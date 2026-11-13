@@ -189,7 +189,8 @@ function Column({
 }
 
 async function CheckInPanel({ find, doctors, services, lang }: { find: string; doctors: Doctor[]; services: Service[]; lang: Lang }) {
-  const matches = find ? await api<Patient[]>(`/patients?q=${encodeURIComponent(find)}&take=8`) : [];
+  // With what each owes from earlier visits, to ask for at check-in.
+  const matches = find ? await api<Patient[]>(`/patients?q=${encodeURIComponent(find)}&take=8&balance=1`) : [];
   return (
     <section className="surface mb-6 p-4 sm:p-5">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -224,6 +225,13 @@ async function CheckInPanel({ find, doctors, services, lang }: { find: string; d
                   {" "}· {p.mrn}
                   {p.phone && ` · ${p.phone}`}
                 </span>
+                {p.balance && Number(p.balance.earlier) > 0 && (
+                  <span className="ml-2">
+                    <Badge tone="warning">
+                      {tr(lang, "Owes")} {etb(p.balance.earlier)} {tr(lang, "from earlier visits")}
+                    </Badge>
+                  </span>
+                )}
               </div>
               <CheckInForm patientId={p.id} doctors={doctors} services={services} coverages={p.coverages} returnTo="/queue" />
             </li>

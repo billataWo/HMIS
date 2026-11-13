@@ -7,6 +7,7 @@ import { DAY_PATTERN, dayRange } from '../common/clinic-day.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { RequiresFeature } from '../platform/subscription.guard.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { balanceView, patientBalances } from './balance.js';
 import { repriceVisit, visitCoverage } from './coverage.js';
 
 /** The front desk records coverage at registration and check-in; the cashier may fix it at the counter. */
@@ -64,6 +65,17 @@ export class CoverageController {
       orderBy: [{ active: 'desc' }, { createdAt: 'desc' }],
       include: { payer: { select: { id: true, name: true, type: true, coPayPercent: true, requiresAuthorization: true, active: true } } },
     });
+  }
+
+  /**
+   * What the patient still owes, by visit, and how much of it is from before today: asked for at
+   * check-in, so debts don't build up unnoticed.
+   */
+  @Get('patients/:id/balance')
+  @Roles(...DESK)
+  async balance(@CurrentUser() me: AuthUser, @Param('id') id: string) {
+    await this.patient(me, id);
+    return balanceView((await patientBalances(this.prisma.client, me.tenantId, [id])).get(id));
   }
 
   @Post('patients/:id/coverages')

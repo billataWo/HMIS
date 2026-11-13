@@ -4,8 +4,8 @@ import { Suspense } from "react";
 import { InvoiceBadge } from "@/components/invoice-badge";
 import { PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { api, ApiError, type InvoiceDetail, type Me } from "@/lib/api";
-import { etb, formatDualDate, formatTime, fullName, PAYMENT_METHODS } from "@/lib/format";
-import { PaymentForm, RemoveLineForm, VoidForm } from "../../billing-forms";
+import { DISCOUNT_CATEGORIES, etb, formatDualDate, formatTime, fullName, PAYMENT_METHODS } from "@/lib/format";
+import { PaymentForm, RemoveLineForm, ReversePaymentForm, VoidForm } from "../../billing-forms";
 
 async function InvoiceView({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -81,7 +81,10 @@ async function InvoiceView({ params }: { params: Promise<{ id: string }> }) {
                       <td className="py-1.5">{etb(inv.subtotal)}</td>
                     </tr>
                     <tr>
-                      <td colSpan={2} className="py-1.5 text-slate-500">Discount ({inv.discountReason})</td>
+                      <td colSpan={2} className="py-1.5 text-slate-500">
+                        {inv.discountCategory ? DISCOUNT_CATEGORIES[inv.discountCategory] : "Discount"}
+                        {inv.discountReason && ` · ${inv.discountReason}`}
+                      </td>
                       <td className="py-1.5">−{etb(inv.discount)}</td>
                     </tr>
                   </>
@@ -144,7 +147,9 @@ async function InvoiceView({ params }: { params: Promise<{ id: string }> }) {
                 {inv.payments.map((p) => (
                   <li key={p.id} className={`rounded-md px-3 py-2 ${Number(p.amount) < 0 ? "bg-red-50 dark:bg-red-950/40" : "bg-slate-50 dark:bg-slate-900"}`}>
                     {Number(p.amount) < 0 ? (
-                      <span className="font-medium text-red-800 dark:text-red-200">Refund {etb(-Number(p.amount))}</span>
+                      <span className="font-medium text-red-800 dark:text-red-200">
+                        {p.reversalOfId ? "Reversal" : "Refund"} {etb(-Number(p.amount))}
+                      </span>
                     ) : (
                       <span className="font-medium">{etb(p.amount)}</span>
                     )}{" "}
@@ -154,6 +159,8 @@ async function InvoiceView({ params }: { params: Promise<{ id: string }> }) {
                     <span className="block text-xs text-slate-500">
                       {formatTime(p.receivedAt)} · {p.cashier.fullName}
                     </span>
+                    {me.role === "ADMIN" && Number(p.amount) > 0 && !p.reversalOfId && !inv.payments.some((x) => x.reversalOfId === p.id) && <ReversePaymentForm paymentId={p.id} />}
+                    {inv.payments.some((x) => x.reversalOfId === p.id) && <span className="block text-xs font-medium text-red-700 dark:text-red-400">Reversed</span>}
                   </li>
                 ))}
               </ul>

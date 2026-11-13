@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { api, ApiError, type InvoiceDetail } from "@/lib/api";
-import { etb, formatDualDate, formatTime, fullName, PAYMENT_METHODS } from "@/lib/format";
-import { PrintButton } from "@/components/print-button";
+import { DISCOUNT_CATEGORIES, etb, formatDualDate, formatTime, fullName, PAYMENT_METHODS } from "@/lib/format";
+import { ReceiptPrintButton } from "@/components/receipt-print-button";
 
 export const metadata: Metadata = { title: "Receipt" };
 
@@ -25,7 +25,12 @@ async function Receipt({ params }: { params: Promise<{ id: string }> }) {
         {inv.tenant.nameAm && <p>{inv.tenant.nameAm}</p>}
         {inv.tenant.address && <p>{inv.tenant.address}</p>}
         {inv.tenant.phone && <p>Tel {inv.tenant.phone}</p>}
+        {inv.tenant.tin && <p>TIN {inv.tenant.tin}</p>}
       </header>
+      {(inv.receiptPrints ?? 0) > 0 && (
+        // Printed before: whatever is printed now is a copy, not a second receipt.
+        <p className="border-2 border-black py-1 text-center text-sm font-bold tracking-widest">COPY · ቅጂ</p>
+      )}
       <div className="border-y border-dashed border-black py-2">
         <p>
           {inv.status === "PAID" ? "RECEIPT" : "INVOICE"} {inv.number}
@@ -65,7 +70,7 @@ async function Receipt({ params }: { params: Promise<{ id: string }> }) {
               <span>{Number(inv.subtotal).toFixed(2)}</span>
             </p>
             <p className="flex justify-between">
-              <span>Discount</span>
+              <span>{inv.discountCategory ? DISCOUNT_CATEGORIES[inv.discountCategory]?.split(" (")[0] : "Discount"}</span>
               <span>-{Number(inv.discount).toFixed(2)}</span>
             </p>
           </>
@@ -89,7 +94,7 @@ async function Receipt({ params }: { params: Promise<{ id: string }> }) {
         {inv.payments.filter((p) => !p.byPayer).map((p) => (
           <p key={p.id} className="flex justify-between">
             <span>
-              {Number(p.amount) < 0 ? "Refund · " : ""}
+              {Number(p.amount) < 0 ? (p.reversalOfId ? "Reversal · " : "Refund · ") : ""}
               {PAYMENT_METHODS[p.method]}
               {p.reference && ` ${p.reference}`}
             </span>
@@ -107,7 +112,7 @@ async function Receipt({ params }: { params: Promise<{ id: string }> }) {
         <p>Cashier: {inv.payments.at(-1)?.cashier.fullName ?? inv.createdBy.fullName}</p>
         <p>Thank you · እናመሰግናለን</p>
       </footer>
-      <PrintButton />
+      <ReceiptPrintButton invoiceId={inv.id} />
     </div>
   );
 }

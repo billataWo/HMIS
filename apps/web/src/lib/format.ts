@@ -71,6 +71,17 @@ export function countOf(n: number, unit: string) {
   return `${n} ${unit}${plural ? "s" : ""}`;
 }
 
+/** Why a bill was reduced or waived (the API's categories). */
+export const DISCOUNT_CATEGORIES: Record<string, string> = {
+  STAFF: "Staff or their family",
+  POOR: "Cannot pay (fee waiver)",
+  FOLLOW_UP: "Free follow-up",
+  PROGRAMME: "Free programme service (TB, HIV, family planning…)",
+  GOODWILL: "Goodwill",
+  OTHER: "Other",
+  UNCATEGORISED: "Not categorised (before categories)",
+};
+
 /** Whether a time has passed (an expiry date, say). */
 export function isPast(iso: string) {
   return new Date(iso).getTime() < Date.now();

@@ -63,16 +63,18 @@ describe('billing and cashier', () => {
     expect(await db.invoice.count({ where: { visitId } })).toBe(1);
   });
 
-  it('lets only admins discount, with a reason, and never below zero', async () => {
+  it('lets only admins discount, by category (with a reason for "other"), and never below zero', async () => {
     const visitId = await billableVisit();
-    await invoice({ visitId, discount: 20, discountReason: 'Staff family' }).expect(403);
-    await invoice({ visitId, discount: 20 }, admin.token).expect(400);
-    await invoice({ visitId, discount: 500, discountReason: 'Too much' }, admin.token).expect(409);
-    const inv = (await invoice({ visitId, discount: 20, discountReason: 'Staff family' }, admin.token).expect(201)).body;
-    expect([inv.subtotal, inv.discount, inv.total]).toEqual(['160', '20', '140']);
+    await invoice({ visitId, discount: 20, discountCategory: 'STAFF' }).expect(403);
+    await invoice({ visitId, discount: 20 }, admin.token).expect(400); // what kind of discount?
+    await invoice({ visitId, discount: 20, discountCategory: 'OTHER' }, admin.token).expect(400); // "other" needs a reason
+    await invoice({ visitId, discount: 20, discountCategory: 'BIRTHDAY' }, admin.token).expect(400);
+    await invoice({ visitId, discount: 500, discountCategory: 'GOODWILL' }, admin.token).expect(409);
+    const inv = (await invoice({ visitId, discount: 20, discountCategory: 'STAFF', discountReason: 'Wife of the lab head' }, admin.token).expect(201)).body;
+    expect([inv.subtotal, inv.discount, inv.total, inv.discountCategory]).toEqual(['160', '20', '140', 'STAFF']);
 
     const free = await billableVisit();
-    const waived = (await invoice({ visitId: free, discount: 160, discountReason: 'Fee waiver' }, admin.token).expect(201)).body;
+    const waived = (await invoice({ visitId: free, discount: 160, discountCategory: 'POOR', discountReason: 'Kebele letter 14/2019' }, admin.token).expect(201)).body;
     expect(waived.status).toBe('PAID');
   });
 
@@ -156,15 +158,17 @@ describe('billing and cashier', () => {
 
     const closing = (await api.post('/billing/closings').set(bearer(c1.token)).send({ countedCash: 140, note: 'Short 10 birr' }).expect(201)).body;
     expect([closing.expectedCash, closing.countedCash, closing.variance]).toEqual(['150', '140', '-10.00']);
-    await api.post('/billing/closings').set(bearer(c1.token)).send({ countedCash: 150 }).expect(409);
+    await api.post('/billing/closings').set(bearer(c1.token)).send({ countedCash: 150 }).expect(409); // nothing taken since
 
-    // After closing, that cashier can't take more money today; another cashier still can.
+    // After closing, the next payment starts that cashier's next shift (afternoon, say).
     const late = await bill();
-    await pay(late, { method: 'CASH', amount: 150 }, c1.token).expect(409);
-    await pay(late, { method: 'CASH', amount: 150 }, c2.token).expect(201);
+    await pay(late, { method: 'CASH', amount: 150 }, c1.token).expect(201);
+    const second = (await api.post('/billing/closings').set(bearer(c1.token)).send({ countedCash: 150 }).expect(201)).body;
+    expect([second.expectedCash, second.variance]).toEqual(['150', '0.00']); // only this shift's cash
+    expect(new Date(second.periodStart).getTime()).toBe(new Date(closing.createdAt).getTime());
 
     const after = (await api.get('/billing/daily').set(bearer(c2.token)).expect(200)).body;
-    expect(after.closings).toEqual([expect.objectContaining({ variance: '-10.00', note: 'Short 10 birr' })]);
+    expect(after.closings).toEqual([expect.objectContaining({ variance: '-10.00', note: 'Short 10 birr' }), expect.objectContaining({ variance: '0.00' })]);
   });
 
   it("keeps each clinic's billing private", async () => {

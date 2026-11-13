@@ -7,7 +7,7 @@ import { BarList, ColumnChart } from "@/components/charts";
 import { StaggerCell, StaggerGrid } from "@/components/enter";
 import { inputClass, PageHeader, pillClass, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { api, ApiError, type Dashboard, type LabTurnaround, type TatSummary } from "@/lib/api";
-import { clinicToday, etb, formatDualDate, formatMinutes, PAYMENT_METHODS, shiftDay } from "@/lib/format";
+import { clinicToday, DISCOUNT_CATEGORIES, etb, formatDualDate, formatMinutes, PAYMENT_METHODS, shiftDay } from "@/lib/format";
 
 type Search = { from?: string; to?: string };
 
@@ -163,6 +163,22 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
               </div>
             ))}
           </dl>
+          {r.ageing && <Ageing ageing={r.ageing} />}
+          {r.discountsBy && r.discountsBy.length > 0 && (
+            <div className="mt-4 border-t border-slate-200 pt-3 dark:border-slate-700">
+              <h3 className="mb-1 text-sm font-medium">Discounts and exemptions in this period</h3>
+              <dl className="space-y-1 text-sm">
+                {r.discountsBy.map((x) => (
+                  <div key={x.category} className="flex justify-between gap-3">
+                    <dt className="text-slate-600 dark:text-slate-400">
+                      {DISCOUNT_CATEGORIES[x.category] ?? x.category} <span className="text-xs">({x.count})</span>
+                    </dt>
+                    <dd className="tabular-nums">{etb(x.amount)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
         </Panel>
 
         <Panel
@@ -286,6 +302,42 @@ function Turnaround({ t }: { t: LabTurnaround }) {
         </>
       )}
     </Panel>
+  );
+}
+
+/** How old the money owed is: by patients and by credit companies and insurers. */
+function Ageing({ ageing }: { ageing: { patients: string[]; payers: string[] } }) {
+  const heads = ["0–30 days", "31–60", "61–90", "Over 90"];
+  const row = (label: string, xs: string[]) => (
+    <tr className="border-t border-slate-100 dark:border-slate-800">
+      <td className="py-1 pr-2">{label}</td>
+      {xs.map((x, i) => (
+        <td key={i} className={`py-1 pl-2 text-right tabular-nums ${i >= 2 && Number(x) > 0 ? "font-medium text-red-700 dark:text-red-400" : ""}`}>
+          {Number(x) > 0 ? etb(x) : "—"}
+        </td>
+      ))}
+    </tr>
+  );
+  return (
+    <div className="mt-4 overflow-x-auto border-t border-slate-200 pt-3 dark:border-slate-700">
+      <h3 className="mb-1 text-sm font-medium">Owed, by age</h3>
+      <table className="w-full min-w-[22rem] text-sm">
+        <thead className="text-xs text-slate-500">
+          <tr>
+            <th className="py-1 pr-2 text-left font-medium" />
+            {heads.map((h) => (
+              <th key={h} className="py-1 pl-2 text-right font-medium">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {row("Patients", ageing.patients)}
+          {row("Credit and insurance", ageing.payers)}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

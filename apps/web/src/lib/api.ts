@@ -136,6 +136,15 @@ export interface Patient {
   createdAt: string;
   /** In search results: the coverages they can be checked in on. */
   coverages?: CoverageOption[];
+  /** In the front desk's search (balance=1): what they owe, and how much from before today. */
+  balance?: PatientBalance;
+}
+
+/** What a patient still owes, by visit; "earlier" is from visits before today. */
+export interface PatientBalance {
+  owed: string;
+  earlier: string;
+  visits: { visitId: string; checkedInAt: string; kind: "OPD" | "WALK_IN" | "LAB"; owed: string }[];
 }
 
 /** A coverage the front desk can check the patient in on (their payer, member number, end date). */
@@ -543,6 +552,10 @@ export interface Dashboard {
     unbilledCount: number;
     patientsOwe: string;
     receivables: { payer: string; due: string }[];
+    /** What is owed by age (0–30, 31–60, 61–90, over 90 days), by patients and by payers. */
+    ageing?: { patients: string[]; payers: string[] };
+    /** Discounts and exemptions in the period, by category. */
+    discountsBy?: { category: string; count: number; amount: string }[];
   };
   topDiagnoses: { code: string; label: string; count: number }[];
   lab: {
@@ -585,6 +598,7 @@ export interface ClinicSettings {
   doctorsCanRegister: boolean;
   multiStore: boolean; // a main store and a dispensary (or more), with transfers
   labUrgentMinutes?: number; // target for urgent lab tests, sample to release
+  tin?: string | null; // taxpayer identification number, on receipts
 }
 
 export interface Diagnosis {
@@ -828,6 +842,10 @@ export interface Invoice {
   subtotal: string;
   discount: string;
   discountReason: string | null;
+  /** Why it was reduced or waived (see DISCOUNT_CATEGORIES). */
+  discountCategory?: string | null;
+  /** Times the receipt was printed: a reprint says COPY. */
+  receiptPrints?: number;
   total: string;
   paid: string;
   balance: string;
@@ -846,9 +864,9 @@ export interface Invoice {
 export interface InvoiceDetail extends Invoice {
   charges: Charge[];
   // A negative amount is a refund; `note` says why.
-  payments: { id: string; method: PaymentMethod; amount: string; reference: string | null; note: string | null; byPayer?: boolean; receivedAt: string; cashier: { id: string; fullName: string } }[];
+  payments: { id: string; method: PaymentMethod; amount: string; reference: string | null; note: string | null; byPayer?: boolean; reversalOfId?: string | null; receivedAt: string; cashier: { id: string; fullName: string } }[];
   visit: { id: string; queueNumber: number; checkedInAt: string; memberId?: string | null; authorizationNo?: string | null; coPayPercent?: string | null } | null;
-  tenant: { name: string; nameAm: string | null; phone: string | null; address: string | null };
+  tenant: { name: string; nameAm: string | null; phone: string | null; address: string | null; tin?: string | null };
 }
 
 export interface DailySummary {
@@ -857,7 +875,30 @@ export interface DailySummary {
   byMethod: Partial<Record<PaymentMethod, string>>;
   cashiers: { cashier: { id: string; fullName: string }; byMethod: Partial<Record<PaymentMethod, string>>; total: string }[];
   invoices: { count: number; billed: string; discounts: string; unpaid: string; voided: number };
-  closings: { id: string; cashier: { id: string; fullName: string }; expectedCash: string; countedCash: string; variance: string; note: string | null; createdAt: string }[];
+  /** Shift closings, in order (a cashier may close several a day). */
+  closings: {
+    id: string;
+    cashier: { id: string; fullName: string };
+    periodStart: string;
+    openingFloat: string;
+    expectedCash: string;
+    countedCash: string;
+    floatLeft: string;
+    handedTo: string | null;
+    variance: string;
+    note: string | null;
+    createdAt: string;
+  }[];
+}
+
+/** The signed-in cashier's open shift: since when, what was taken, and the float to start from. */
+export interface CashShift {
+  periodStart: string;
+  payments: number;
+  totals: Partial<Record<PaymentMethod, string>>;
+  cash: string;
+  suggestedFloat: string;
+  lastClosing: { id: string; createdAt: string; day: string } | null;
 }
 
 export interface Appointment {

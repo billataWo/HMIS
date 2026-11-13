@@ -7,6 +7,7 @@ import { fromCents, toCents } from '../common/money.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { EXPIRY_WARNING_DAYS } from '../inventory/inventory.controller.js';
 import { targetMinutes } from '../lab/lab.controller.js';
+import { patientDue, payerDue } from '../billing/billing.controller.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 const RangeSchema = z.object({
@@ -143,10 +144,10 @@ export class ReportsController {
         }),
         db.patient.count({ where: { tenantId: t, createdAt: range } }),
         db.payment.findMany({ where: { tenantId: t, receivedAt: range }, select: { amount: true, method: true, receivedAt: true } }),
-        db.invoice.findMany({ where: { tenantId: t, createdAt: range, status: { not: 'VOID' } }, select: { total: true, discount: true } }),
+        db.invoice.findMany({ where: { tenantId: t, createdAt: range, status: { not: 'VOID' } }, select: { total: true, discount: true, discountCategory: true } }),
         db.invoice.findMany({
           where: { tenantId: t, status: { in: ['OPEN', 'PARTIALLY_PAID'] } },
-          select: { total: true, paid: true, payerType: true, payerName: true },
+          select: { total: true, paid: true, payerType: true, payerName: true, patientShare: true, patientPaid: true, createdAt: true },
         }),
         db.charge.findMany({ where: { visit: { tenantId: t }, invoiceId: null, createdAt: range }, select: { unitPrice: true, quantity: true } }),
         db.diagnosis.findMany({
@@ -187,11 +188,34 @@ export class ReportsController {
     for (const p of payments) byMethod[p.method] = (byMethod[p.method] ?? 0) + toCents(p.amount);
     const collected = payments.reduce((s, p) => s + toCents(p.amount), 0);
 
-    const owed = outstanding.map((i) => ({ ...i, due: toCents(i.total) - toCents(i.paid) }));
+    // What is owed, split by who owes it (on a payer's invoice the patient owes their co-payment),
+    // and how old it is: 0–30, 31–60, 61–90 and over 90 days.
     const receivables = new Map<string, number>();
-    for (const i of owed.filter((x) => x.payerType !== 'SELF')) {
-      const k = `${i.payerType === 'CREDIT' ? 'Credit' : 'Insurance'}: ${i.payerName ?? 'unnamed'}`;
-      receivables.set(k, (receivables.get(k) ?? 0) + i.due);
+    const ageing = { patients: [0, 0, 0, 0], payers: [0, 0, 0, 0] };
+    const bucket = (d: Date) => {
+      const days = (Date.now() - d.getTime()) / 86_400_000;
+      return days <= 30 ? 0 : days <= 60 ? 1 : days <= 90 ? 2 : 3;
+    };
+    let patientsOwe = 0;
+    for (const i of outstanding) {
+      const p = patientDue(i);
+      const y = payerDue(i);
+      patientsOwe += p;
+      ageing.patients[bucket(i.createdAt)] += p;
+      ageing.payers[bucket(i.createdAt)] += y;
+      if (y > 0) {
+        const k = `${i.payerType === 'CREDIT' ? 'Credit' : 'Insurance'}: ${i.payerName ?? 'unnamed'}`;
+        receivables.set(k, (receivables.get(k) ?? 0) + y);
+      }
+    }
+    // Discounts and exemptions in the period, by why they were given.
+    const byCategory = new Map<string, { count: number; amount: number }>();
+    for (const i of invoices.filter((x) => toCents(x.discount) > 0)) {
+      const k = i.discountCategory ?? 'UNCATEGORISED';
+      const e = byCategory.get(k) ?? { count: 0, amount: 0 };
+      e.count += 1;
+      e.amount += toCents(i.discount);
+      byCategory.set(k, e);
     }
 
     const labels = new Map(diagnoses.map((d) => [d.icd11Code, d.label]));
@@ -235,8 +259,10 @@ export class ReportsController {
         // Services delivered in the range that nobody has invoiced yet: the leakage indicator.
         unbilled: fromCents(unbilled.reduce((s, c) => s + toCents(c.unitPrice) * c.quantity, 0)),
         unbilledCount: unbilled.length,
-        patientsOwe: fromCents(owed.filter((i) => i.payerType === 'SELF').reduce((s, i) => s + i.due, 0)),
+        patientsOwe: fromCents(patientsOwe),
         receivables: [...receivables.entries()].sort((a, b) => b[1] - a[1]).map(([payer, due]) => ({ payer, due: fromCents(due) })),
+        ageing: { patients: ageing.patients.map(fromCents), payers: ageing.payers.map(fromCents) },
+        discountsBy: [...byCategory.entries()].sort((a, b) => b[1].amount - a[1].amount).map(([category, e]) => ({ category, count: e.count, amount: fromCents(e.amount) })),
       },
       topDiagnoses: tally(diagnoses, (d) => d.icd11Code).map(([code, count]) => ({ code, label: labels.get(code) ?? code, count })),
       lab: {

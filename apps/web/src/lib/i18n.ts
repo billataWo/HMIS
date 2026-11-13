@@ -75,6 +75,7 @@ const AM: Record<string, string> = {
   "Lab result corrected": "የላብራቶሪ ውጤት ተስተካክሏል",
   "New lab sample needed": "አዲስ የላብራቶሪ ናሙና ያስፈልጋል",
   Owes: "ቀሪ ክፍያ",
+  "from earlier visits": "ከቀደሙት ጉብኝቶች",
   "No diagnosis yet": "ዲያግኖሲስ ገና አልተመዘገበም",
 
   // Visit statuses

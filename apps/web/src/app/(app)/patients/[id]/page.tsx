@@ -11,9 +11,9 @@ import { StatusBadge } from "@/components/status-badge";
 import { Badge, linkClass, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { LabHistory } from "@/components/lab-history";
 import { ReturnForm } from "@/components/return-form";
-import { api, ApiError, type Appointment, type Doctor, type LabHistoryOrder, type Me, type Medication, type PatientCoverage, type PatientDetail, type Payer, type QueueVisit, type Service } from "@/lib/api";
+import { api, ApiError, type Appointment, type Doctor, type LabHistoryOrder, type Me, type Medication, type PatientBalance, type PatientCoverage, type PatientDetail, type Payer, type QueueVisit, type Service } from "@/lib/api";
 import { shortDirections } from "@/lib/directions";
-import { ageFrom, clinicToday, formatDualDate, formatTime, fullName } from "@/lib/format";
+import { ageFrom, clinicToday, etb, formatDualDate, formatTime, fullName } from "@/lib/format";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -66,6 +66,8 @@ async function Patient({
   const [coverages, payers] = seesCoverage
     ? await Promise.all([api<PatientCoverage[]>(`/patients/${p.id}/coverages`), api<PayerOption[]>("/lookups/payers")])
     : [[], []];
+  // Money owed from earlier visits: asked for at check-in, before it builds up.
+  const balance = ["ADMIN", "RECEPTIONIST", "NURSE", "CASHIER"].includes(me.role) ? await api<PatientBalance>(`/patients/${p.id}/balance`) : null;
   const age = ageFrom(p.dateOfBirth);
 
   return (
@@ -106,6 +108,18 @@ async function Patient({
       />
 
       <Flash params={flash} />
+      {balance && Number(balance.earlier) > 0 && (
+        <div role="alert" className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-100">
+          <p className="font-medium">Owes {etb(balance.earlier)} from earlier visits</p>
+          <p className="mt-1 text-xs">
+            {balance.visits
+              .filter((v) => clinicToday(new Date(v.checkedInAt)) !== clinicToday())
+              .map((v) => `${formatDualDate(v.checkedInAt)}: ${etb(v.owed)}`)
+              .join(" · ")}
+            . Ask the patient to settle it at the cashier.
+          </p>
+        </div>
+      )}
       <section className="mb-6 surface p-4 dark:border-slate-800">
         {inQueue ? (
           <div className="flex flex-wrap items-center gap-3 text-sm">

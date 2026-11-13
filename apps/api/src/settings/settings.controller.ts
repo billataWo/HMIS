@@ -17,9 +17,11 @@ const SettingsSchema = z.object({
   multiStore: z.boolean().optional(),
   // How fast an urgent lab test should be released, sample to result (minutes).
   labUrgentMinutes: z.number().int().min(10).max(24 * 60).optional(),
+  // Taxpayer identification number, printed on receipts.
+  tin: z.string().trim().max(30).nullable().optional(),
 });
 
-const select = { id: true, name: true, nameAm: true, phone: true, address: true, type: true, requirePrepayment: true, doctorsCanRegister: true, multiStore: true, labUrgentMinutes: true };
+const select = { id: true, name: true, nameAm: true, phone: true, address: true, type: true, requirePrepayment: true, doctorsCanRegister: true, multiStore: true, labUrgentMinutes: true, tin: true };
 
 @Controller('settings')
 export class SettingsController {

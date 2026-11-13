@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { RequiresFeature } from '../platform/subscription.guard.js';
 import { queuePatientSelect } from '../visits/visits.controller.js';
 import { payerDue } from '../billing/billing.controller.js';
+import { referenceUsed } from '../billing/balance.js';
 
 const optional = (max: number) =>
   z
@@ -239,11 +240,8 @@ export class PayersController {
   async settle(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(SettlementSchema)) body: z.infer<typeof SettlementSchema>) {
     const payer = await this.payer(me, id);
     return this.prisma.client.$transaction(async (tx) => {
-      const closed = await tx.cashClosing.findFirst({ where: { tenantId: me.tenantId, cashierId: me.sub, day: new Date(clinicDay()) } });
-      if (closed) throw new ConflictException("You have already closed today's cash; ask another cashier or an admin");
-      if (body.reference) {
-        const dup = await tx.payment.findFirst({ where: { tenantId: me.tenantId, method: body.method, reference: body.reference } });
-        if (dup) throw new ConflictException('This transaction reference has already been recorded');
+      if (body.reference && (await referenceUsed(tx, me.tenantId, body.method, body.reference))) {
+        throw new ConflictException('This transaction reference has already been recorded');
       }
       // Lock the payer's open invoices so a payment at the counter can't race this settlement.
       const rows = await tx.$queryRaw<{ id: string }[]>`

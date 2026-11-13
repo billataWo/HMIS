@@ -7,6 +7,7 @@ import { normalizePhone } from '../common/phone.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { usableCoverages } from '../billing/coverage.js';
+import { balanceView, patientBalances } from '../billing/balance.js';
 
 const optionalText = z
   .string()
@@ -71,6 +72,8 @@ const FRONT_DESK = ['ADMIN', 'RECEPTIONIST', 'NURSE'];
 const SearchSchema = z.object({
   q: z.string().trim().default(''),
   take: z.coerce.number().int().min(1).max(100).default(30),
+  /** "1": with what each patient owes from earlier visits (the front desk and cashier only). */
+  balance: z.enum(['1']).optional(),
 });
 
 export function formatMrn(n: number) {
@@ -87,7 +90,7 @@ export class PatientsController {
   /** Search by MRN, phone, or any part of the name (English or Amharic). Every word must match. */
   @AllStaff()
   @Get()
-  search(@CurrentUser() me: AuthUser, @Query(new ZodPipe(SearchSchema)) { q, take }: z.infer<typeof SearchSchema>) {
+  async search(@CurrentUser() me: AuthUser, @Query(new ZodPipe(SearchSchema)) { q, take, balance }: z.infer<typeof SearchSchema>) {
     const words = q.split(/\s+/).filter(Boolean);
     const where: Prisma.PatientWhereInput = {
       tenantId: me.tenantId,
@@ -108,7 +111,10 @@ export class PatientsController {
       }),
     };
     // With the coverages they can use today, so the front desk can check them in on their payer.
-    return this.prisma.client.patient.findMany({ where, take, orderBy: { createdAt: 'desc' }, include: { coverages: usableCoverages() } });
+    const patients = await this.prisma.client.patient.findMany({ where, take, orderBy: { createdAt: 'desc' }, include: { coverages: usableCoverages() } });
+    if (!balance || ![...FRONT_DESK, 'CASHIER'].includes(me.role)) return patients;
+    const owed = await patientBalances(this.prisma.client, me.tenantId, patients.map((p) => p.id));
+    return patients.map((p) => ({ ...p, balance: balanceView(owed.get(p.id)) }));
   }
 
   @AllStaff()

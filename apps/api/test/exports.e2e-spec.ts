@@ -239,7 +239,7 @@ describe("the whole clinic's data", () => {
     await api.get(`/exports/clinic?ticket=${ticket}`).set(bearer(c.token)).expect(200);
     expect(await db.auditLog.count({ where: { tenantId: c.tenantId, action: 'clinic.exported' } })).toBe(2);
     await api.get('/exports/clinic').set(bearer(c.token)).expect(401);
-  });
+  }, 20_000); // several whole-clinic exports (one query per clinic table): a few seconds each
 
   it('can still be exported after the clinic left (read-only)', async () => {
     const c = await clinicWithRecords('Leaving Clinic');
@@ -430,5 +430,5 @@ describe('deleting a clinic that left', () => {
       .send({ phone: c.admin.phone, password: 'password123' })
       .expect(401);
     await del(owner, 'Closing Clinic').expect(409);
-  });
+  }, 20_000); // a whole-clinic export and deletion (one query per clinic table): several seconds
 });

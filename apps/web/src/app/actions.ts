@@ -751,6 +751,7 @@ export async function saveSettings(_: FormState, form: FormData): Promise<FormSt
         doctorsCanRegister: form.get("doctorsCanRegister") === "on",
         multiStore: form.get("multiStore") === "on",
         labUrgentMinutes: optionalNumber(form, "labUrgentMinutes"),
+        tin: text(form, "tin") || null,
       }),
     });
   } catch (e) {
@@ -777,6 +778,7 @@ export async function createInvoice(_: FormState, form: FormData): Promise<FormS
         payerId: text(form, "payerId") || undefined,
         payerName: text(form, "payerId") ? undefined : text(form, "payerName") || undefined,
         discount: optionalNumber(form, "discount"),
+        discountCategory: optionalNumber(form, "discount") ? text(form, "discountCategory") || undefined : undefined,
         discountReason: text(form, "discountReason") || undefined,
       }),
     }));
@@ -837,7 +839,33 @@ export async function closeCash(_: FormState, form: FormData): Promise<FormState
   const counted = text(form, "countedCash");
   if (counted === "") return { error: "Enter the cash you counted.", values };
   try {
-    await api("/billing/closings", { method: "POST", body: JSON.stringify({ countedCash: Number(counted), note: text(form, "note") || undefined }) });
+    await api("/billing/closings", {
+      method: "POST",
+      body: JSON.stringify({
+        countedCash: Number(counted),
+        openingFloat: optionalNumber(form, "openingFloat"),
+        floatLeft: optionalNumber(form, "floatLeft"),
+        handedTo: text(form, "handedTo") || undefined,
+        note: text(form, "note") || undefined,
+      }),
+    });
+  } catch (e) {
+    return toFormState(e, values);
+  }
+  refresh();
+  return { ok: true };
+}
+
+/** The receipt was printed (its Print button): a later reprint says COPY. */
+export async function recordReceiptPrint(invoiceId: string) {
+  await api(`/invoices/${invoiceId}/printed`, { method: "POST" }).catch(() => {});
+}
+
+/** Admin: undoes a payment recorded by mistake (a reversing entry; nothing is edited). */
+export async function reversePayment(_: FormState, form: FormData): Promise<FormState> {
+  const values = formValues(form);
+  try {
+    await api(`/payments/${text(form, "paymentId")}/reverse`, { method: "POST", body: JSON.stringify({ reason: text(form, "reason") }) });
   } catch (e) {
     return toFormState(e, values);
   }

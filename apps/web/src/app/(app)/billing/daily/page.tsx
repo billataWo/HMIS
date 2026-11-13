@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
-import { api, ApiError, type DailySummary, type Me } from "@/lib/api";
+import { api, ApiError, type CashShift, type DailySummary, type Me } from "@/lib/api";
 import { clinicToday, etb, formatDualDate, formatTime, PAYMENT_METHODS, shiftDay } from "@/lib/format";
 import { CloseCashForm } from "../billing-forms";
 
@@ -28,8 +28,10 @@ async function Daily({ searchParams }: { searchParams: Promise<{ day?: string }>
     if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">Only cashiers and admins can see takings.</p>;
     throw e;
   }
-  const myClosing = s.closings.find((c) => c.cashier.id === me.id);
-  const myCash = s.cashiers.find((c) => c.cashier.id === me.id)?.byMethod.CASH ?? "0";
+  const mine = s.closings.filter((c) => c.cashier.id === me.id);
+  // The cashier's open shift (today only).
+  const shift = day === today ? await api<CashShift>("/billing/shift") : null;
+  const verdict = (v: string) => (Number(v) === 0 ? "Balanced" : `${Number(v) > 0 ? "Over" : "Short"} ${etb(Math.abs(Number(v)))}`);
 
   return (
     <div className="space-y-8">
@@ -79,7 +81,7 @@ async function Daily({ searchParams }: { searchParams: Promise<{ day?: string }>
               </thead>
               <tbody>
                 {s.cashiers.map((c) => {
-                  const closing = s.closings.find((x) => x.cashier.id === c.cashier.id);
+                  const shifts = s.closings.filter((x) => x.cashier.id === c.cashier.id);
                   return (
                     <tr key={c.cashier.id} className="border-t border-slate-200 dark:border-slate-800">
                       <td className="px-4 py-3">{c.cashier.fullName}</td>
@@ -90,11 +92,13 @@ async function Daily({ searchParams }: { searchParams: Promise<{ day?: string }>
                       ))}
                       <td className="px-4 py-3 text-right font-medium tabular-nums">{etb(c.total)}</td>
                       <td className="px-4 py-3">
-                        {closing ? (
-                          <span className={Number(closing.variance) === 0 ? "" : "font-medium text-red-700 dark:text-red-400"}>
-                            {Number(closing.variance) === 0 ? "Balanced" : `${Number(closing.variance) > 0 ? "Over" : "Short"} ${etb(Math.abs(Number(closing.variance)))}`}
-                            {closing.note && <span className="block text-xs text-slate-500">{closing.note}</span>}
-                          </span>
+                        {shifts.length ? (
+                          shifts.map((x) => (
+                            <span key={x.id} className={`block ${Number(x.variance) === 0 ? "" : "font-medium text-red-700 dark:text-red-400"}`}>
+                              {formatTime(x.createdAt)}: {verdict(x.variance)}
+                              {(x.handedTo || x.note) && <span className="block text-xs font-normal text-slate-500">{[x.handedTo && `to ${x.handedTo}`, x.note].filter(Boolean).join(" · ")}</span>}
+                            </span>
+                          ))
                         ) : (
                           <span className="text-slate-500">Not yet</span>
                         )}
@@ -108,19 +112,34 @@ async function Daily({ searchParams }: { searchParams: Promise<{ day?: string }>
         )}
       </section>
 
-      {day === today && (
-        <section className="max-w-xl surface p-4 dark:border-slate-800">
-          <h2 className="mb-3 font-medium">Close my cash</h2>
-          {myClosing ? (
-            <p className="text-sm">
-              Closed at {formatTime(myClosing.createdAt)}: expected {etb(myClosing.expectedCash)}, counted {etb(myClosing.countedCash)}
-              {Number(myClosing.variance) !== 0 && (
-                <strong className="text-red-700 dark:text-red-400"> ({Number(myClosing.variance) > 0 ? "over" : "short"} {etb(Math.abs(Number(myClosing.variance)))})</strong>
-              )}
-              . You can&apos;t take more payments today.
-            </p>
+      {shift && (
+        <section className="max-w-2xl space-y-3 surface p-4 dark:border-slate-800">
+          <h2 className="font-medium">Close my shift</h2>
+          {mine.length > 0 && (
+            <ul className="space-y-1 text-sm">
+              {mine.map((c) => (
+                <li key={c.id}>
+                  Shift closed at {formatTime(c.createdAt)}: expected {etb(c.expectedCash)}, counted {etb(c.countedCash)}
+                  <span className={Number(c.variance) === 0 ? "text-slate-500" : "font-medium text-red-700 dark:text-red-400"}>
+                    {" "}
+                    · {Number(c.variance) === 0 ? "balanced" : `${Number(c.variance) > 0 ? "over" : "short"} ${etb(Math.abs(Number(c.variance)))}`}
+                  </span>
+                  {c.handedTo && <span className="text-slate-500"> · {etb(Number(c.countedCash) - Number(c.floatLeft))} to {c.handedTo}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            This shift: since {shift.lastClosing ? `your closing at ${formatTime(shift.lastClosing.createdAt)}` : "the start of the day"} · {shift.payments} {shift.payments === 1 ? "payment" : "payments"}
+            {Object.entries(shift.totals)
+              .filter(([, v]) => Number(v) !== 0)
+              .map(([k, v]) => ` · ${PAYMENT_METHODS[k]} ${etb(v!)}`)
+              .join("")}
+          </p>
+          {shift.payments === 0 && mine.length > 0 ? (
+            <p className="text-sm text-slate-500">Nothing taken since your last closing.</p>
           ) : (
-            <CloseCashForm expectedCash={myCash} />
+            <CloseCashForm key={shift.lastClosing?.id ?? "first"} cashTaken={shift.cash} suggestedFloat={shift.suggestedFloat} />
           )}
         </section>
       )}
