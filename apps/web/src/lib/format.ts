@@ -65,13 +65,28 @@ export function formatDuration(fromIso: string, to: Date | string = new Date()) 
   return days >= 3 || hours === 0 ? `${days} day${days === 1 ? "" : "s"}` : `${days} day${days === 1 ? "" : "s"} ${hours} h`;
 }
 
+/** "3 cuvettes", "1 test", "5 ml": a count with its unit, plural where English wants one. */
+export function countOf(n: number, unit: string) {
+  const plural = n !== 1 && unit.length > 2 && /[a-z]$/i.test(unit) && !/s$/i.test(unit);
+  return `${n} ${unit}${plural ? "s" : ""}`;
+}
+
+/** Whether a time has passed (an expiry date, say). */
+export function isPast(iso: string) {
+  return new Date(iso).getTime() < Date.now();
+}
+
 /** Whole minutes from one time to another (or to now); never negative. */
 export function minutesBetween(fromIso: string, to: Date | string = new Date()) {
   return Math.max(0, Math.floor((new Date(to).getTime() - new Date(fromIso).getTime()) / 60_000));
 }
 
-/** A number of minutes: "42 min", "2 h 5 min", "3 h". */
+/** A number of minutes: "42 min", "2 h 5 min", "3 h", "2 d 4 h". */
 export function formatMinutes(m: number) {
+  if (m >= 24 * 60) {
+    const h = Math.floor((m % (24 * 60)) / 60);
+    return `${Math.floor(m / (24 * 60))} d${h ? ` ${h} h` : ""}`;
+  }
   return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`;
 }
 

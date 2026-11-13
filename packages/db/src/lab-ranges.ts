@@ -86,11 +86,50 @@ export const RECOMMENDED_TAT: Record<string, number> = {
   "Stool examination": 60,
 };
 
-/** Sets the recommended turnaround target on tests that have none. Returns the tests it set. */
-export async function applyRecommendedTargets(db: PrismaClient, tenantId: string) {
-  const tests = await db.labTest.findMany({ where: { tenantId, tatMinutes: null, name: { in: Object.keys(RECOMMENDED_TAT) } }, select: { id: true, name: true } });
-  for (const t of tests) await db.labTest.update({ where: { id: t.id }, data: { tatMinutes: RECOMMENDED_TAT[t.name] } });
-  return tests.map((t) => t.name);
+/**
+ * The specimen each starter test is done on (see SPECIMENS in the API and web). Have the laboratory
+ * head confirm them: some labs run ESR on EDTA, or glucose on a finger prick.
+ */
+export const RECOMMENDED_SPECIMEN: Record<string, string> = {
+  Hemoglobin: "EDTA",
+  "White blood cell count": "EDTA",
+  "Platelet count": "EDTA",
+  "Complete blood count (CBC)": "EDTA",
+  ESR: "CITRATE",
+  "Fasting blood glucose": "FLUORIDE",
+  "Random blood glucose": "FLUORIDE",
+  HbA1c: "EDTA",
+  Creatinine: "SERUM",
+  "Malaria blood film": "CAPILLARY",
+  "Urine hCG (pregnancy test)": "URINE",
+  "H. pylori stool antigen": "STOOL",
+  "HIV rapid test": "CAPILLARY",
+  "Widal test": "SERUM",
+  Urinalysis: "URINE",
+  "Stool examination": "STOOL",
+};
+
+/**
+ * Sets the recommended turnaround target and specimen on starter tests that have none (each only
+ * where it is empty). Returns the tests it changed.
+ */
+export async function applyRecommendedTestDefaults(db: PrismaClient, tenantId: string) {
+  const names = [...new Set([...Object.keys(RECOMMENDED_TAT), ...Object.keys(RECOMMENDED_SPECIMEN)])];
+  const tests = await db.labTest.findMany({
+    where: { tenantId, name: { in: names }, OR: [{ tatMinutes: null }, { specimen: null }] },
+    select: { id: true, name: true, tatMinutes: true, specimen: true },
+  });
+  const changed: string[] = [];
+  for (const t of tests) {
+    const data = {
+      ...(t.tatMinutes === null && RECOMMENDED_TAT[t.name] && { tatMinutes: RECOMMENDED_TAT[t.name] }),
+      ...(t.specimen === null && RECOMMENDED_SPECIMEN[t.name] && { specimen: RECOMMENDED_SPECIMEN[t.name] }),
+    };
+    if (!Object.keys(data).length) continue;
+    await db.labTest.update({ where: { id: t.id }, data });
+    changed.push(t.name);
+  }
+  return changed;
 }
 
 const dec = (n: number | undefined) => (n === undefined ? null : n.toFixed(3));

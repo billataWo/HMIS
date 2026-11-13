@@ -4,6 +4,7 @@ import { Fragment, Suspense } from "react";
 import { FLAG_TEXT, isAbnormal, rangeText } from "@/components/lab-result";
 import { api, ApiError, type LabOrder, type LabReport } from "@/lib/api";
 import { ageFrom, formatDualDate, formatTime, fullName } from "@/lib/format";
+import { specimenShort } from "@/lib/specimens";
 import { PrintButton } from "@/components/print-button";
 
 /** A corrected result says so on paper: when, what it was, and why. */
@@ -93,6 +94,8 @@ async function Report({ params }: { params: Promise<{ id: string }> }) {
                     <td className="pt-2 font-mono text-xs">
                       {o.sampleId}
                       {o.sampleCollectedAt && <span className="block">{formatTime(o.sampleCollectedAt)}</span>}
+                      {o.labTest.specimen && <span className="block font-sans">{specimenShort(o.labTest.specimen)}</span>}
+                      {o.sentTo && <span className="block font-sans">Done at {o.sentTo}{o.sentRef && ` (no. ${o.sentRef})`}</span>}
                     </td>
                   </tr>
                   {o.labTest.components.map((c) => {
@@ -127,6 +130,8 @@ async function Report({ params }: { params: Promise<{ id: string }> }) {
                 <td className="py-1.5 font-mono text-xs">
                   {o.sampleId}
                   {o.sampleCollectedAt && <span className="block">{formatTime(o.sampleCollectedAt)}</span>}
+                      {o.labTest.specimen && <span className="block font-sans">{specimenShort(o.labTest.specimen)}</span>}
+                      {o.sentTo && <span className="block font-sans">Done at {o.sentTo}{o.sentRef && ` (no. ${o.sentRef})`}</span>}
                 </td>
               </tr>
               ),

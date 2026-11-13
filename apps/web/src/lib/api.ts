@@ -197,6 +197,11 @@ export interface LabTest {
   resultOptions: string[];
   /** Target turnaround, sample taken to result released (minutes); null = no target. */
   tatMinutes?: number | null;
+  /** The sample and tube (EDTA, SERUM, URINE…; see lib/specimens); tests with the same one share a tube. */
+  specimen?: string | null;
+  /** Not done here: sent to a reference lab (usually this one). */
+  sendOut?: boolean;
+  referenceLab?: string | null;
   /** Panel tests (CBC, urinalysis…): one result per component, each with its own range or answers. */
   components?: LabComponent[];
   /** Ranges for men, women and age groups (the test's own range is the default). */
@@ -248,6 +253,10 @@ export interface LabOrder {
   urgent?: boolean;
   sampleId: string | null;
   sampleCollectedAt: string | null;
+  /** At a reference lab: where, its number there, and since when. */
+  sentTo?: string | null;
+  sentRef?: string | null;
+  sentAt?: string | null;
   resultValue: string | null;
   resultFlag: LabFlag | null;
   /** The range the result was judged by, as printed ("13–17 g/dL (men)"). */
@@ -286,6 +295,100 @@ export interface LabWorkOrder extends LabOrder {
 /** A released result in a patient's lab history. */
 export interface LabHistoryOrder extends LabOrder {
   visit: { id: string; kind: "OPD" | "WALK_IN" | "LAB" };
+}
+
+/** Where a test's QC stands: FAIL holds patient results; DUE = not run today; WARN = a 1-2s today. */
+export interface QcState {
+  status: "OK" | "WARN" | "DUE" | "FAIL";
+  detail: string | null;
+}
+
+export interface LabQcRun {
+  id: string;
+  value: string;
+  /** Standard deviations from the mean (measured controls). */
+  z: string | null;
+  status: "PASS" | "WARN" | "FAIL";
+  rule: string | null;
+  note: string | null;
+  action: string | null;
+  createdAt: string;
+}
+
+export interface LabQcControl {
+  id: string;
+  labTestId: string;
+  name: string;
+  lot: string | null;
+  expiresAt: string | null;
+  mean: string | null;
+  sd: string | null;
+  expected: string | null;
+  active: boolean;
+  /** Newest first. */
+  results: LabQcRun[];
+}
+
+export interface LabQcPage {
+  today: string;
+  tests: { id: string; name: string; unit: string | null; resultOptions: string[]; state: QcState; controls: LabQcControl[] }[];
+  allTests: { id: string; name: string; unit: string | null; resultOptions: string[] }[];
+}
+
+export interface LabReagentLot {
+  id: string;
+  lot: string | null;
+  expiresAt: string | null;
+  quantity: number;
+  receivedAt: string;
+}
+
+export interface LabReagentRow {
+  id: string;
+  name: string;
+  unit: string;
+  reorderLevel: number;
+  active: boolean;
+  lots: LabReagentLot[];
+  uses: { labTestId: string; perTest: number; labTest: { id: string; name: string } }[];
+  onHand: number;
+  low: boolean;
+  expiringSoon: number;
+  expired: number;
+  /** Used by tests with none on record since the last count. */
+  usedWithoutStock: number;
+}
+
+export interface LabReagentsPage {
+  reagents: LabReagentRow[];
+  tests: { id: string; name: string }[];
+  adjustReasons: Record<string, string>;
+}
+
+export interface LabReagentMovement {
+  id: string;
+  type: "RECEIVE" | "USE" | "QC" | "ADJUST" | "EXPIRED";
+  quantity: number;
+  reason: string | null;
+  labOrderId: string | null;
+  createdAt: string;
+  lotRow: { lot: string | null } | null;
+}
+
+/** Samples at reference labs, and those sent on a day (the dispatch list). */
+export interface LabSendOuts {
+  day: string;
+  tenant: { name: string; phone: string | null; address: string | null };
+  outstanding: LabWorkOrder[];
+  sent: LabWorkOrder[];
+}
+
+/** One label per sample tube or container. */
+export interface LabLabels {
+  visitId: string;
+  tenant: { name: string };
+  patient: QueuePatient;
+  tubes: { sampleId: string; specimen: string | null; collectedAt: string | null; urgent: boolean; tests: string[] }[];
 }
 
 export interface LabReport {

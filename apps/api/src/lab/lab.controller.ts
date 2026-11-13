@@ -1,13 +1,15 @@
-import { Body, ConflictException, Controller, Get, NotFoundException, Param, Post } from '@nestjs/common';
+import { Body, ConflictException, Controller, Get, NotFoundException, Param, Post, Query } from '@nestjs/common';
 import type { LabOrderStatus, Prisma, Role } from '@hmis/db';
 import { z } from 'zod';
 import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
-import { clinicDay, dayRange } from '../common/clinic-day.js';
+import { clinicDay, DAY_PATTERN, dayRange } from '../common/clinic-day.js';
 import { isSettled, prepaymentRequired, settlementSelect } from '../common/settlement.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { queuePatientSelect } from '../visits/visits.controller.js';
+import { qcStates, reagentShortTests, useReagents } from './qc.js';
+import { type Specimen, SPECIMENS } from './specimens.js';
 import { type BandRange, type BaseRange, flagValue, isCritical, type Patient, pickRange, rangeText } from './ranges.js';
 
 const OrderSchema = z.object({
@@ -31,7 +33,21 @@ const WalkInSchema = z.object({
     .transform((s) => s || undefined)
     .optional(),
 });
-const CollectSchema = z.object({ sampleId: z.string().trim().max(50).optional() });
+const sampleIdField = z.string().trim().max(50).optional();
+const CollectSchema = z.object({ sampleId: sampleIdField });
+/** A sample sent to a reference lab: where, and its number there (if they gave one). */
+const SendSchema = z.object({
+  to: z.string().trim().min(2, 'Say which lab the sample goes to').max(200),
+  ref: z
+    .string()
+    .trim()
+    .max(100)
+    .transform((s) => s || undefined)
+    .optional(),
+});
+const DaySchema = z.object({ day: z.string().regex(DAY_PATTERN).optional() });
+/** One sample (one tube or container) for one or more of a visit's tests: they share its number. */
+const CollectTubeSchema = z.object({ orderIds: OrderSchema.shape.labTestIds, sampleId: sampleIdField });
 const resultFields = {
   value: z.string().trim().max(2000).optional(), // single-value tests
   values: z.array(z.object({ componentId: z.uuid(), value: z.string().trim().max(200) })).max(60).optional(), // panels
@@ -101,6 +117,9 @@ const orderInclude = {
       critHigh: true,
       resultOptions: true,
       tatMinutes: true,
+      specimen: true,
+      sendOut: true,
+      referenceLab: true,
       ranges: { select: rangeSelect },
       components: {
         orderBy: { sortOrder: 'asc' },
@@ -280,6 +299,8 @@ export class LabController {
       prepaymentRequired(db, me.tenantId),
       db.tenant.findUniqueOrThrow({ where: { id: me.tenantId }, select: { labUrgentMinutes: true } }),
     ]);
+    // Where QC stands for the tests on the bench, and those whose reagents have run out.
+    const [qc, short] = await Promise.all([qcStates(db, me.tenantId, [...new Set(open.map((o) => o.labTestId))]), reagentShortTests(db, me.tenantId)]);
     const target = (o: { urgent: boolean; labTest: { tatMinutes: number | null } }) => ({
       targetMinutes: targetMinutes(o.urgent, o.labTest.tatMinutes, tenant.labUrgentMinutes),
     });
@@ -291,43 +312,162 @@ export class LabController {
     const unpaid = new Set(charges.filter((c) => !isSettled(c)).map((c) => c.sourceId));
     return {
       prepayment,
+      qc: Object.fromEntries(qc),
+      reagentShort: Object.fromEntries(short),
       open: open.map((o) => ({ ...o, paid: !unpaid.has(o.id), ...target(o) })),
       verifiedToday: verifiedToday.map((o) => ({ ...o, ...target(o) })),
     };
   }
 
+  /** The sample for one test (in a tube of its own). */
   @Post('lab-orders/:id/collect')
   @Roles(...LAB)
   async collect(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(CollectSchema)) body: z.infer<typeof CollectSchema>) {
+    return (await this.collectTube(me, [id], body.sampleId))[0];
+  }
+
+  /**
+   * One sample for several of a visit's tests: a purple top for the CBC and the HbA1c, say. They
+   * must need the same specimen, and share the tube's number (and its label).
+   */
+  @Post('lab/collect')
+  @Roles(...LAB)
+  async collectMany(@CurrentUser() me: AuthUser, @Body(new ZodPipe(CollectTubeSchema)) body: z.infer<typeof CollectTubeSchema>) {
+    return this.collectTube(me, body.orderIds, body.sampleId);
+  }
+
+  private async collectTube(me: AuthUser, ids: string[], sampleId?: string) {
     return this.prisma.client.$transaction(async (tx) => {
-      const order = await this.order(me, id, tx);
-      if (order.status !== 'ORDERED') throw new ConflictException('The sample for this test has already been taken');
-      if (await prepaymentRequired(tx, me.tenantId)) {
-        const charges = await tx.charge.findMany({ where: { source: 'LAB', sourceId: id }, select: settlementSelect });
-        if (!charges.every(isSettled)) {
-          throw new ConflictException(`${order.labTest.name} has not been paid for yet; send the patient to the cashier`);
-        }
+      const orders: Order[] = [];
+      for (const id of ids) orders.push(await this.order(me, id, tx));
+      const [first] = orders;
+      if (orders.some((o) => o.visitId !== first.visitId)) throw new ConflictException("One sample holds one patient's tests");
+      const taken = orders.find((o) => o.status !== 'ORDERED');
+      if (taken) throw new ConflictException(`The sample for ${taken.labTest.name} has already been taken`);
+      const other = orders.find((o) => o.labTest.specimen !== first.labTest.specimen);
+      if (other) {
+        const what = (o: Order) => (o.labTest.specimen ? SPECIMENS[o.labTest.specimen as Specimen] : 'no specimen set');
+        throw new ConflictException(`${first.labTest.name} (${what(first)}) and ${other.labTest.name} (${what(other)}) need different samples`);
       }
-      const updated = await tx.labOrder.update({
-        where: { id },
-        data: {
-          status: 'SAMPLE_COLLECTED',
-          // A new sample after a rejection gets its own number, so the two are never confused.
-          sampleId: body.sampleId || `L-${id.slice(0, 8).toUpperCase()}${order.rejections ? `-${order.rejections + 1}` : ''}`,
-          sampleCollectedAt: new Date(),
-          collectedById: me.sub,
-          rejectReason: null,
-        },
-        include: orderInclude,
+      if (await prepaymentRequired(tx, me.tenantId)) {
+        const charges = await tx.charge.findMany({ where: { source: 'LAB', sourceId: { in: ids } }, select: { sourceId: true, ...settlementSelect } });
+        const unpaid = orders.find((o) => charges.some((c) => c.sourceId === o.id && !isSettled(c)));
+        if (unpaid) throw new ConflictException(`${unpaid.labTest.name} has not been paid for yet; send the patient to the cashier`);
+      }
+      // A new sample after a rejection gets its own number, so the two are never confused.
+      const number = sampleId || `L-${first.id.slice(0, 8).toUpperCase()}${first.rejections ? `-${first.rejections + 1}` : ''}`;
+      await tx.labOrder.updateMany({
+        where: { id: { in: ids } },
+        data: { status: 'SAMPLE_COLLECTED', sampleId: number, sampleCollectedAt: new Date(), collectedById: me.sub, rejectReason: null },
       });
-      await this.audit.log(me, 'lab.collect', 'LabOrder', id, { sampleId: updated.sampleId }, tx);
-      return updated;
+      for (const o of orders) await this.audit.log(me, 'lab.collect', 'LabOrder', o.id, { sampleId: number, ...(ids.length > 1 && { tube: ids.length }) }, tx);
+      const updated = await tx.labOrder.findMany({ where: { id: { in: ids } }, include: orderInclude });
+      return ids.map((id) => updated.find((o) => o.id === id)!);
     });
   }
 
   /**
+   * The sample goes to a reference lab (the test isn't done here, or the analyser is down). The
+   * test stays open, on the "at reference labs" list, until its result comes back and is entered.
+   */
+  @Post('lab-orders/:id/send')
+  @Roles(...LAB)
+  async send(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(SendSchema)) body: z.infer<typeof SendSchema>) {
+    const order = await this.order(me, id);
+    if (order.status !== 'SAMPLE_COLLECTED') {
+      throw new ConflictException(order.status === 'ORDERED' ? 'Take the sample first' : 'This test already has a result');
+    }
+    if (order.sentAt) throw new ConflictException(`This sample is already at ${order.sentTo}`);
+    const updated = await this.prisma.client.labOrder.update({
+      where: { id },
+      data: { sentTo: body.to, sentRef: body.ref ?? null, sentAt: new Date(), sentById: me.sub },
+      include: orderInclude,
+    });
+    await this.audit.log(me, 'lab.send', 'LabOrder', id, { to: body.to, ref: body.ref, sampleId: order.sampleId });
+    return updated;
+  }
+
+  /** Sent by mistake (or it never left): the test is back on the bench. */
+  @Post('lab-orders/:id/unsend')
+  @Roles(...LAB)
+  async unsend(@CurrentUser() me: AuthUser, @Param('id') id: string) {
+    const order = await this.order(me, id);
+    if (!order.sentAt) throw new ConflictException('This sample was not sent out');
+    if (order.status !== 'SAMPLE_COLLECTED') throw new ConflictException('The result is in; the sample stays recorded as sent');
+    const updated = await this.prisma.client.labOrder.update({ where: { id }, data: { sentTo: null, sentRef: null, sentAt: null, sentById: null }, include: orderInclude });
+    await this.audit.log(me, 'lab.unsend', 'LabOrder', id, { was: order.sentTo });
+    return updated;
+  }
+
+  /** Reference labs this clinic uses (the tests' usual ones and those sent to before), for suggestions. */
+  @Get('lab/reference-labs')
+  @Roles(...LAB)
+  async referenceLabs(@CurrentUser() me: AuthUser) {
+    const [tests, sent] = await Promise.all([
+      this.prisma.client.labTest.findMany({ where: { tenantId: me.tenantId, referenceLab: { not: null } }, distinct: ['referenceLab'], select: { referenceLab: true } }),
+      this.prisma.client.labOrder.findMany({ where: { tenantId: me.tenantId, sentTo: { not: null } }, distinct: ['sentTo'], select: { sentTo: true }, take: 50 }),
+    ]);
+    return [...new Set([...tests.map((t) => t.referenceLab!), ...sent.map((o) => o.sentTo!)])].sort((a, b) => a.localeCompare(b));
+  }
+
+  /**
+   * Samples at reference labs: those still out (oldest first, with their targets), and those sent on
+   * a day, for the courier's dispatch list.
+   */
+  @Get('lab/send-outs')
+  @Roles(...LAB)
+  async sendOuts(@CurrentUser() me: AuthUser, @Query(new ZodPipe(DaySchema)) q: z.infer<typeof DaySchema>) {
+    const db = this.prisma.client;
+    const day = q.day ?? clinicDay();
+    const { start, end } = dayRange(day);
+    const include = { ...orderInclude, visit: { select: { id: true, queueNumber: true, kind: true, patient: { select: queuePatientSelect } } } };
+    const [outstanding, sent, tenant] = await Promise.all([
+      db.labOrder.findMany({ where: { tenantId: me.tenantId, sentAt: { not: null }, status: 'SAMPLE_COLLECTED' }, orderBy: [{ sentAt: 'asc' }, { id: 'asc' }], include }),
+      db.labOrder.findMany({ where: { tenantId: me.tenantId, sentAt: { gte: start, lt: end } }, orderBy: [{ sentTo: 'asc' }, { sentAt: 'asc' }, { id: 'asc' }], include }),
+      db.tenant.findUniqueOrThrow({ where: { id: me.tenantId }, select: { name: true, phone: true, address: true, labUrgentMinutes: true } }),
+    ]);
+    const target = (o: { urgent: boolean; labTest: { tatMinutes: number | null } }) => targetMinutes(o.urgent, o.labTest.tatMinutes, tenant.labUrgentMinutes);
+    return {
+      day,
+      tenant: { name: tenant.name, phone: tenant.phone, address: tenant.address },
+      outstanding: outstanding.map((o) => ({ ...o, targetMinutes: target(o) })),
+      sent,
+    };
+  }
+
+  /** One label per sample: the patient, the sample number (also as a QR code), the tube and its tests. */
+  @Get('visits/:id/lab-labels')
+  @Roles(...LAB)
+  async labels(@CurrentUser() me: AuthUser, @Param('id') id: string) {
+    if (!z.uuid().safeParse(id).success) throw new NotFoundException('Visit not found');
+    const visit = await this.prisma.client.visit.findFirst({
+      where: { id, tenantId: me.tenantId },
+      select: {
+        id: true,
+        tenant: { select: { name: true } },
+        patient: { select: queuePatientSelect },
+        labOrders: {
+          where: { sampleId: { not: null }, status: { not: 'CANCELLED' } },
+          orderBy: [{ sampleCollectedAt: 'asc' }, { orderedAt: 'asc' }, { id: 'asc' }],
+          select: { sampleId: true, sampleCollectedAt: true, urgent: true, labTest: { select: { name: true, specimen: true } } },
+        },
+      },
+    });
+    if (!visit) throw new NotFoundException('Visit not found');
+    const tubes = new Map<string, { sampleId: string; specimen: string | null; collectedAt: Date | null; urgent: boolean; tests: string[] }>();
+    for (const o of visit.labOrders) {
+      const t = tubes.get(o.sampleId!) ?? { sampleId: o.sampleId!, specimen: o.labTest.specimen, collectedAt: o.sampleCollectedAt, urgent: false, tests: [] };
+      t.tests.push(o.labTest.name);
+      t.urgent ||= o.urgent;
+      tubes.set(o.sampleId!, t);
+    }
+    return { visitId: visit.id, tenant: visit.tenant, patient: visit.patient, tubes: [...tubes.values()] };
+  }
+
+  /**
    * The lab can't use the sample (haemolysed, clotted, too little…): it is recorded and the order
-   * goes back to "sample needed". Paid tests stay paid; the new sample gets a new number.
+   * goes back to "sample needed". Paid tests stay paid; the new sample gets a new number. Every
+   * unreleased test in the same tube goes back with it.
    */
   @Post('lab-orders/:id/reject')
   @Roles(...LAB)
@@ -338,31 +478,46 @@ export class LabController {
         throw new ConflictException(order.status === 'VERIFIED' ? 'This result is released: amend it instead' : 'There is no sample to reject');
       }
       const reason = REJECT_REASONS[body.reason];
-      await tx.labSampleRejection.create({
-        data: { tenantId: me.tenantId, labOrderId: id, sampleId: order.sampleId, reason, note: body.note, userId: me.sub },
+      const tube = await tx.labOrder.findMany({
+        where: { visitId: order.visitId, sampleId: order.sampleId, status: { in: ['SAMPLE_COLLECTED', 'RESULTED'] } },
+        select: { id: true },
       });
-      await tx.labResultValue.deleteMany({ where: { labOrderId: id } });
-      const updated = await tx.labOrder.update({
-        where: { id },
-        data: {
-          status: 'ORDERED',
-          sampleId: null,
-          sampleCollectedAt: null,
-          collectedById: null,
-          resultValue: null,
-          resultFlag: null,
-          resultNote: null,
-          rangeText: null,
-          critical: false,
-          resultedAt: null,
-          resultedById: null,
-          rejections: { increment: 1 },
-          rejectReason: body.note ? `${reason}: ${body.note}` : reason,
-        },
-        include: orderInclude,
-      });
-      await this.audit.log(me, 'lab.reject', 'LabOrder', id, { sampleId: order.sampleId, reason, note: body.note }, tx);
+      for (const { id: other } of tube.filter((o) => o.id !== id)) await this.rejectOne(me, tx, other, order.sampleId, reason, body.note);
+      const updated = await this.rejectOne(me, tx, id, order.sampleId, reason, body.note);
+      await this.audit.log(me, 'lab.reject', 'LabOrder', id, { sampleId: order.sampleId, reason, note: body.note, ...(tube.length > 1 && { tube: tube.length }) }, tx);
       return updated;
+    });
+  }
+
+  /** Records one test's rejected sample and puts it back to "sample needed". */
+  private async rejectOne(me: AuthUser, tx: Prisma.TransactionClient, id: string, sampleId: string | null, reason: string, note?: string) {
+    await tx.labSampleRejection.create({
+      data: { tenantId: me.tenantId, labOrderId: id, sampleId, reason, note, userId: me.sub },
+    });
+    await tx.labResultValue.deleteMany({ where: { labOrderId: id } });
+    return tx.labOrder.update({
+      where: { id },
+      data: {
+        status: 'ORDERED',
+        sampleId: null,
+        sampleCollectedAt: null,
+        collectedById: null,
+        resultValue: null,
+        resultFlag: null,
+        resultNote: null,
+        rangeText: null,
+        critical: false,
+        resultedAt: null,
+        resultedById: null,
+        // A reference lab's rejection too: the new sample is sent again.
+        sentTo: null,
+        sentRef: null,
+        sentAt: null,
+        sentById: null,
+        rejections: { increment: 1 },
+        rejectReason: note ? `${reason}: ${note}` : reason,
+      },
+      include: orderInclude,
     });
   }
 
@@ -405,8 +560,12 @@ export class LabController {
     if (order.status !== 'SAMPLE_COLLECTED' && order.status !== 'RESULTED') {
       throw new ConflictException(order.status === 'ORDERED' ? 'Collect the sample first' : 'This result is already verified: amend it instead');
     }
+    await this.qcGate(me, order);
     const r = await this.evaluate(order, body);
+    let short: string[] = [];
     const updated = await this.prisma.client.$transaction(async (tx) => {
+      // The first result of a test run here uses its reagents (a sent-out test uses the reference lab's).
+      if (order.status === 'SAMPLE_COLLECTED' && !order.sentAt) short = await useReagents(tx, me.tenantId, order.labTestId, 'USE', me.sub, id);
       if (r.panel) {
         await tx.labResultValue.deleteMany({ where: { labOrderId: id } });
         await tx.labResultValue.createMany({ data: r.panel.map((v) => ({ ...v, tenantId: me.tenantId, labOrderId: id })) });
@@ -427,7 +586,22 @@ export class LabController {
       });
     });
     await this.audit.log(me, order.status === 'RESULTED' ? 'lab.correct' : 'lab.result', 'LabOrder', id, r.critical ? { critical: true } : undefined);
-    return updated;
+    return { ...updated, reagentShort: short };
+  }
+
+  /**
+   * Patient results wait while the test's QC is failing: the problem is fixed and the controls run
+   * again first. Results from a reference lab are theirs to control.
+   */
+  private async qcGate(me: AuthUser, order: Order) {
+    if (order.sentAt) return;
+    const state = (await qcStates(this.prisma.client, me.tenantId, [order.labTestId])).get(order.labTestId);
+    if (state?.status === 'FAIL') {
+      throw new ConflictException({
+        message: `QC for ${order.labTest.name} failed (${state.detail}). Fix the problem and run the controls again before patient results go out.`,
+        code: 'QC_FAILED',
+      });
+    }
   }
 
   /**
@@ -440,6 +614,7 @@ export class LabController {
   async verify(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(VerifySchema)) body: z.infer<typeof VerifySchema>) {
     const order = await this.order(me, id);
     if (order.status !== 'RESULTED') throw new ConflictException('Only entered results can be verified');
+    await this.qcGate(me, order);
     if (order.critical && !body.notified) {
       throw new ConflictException({ message: 'This is a critical result: phone the doctor, then record who was told', code: 'CRITICAL_NOT_NOTIFIED' });
     }

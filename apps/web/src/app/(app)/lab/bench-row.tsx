@@ -5,7 +5,10 @@ import { useActionState, useState, useTransition } from "react";
 import { labStep, markLabUrgent, type FormState } from "@/app/actions";
 import { isCritical, LAB_STATUS, LabValue, rangeText } from "@/components/lab-result";
 import { Alert, Badge, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
-import type { LabOrder, LabWorkOrder } from "@/lib/api";
+import Link from "next/link";
+import type { LabOrder, LabWorkOrder, QcState } from "@/lib/api";
+import { formatMinutes } from "@/lib/format";
+import { specimenLabel, specimenShort, SPECIMENS } from "@/lib/specimens";
 
 const small = "px-3 py-1 text-xs";
 
@@ -143,16 +146,151 @@ function CriticalCall({ required }: { required: boolean }) {
   );
 }
 
+/** A tube-cap dot and the specimen's short name: "● EDTA · purple". */
+export function SpecimenTag({ code }: { code: string }) {
+  return (
+    <span className="ml-2 inline-flex items-center gap-1 text-xs text-slate-500" title={specimenLabel(code) ?? undefined}>
+      <span aria-hidden className={`inline-block size-2.5 rounded-full ${SPECIMENS[code]?.cap ?? "bg-slate-300"}`} />
+      {specimenShort(code)}
+    </span>
+  );
+}
+
+/** One sample to take: its tube and the tests it is for, all given the same number. */
+function Tube({ orders }: { orders: LabWorkOrder[] }) {
+  const [state, action, pending] = useActionState<FormState, FormData>(labStep, {});
+  const code = orders[0].labTest.specimen;
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2 text-sm">
+      <input type="hidden" name="step" value="collect" />
+      <input type="hidden" name="orderId" value={orders[0].id} />
+      {orders.map((o) => (
+        <input key={o.id} type="hidden" name="orderIds" value={o.id} />
+      ))}
+      <span>
+        <span aria-hidden className={`mr-1.5 inline-block size-3 rounded-full align-[-1px] ${code ? (SPECIMENS[code]?.cap ?? "bg-slate-300") : "bg-slate-300"}`} />
+        <span className="font-medium">{specimenLabel(code) ?? "Sample"}</span>
+        <span className="text-slate-500"> for {orders.map((o) => o.labTest.name).join(", ")}</span>
+      </span>
+      <input name="sampleId" placeholder="Sample ID (optional)" aria-label="Sample ID" className={`${inputClass} w-44`} />
+      <button disabled={pending} className={`${buttonClass} ${small}`}>
+        Sample collected
+      </button>
+      {state.error && (
+        <div className="w-full">
+          <Alert>{state.error}</Alert>
+        </div>
+      )}
+    </form>
+  );
+}
+
+/**
+ * The samples to take from this patient now: paid tests grouped by tube (tests on the same
+ * specimen share one); a test with no specimen set gets a sample of its own.
+ */
+export function CollectTubes({ orders, prepayment }: { orders: LabWorkOrder[]; prepayment: boolean }) {
+  const ready = orders.filter((o) => o.status === "ORDERED" && !(prepayment && !o.paid));
+  if (!ready.length) return null;
+  const tubes = new Map<string, LabWorkOrder[]>();
+  for (const o of ready) {
+    const key = o.labTest.specimen ?? `own:${o.id}`;
+    tubes.set(key, [...(tubes.get(key) ?? []), o]);
+  }
+  return (
+    <div className="mt-3 space-y-2 rounded-md border border-dashed border-slate-300 p-3 dark:border-slate-700">
+      <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">
+        {tubes.size === 1 ? "Sample to take" : `${tubes.size} samples to take`}
+      </p>
+      {[...tubes.values()].map((t) => (
+        <Tube key={t[0].id} orders={t} />
+      ))}
+    </div>
+  );
+}
+
 /**
  * The turnaround clock, from the sample: "12 of 60 min", or "Overdue 15 min" once past the target.
  * Before the sample there is no clock (the patient may still be at the cashier).
  */
 function Clock({ minutes, target }: { minutes: number; target: number }) {
-  if (minutes > target) return <Badge tone="danger">Overdue {minutes - target} min</Badge>;
+  if (minutes > target) return <Badge tone="danger">Overdue {formatMinutes(minutes - target)}</Badge>;
   return (
-    <span className={minutes >= target * 0.75 ? "font-medium text-amber-700 dark:text-amber-400" : ""} title="Minutes since the sample, of the target">
-      {minutes} of {target} min
+    <span className={minutes >= target * 0.75 ? "font-medium text-amber-700 dark:text-amber-400" : ""} title="Time since the sample, of the target">
+      {target < 120 ? `${minutes} of ${target} min` : `${formatMinutes(minutes)} of ${formatMinutes(target)}`}
     </span>
+  );
+}
+
+/**
+ * Sends the sample to a reference lab: which lab (the test's usual one is filled in; labs used
+ * before are suggested) and its number there, if they give one.
+ */
+function SendOut({ o, labs, open: startOpen }: { o: LabWorkOrder; labs: string[]; open: boolean }) {
+  const [state, action, pending] = useActionState<FormState, FormData>(labStep, {});
+  const [open, setOpen] = useState(startOpen);
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="text-xs text-slate-500 hover:text-brand-700 hover:underline">
+        Can&apos;t do it here? Send it out
+      </button>
+    );
+  }
+  const list = `labs-${o.id}`;
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2 rounded-md bg-sky-50 px-3 py-2 text-sm dark:bg-sky-950/40">
+      <input type="hidden" name="orderId" value={o.id} />
+      <input type="hidden" name="step" value="send" />
+      <span className="font-medium">Send to</span>
+      <input
+        name="to"
+        required
+        minLength={2}
+        list={list}
+        defaultValue={state.values?.to ?? o.labTest.referenceLab ?? ""}
+        placeholder="Reference lab"
+        aria-label="Reference lab"
+        className={`${inputClass} w-56`}
+      />
+      <datalist id={list}>
+        {labs.map((l) => (
+          <option key={l} value={l} />
+        ))}
+      </datalist>
+      <input name="ref" defaultValue={state.values?.ref} placeholder="Their number (optional)" aria-label="The reference lab's number" className={`${inputClass} w-44`} />
+      <button disabled={pending} className={`${buttonClass} ${small}`}>
+        {pending ? "Saving…" : "Sample sent"}
+      </button>
+      {!o.labTest.sendOut && (
+        <button type="button" onClick={() => setOpen(false)} className={`${secondaryButtonClass} ${small}`}>
+          Cancel
+        </button>
+      )}
+      {state.error && (
+        <div className="w-full">
+          <Alert>{state.error}</Alert>
+        </div>
+      )}
+    </form>
+  );
+}
+
+/** "At Ethio Lab since 12 Nov (2 d) · their no. EL-5531 · Back in the lab" */
+function AtReferenceLab({ o, days }: { o: LabWorkOrder; days: string }) {
+  const [state, action, pending] = useActionState<FormState, FormData>(labStep, {});
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2 rounded-md bg-sky-50 px-3 py-2 text-sm dark:bg-sky-950/40">
+      <input type="hidden" name="orderId" value={o.id} />
+      <input type="hidden" name="step" value="unsend" />
+      <span>
+        At <span className="font-medium">{o.sentTo}</span> since {days}
+        {o.sentRef && <span className="text-slate-500"> · their no. {o.sentRef}</span>}
+      </span>
+      <button disabled={pending} className="text-xs text-slate-500 hover:text-red-700 hover:underline">
+        Not sent after all
+      </button>
+      {state.error && <span className="text-xs text-red-700">{state.error}</span>}
+    </form>
   );
 }
 
@@ -173,7 +311,28 @@ function MakeUrgent({ id }: { id: string }) {
   );
 }
 
-export function BenchRow({ o, prepayment, sampleMinutes }: { o: LabWorkOrder; prepayment: boolean; /** Minutes since the sample was taken. */ sampleMinutes?: number | null }) {
+export function BenchRow({
+  o,
+  prepayment,
+  sampleMinutes,
+  labs = [],
+  sentSince,
+  qc,
+  reagentShort,
+}: {
+  o: LabWorkOrder;
+  prepayment: boolean;
+  /** Minutes since the sample was taken. */
+  sampleMinutes?: number | null;
+  /** Reference labs to suggest when sending out. */
+  labs?: string[];
+  /** When the sample went to the reference lab, as shown ("12 Nov, 2 d"). */
+  sentSince?: string;
+  /** Where the test's QC stands (tests with controls). */
+  qc?: QcState;
+  /** Reagents this test uses that have run out. */
+  reagentShort?: string[];
+}) {
   const [state, action, pending] = useActionState<FormState, FormData>(labStep, {});
   const t = o.labTest;
   const unpaid = prepayment && o.status === "ORDERED" && !o.paid;
@@ -187,10 +346,22 @@ export function BenchRow({ o, prepayment, sampleMinutes }: { o: LabWorkOrder; pr
           )}
           <span className="font-medium">{t.name}</span>
           {t.loincCode && <span className="ml-1 font-mono text-xs text-slate-500">LOINC {t.loincCode}</span>}
+          {t.specimen && <SpecimenTag code={t.specimen} />}
           {o.sampleId && <span className="ml-2 font-mono text-xs">· {o.sampleId}</span>}
         </span>
         <span className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
           {!o.urgent && <MakeUrgent id={o.id} />}
+          {/* Results done here wait for passing QC; a reference lab's don't. */}
+          {qc && qc.status !== "OK" && !o.sentAt && (
+            <Link href={`/lab/qc#qc-${t.id}`} title={qc.detail ?? undefined}>
+              <Badge tone={qc.status === "FAIL" ? "danger" : "warning"}>{qc.status === "FAIL" ? "QC failed: results held" : qc.status === "DUE" ? "QC due" : "QC warning"}</Badge>
+            </Link>
+          )}
+          {reagentShort?.length && !o.sentAt ? (
+            <Link href="/lab/reagents" title="No stock on record">
+              <Badge tone="warning">Out of {reagentShort.join(", ")}</Badge>
+            </Link>
+          ) : null}
           {sampleMinutes != null && o.targetMinutes != null && <Clock minutes={sampleMinutes} target={o.targetMinutes} />}
           {unpaid && <Badge tone="danger">Not paid</Badge>}
           {o.status === "ORDERED" && o.rejectReason && <Badge tone="warning">New sample needed</Badge>}
@@ -207,24 +378,15 @@ export function BenchRow({ o, prepayment, sampleMinutes }: { o: LabWorkOrder; pr
           The last sample was rejected ({o.rejectReason}). Take a new sample.
         </p>
       )}
-      {o.status === "ORDERED" &&
-        (unpaid ? (
-          <p className="text-sm text-slate-500">Send the patient to the cashier before taking the sample.</p>
-        ) : (
-          <form action={action} className="flex flex-wrap gap-2">
-            <input type="hidden" name="orderId" value={o.id} />
-            <input type="hidden" name="step" value="collect" />
-            <input name="sampleId" placeholder="Sample ID (optional)" aria-label="Sample ID" className={`${inputClass} w-48`} />
-            <button disabled={pending} className={`${buttonClass} ${small}`}>
-              Sample collected
-            </button>
-          </form>
-        ))}
+      {o.status === "ORDERED" && unpaid && <p className="text-sm text-slate-500">Send the patient to the cashier before taking the sample.</p>}
 
-      {(o.status === "SAMPLE_COLLECTED" || o.status === "RESULTED") && (
+      {o.status === "SAMPLE_COLLECTED" && o.sentAt && <AtReferenceLab o={o} days={sentSince ?? ""} />}
+      {o.status === "SAMPLE_COLLECTED" && !o.sentAt && <SendOut o={o} labs={labs} open={!!t.sendOut} />}
+      {(o.status === "RESULTED" || (o.status === "SAMPLE_COLLECTED" && (o.sentAt || !t.sendOut))) && (
         <form action={action} className="flex flex-wrap items-start gap-2">
           <input type="hidden" name="orderId" value={o.id} />
           <input type="hidden" name="step" value="result" />
+          {o.sentAt && o.status === "SAMPLE_COLLECTED" && <span className="w-full text-xs text-slate-500">Result from {o.sentTo}, when it comes back:</span>}
           <ResultFields o={o} defaults />
           <button disabled={pending} className={`${o.status === "RESULTED" ? secondaryButtonClass : buttonClass} ${small}`}>
             {o.status === "RESULTED" ? "Correct result" : "Save result"}

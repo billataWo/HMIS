@@ -232,17 +232,17 @@ export function RecommendedRanges() {
       {result?.filled && (
         <Notice tone={result.filled.length || result.targets?.length ? "success" : "info"}>
           {result.filled.length ? `Added recommended ranges and critical limits to: ${result.filled.join(", ")}. ` : ""}
-          {result.targets?.length ? `Added target times to: ${result.targets.join(", ")}.` : ""}
-          {!result.filled.length && !result.targets?.length && "Every common test already has ranges and a target time of its own; nothing was changed."}
+          {result.targets?.length ? `Added target times and specimens to: ${result.targets.join(", ")}.` : ""}
+          {!result.filled.length && !result.targets?.length && "Every common test already has its own ranges, target time and specimen; nothing was changed."}
         </Notice>
       )}
       <p className="flex flex-wrap items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-        Common tests (haemoglobin, CBC, glucose, creatinine…) have recommended critical limits, ranges for men, women and children, and target times.
+        Common tests (haemoglobin, CBC, glucose, creatinine…) have recommended critical limits, ranges for men, women and children, target times and specimens.
         <button type="button" disabled={pending} onClick={() => start(async () => setResult(await applyRecommendedLabRanges()))} className={secondaryButtonClass}>
           {pending ? "Adding…" : "Use the recommended ranges"}
         </button>
       </p>
-      <p className="text-xs text-slate-500">Only tests with no ranges (or no target time) of their own are filled in. Have your laboratory head check them against your analysers.</p>
+      <p className="text-xs text-slate-500">Only what a test doesn&apos;t have yet is filled in. Have your laboratory head check them against your analysers.</p>
     </div>
   );
 }

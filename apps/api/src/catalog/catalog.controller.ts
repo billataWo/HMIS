@@ -1,10 +1,11 @@
 import { Body, ConflictException, Controller, Get, NotFoundException, Param, Patch, Post, Put } from '@nestjs/common';
 import { z } from 'zod';
-import { applyRecommendedRanges, applyRecommendedTargets, type Db } from '@hmis/db';
+import { applyRecommendedRanges, applyRecommendedTestDefaults, type Db } from '@hmis/db';
 import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
 import { toCents } from '../common/money.js';
 import { ZodPipe } from '../common/zod.pipe.js';
+import { SPECIMEN_CODES } from '../lab/specimens.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 const price = z.number().min(0).max(1_000_000);
@@ -44,6 +45,8 @@ const components = z.array(ComponentSchema).max(40);
 
 /** Target turnaround, sample to released result: 5 minutes to 14 days (cultures); empty = none. */
 const tatMinutes = z.number().int().min(5).max(14 * 24 * 60).nullable().optional();
+/** The sample and tube it is done on; tests with the same one share a tube. */
+const specimen = z.enum(SPECIMEN_CODES).nullable().optional();
 const LabTestSchema = z
   .object({
     components: components.default([]),
@@ -54,6 +57,9 @@ const LabTestSchema = z
     refHigh: z.number().nullable().optional(),
     price,
     tatMinutes,
+    specimen,
+    sendOut: z.boolean().optional(),
+    referenceLab: nullableText(200),
     resultOptions: z.array(z.string().trim().min(1).max(60)).max(20).default([]),
   })
   .refine((t) => t.refLow == null || t.refHigh == null || t.refLow < t.refHigh, { message: 'Low must be below high', path: ['refHigh'] })
@@ -70,6 +76,9 @@ const LabTestUpdateSchema = z
     refHigh: z.number().nullable().optional(),
     price: price.optional(),
     tatMinutes,
+    specimen,
+    sendOut: z.boolean().optional(),
+    referenceLab: nullableText(200),
     resultOptions: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
     components: components.optional(),
     active: z.boolean().optional(),
@@ -214,7 +223,7 @@ export class CatalogController {
   async recommendedRanges(@CurrentUser() me: AuthUser) {
     const { filled, targets } = await this.prisma.client.$transaction(async (tx) => ({
       filled: await applyRecommendedRanges(tx as unknown as Db, me.tenantId),
-      targets: await applyRecommendedTargets(tx as unknown as Db, me.tenantId),
+      targets: await applyRecommendedTestDefaults(tx as unknown as Db, me.tenantId),
     }));
     await this.audit.log(me, 'labtest.recommended-ranges', 'LabTest', undefined, { filled, targets });
     return { filled, targets };

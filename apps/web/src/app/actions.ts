@@ -536,10 +536,17 @@ export async function labStep(_: FormState, form: FormData): Promise<FormState> 
             ? { ...result, reason: text(form, "reason"), notified }
             : step === "reject"
               ? { reason: text(form, "reason"), note: text(form, "note") || undefined }
-              : null;
+              : step === "send"
+                ? { to: text(form, "to"), ref: text(form, "ref") || undefined }
+                : step === "unsend"
+                  ? {}
+                  : null;
   if (!body) return { error: "Unknown action." };
   try {
-    await api(`/lab-orders/${id}/${step}`, { method: "POST", body: JSON.stringify(body) });
+    // One sample for several tests (a tube): they share its number.
+    const orderIds = form.getAll("orderIds").map(String);
+    if (step === "collect" && orderIds.length) await api("/lab/collect", { method: "POST", body: JSON.stringify({ ...body, orderIds }) });
+    else await api(`/lab-orders/${id}/${step}`, { method: "POST", body: JSON.stringify(body) });
   } catch (e) {
     return toFormState(e, Object.fromEntries([...form.entries()].map(([k, v]) => [k, String(v)])));
   }
@@ -704,6 +711,9 @@ export async function saveLabTest(_: FormState, form: FormData): Promise<FormSta
         refHigh: num("refHigh"),
         price: Number(text(form, "price")),
         tatMinutes: num("tatMinutes"),
+        specimen: text(form, "specimen") || null,
+        sendOut: form.get("sendOut") === "on",
+        referenceLab: text(form, "referenceLab") || null,
         resultOptions: options,
         // Panel components, one per line: "Name | unit | low-high | answer/answer". Sent only when edited.
         ...(text(form, "components") !== text(form, "componentsOriginal") && { components: parseComponents(text(form, "components")) }),

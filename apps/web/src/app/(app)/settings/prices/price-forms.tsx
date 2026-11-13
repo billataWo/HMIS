@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { saveLabTest, saveService, type FormState } from "@/app/actions";
 import { buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
 import type { CatalogLabTest, CatalogService } from "@/lib/api";
+import { SPECIMENS } from "@/lib/specimens";
 
 const small = "px-3 py-1 text-xs";
 
@@ -70,6 +71,28 @@ export function LabTestRow({ t }: { t?: CatalogLabTest }) {
           className={`${inputClass} w-full min-w-0 flex-1 sm:min-w-64`}
         />
         <input name="loincCode" defaultValue={t?.loincCode ?? ""} placeholder="LOINC" aria-label="LOINC code" className={`${inputClass} w-28`} />
+      </div>
+      {/* How the sample is handled: its tube, whether it goes to a reference lab, and how long it should take. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <select name="specimen" defaultValue={t?.specimen ?? ""} aria-label="Specimen" title="What the test is done on; tests with the same specimen share a tube" className={`${inputClass} w-auto`}>
+          <option value="">Specimen…</option>
+          {Object.entries(SPECIMENS).map(([code, s]) => (
+            <option key={code} value={code}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+        <label className="flex items-center gap-1 text-xs" title="Not done here: the sample goes to a reference lab">
+          <input type="checkbox" name="sendOut" defaultChecked={t?.sendOut} /> sent out
+        </label>
+        <input
+          name="referenceLab"
+          defaultValue={t?.referenceLab ?? ""}
+          placeholder="Usual reference lab"
+          aria-label="Usual reference lab"
+          title="Where this test is usually sent (suggested when sending)"
+          className={`${inputClass} w-44`}
+        />
         <label className="flex items-center gap-1 text-xs text-slate-500" title="How long the test should take, from the sample to the released result. The bench warns when it is overdue.">
           <input name="tatMinutes" type="number" min={5} step={1} defaultValue={t?.tatMinutes ?? ""} placeholder="—" aria-label="Target time in minutes" className={`${inputClass} w-20`} />
           min target

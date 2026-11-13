@@ -69,34 +69,34 @@ enum Role {
 }
 
 model User {
-  id                 String    @id @default(uuid())
-  tenantId           String
-  tenant             Tenant    @relation(fields: [tenantId], references: [id])
-  fullName           String
-  phone              String
-  email              String?
-  passwordHash       String
-  role               Role
+  id                         String    @id @default(uuid())
+  tenantId                   String
+  tenant                     Tenant    @relation(fields: [tenantId], references: [id])
+  fullName                   String
+  phone                      String
+  email                      String?
+  passwordHash               String
+  role                       Role
   /// Where this person sees patients ("Room 2", "OPD 1"): shown on the waiting-room screen when they call someone in.
-  room               String?
-  active             Boolean   @default(true)
+  room                       String?
+  active                     Boolean   @default(true)
   // Set when an admin creates the account or resets the password: the user must pick their own.
-  mustChangePassword Boolean   @default(false)
+  mustChangePassword         Boolean   @default(false)
   /// A temporary password (set by an admin, mustChangePassword) stops working after this.
   temporaryPasswordExpiresAt DateTime?
   /// Sign-ins (tokens) issued before this are no longer accepted: set on a password change or
   /// reset, so a stolen or old sign-in stops working.
-  sessionsValidAfter DateTime?
+  sessionsValidAfter         DateTime?
   /// Two-step sign-in (authenticator app codes, RFC 6238). Required for admins.
-  totpSecret         String?
+  totpSecret                 String?
   /// Set while the app is being added, until the first code confirms it.
-  totpPendingSecret  String?
-  totpEnabledAt      DateTime?
+  totpPendingSecret          String?
+  totpEnabledAt              DateTime?
   /// The last accepted 30-second step: each code works only once.
-  totpLastStep       Int?
+  totpLastStep               Int?
   /// SHA-256 hashes of the unused one-time recovery codes.
-  totpRecoveryCodes  String[]  @default([])
-  createdAt          DateTime  @default(now())
+  totpRecoveryCodes          String[]  @default([])
+  createdAt                  DateTime  @default(now())
 
   visitsAsDoctor  Visit[]        @relation("VisitDoctor")
   appointments    Appointment[]  @relation("AppointmentDoctor")
@@ -290,26 +290,26 @@ model Prescription {
 }
 
 model PrescriptionItem {
-  id             String       @id @default(uuid())
-  prescriptionId String
-  prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
-  drugId         String
-  drug           Drug         @relation(fields: [drugId], references: [id])
-  dose           String // "500 mg"
-  frequency      String // "TID"
-  durationDays   Int?
-  quantity       Int
-  instructions   String?
-  billedQty      Int          @default(0) // units already charged (sent to the cashier)
-  dispensedQty   Int          @default(0)
+  id                 String       @id @default(uuid())
+  prescriptionId     String
+  prescription       Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  drugId             String
+  drug               Drug         @relation(fields: [drugId], references: [id])
+  dose               String // "500 mg"
+  frequency          String // "TID"
+  durationDays       Int?
+  quantity           Int
+  instructions       String?
+  billedQty          Int          @default(0) // units already charged (sent to the cashier)
+  dispensedQty       Int          @default(0)
   /// Units the patient brought back after they were handed over (dispensedQty is not reduced).
-  returnedQty    Int          @default(0)
+  returnedQty        Int          @default(0)
   /// Of those, units whose charge was taken back: refunded, or dropped before it was invoiced.
-  refundedQty    Int          @default(0)
+  refundedQty        Int          @default(0)
   /// Set when the pharmacist gave an equivalent (same generic, strength and form; another brand) instead: what was prescribed, and why.
   substitutedFrom    String?
   substitutionReason String?
-  returns        DrugReturn[]
+  returns            DrugReturn[]
 }
 
 /// A place stock is kept: the main store, the dispensary, a ward. Dispensing takes only from dispensary stores.
@@ -358,24 +358,24 @@ model DrugReturn {
 }
 
 model Drug {
-  id           String  @id @default(uuid())
+  id           String           @id @default(uuid())
   tenantId     String
-  tenant       Tenant  @relation(fields: [tenantId], references: [id])
+  tenant       Tenant           @relation(fields: [tenantId], references: [id])
   genericName  String
   brandName    String?
   drugClass    String? // e.g. "penicillin", "nsaid"; used to match allergies and interactions
   form         String // tablet, syrup, injection…
   strength     String?
   unit         String // unit of dispensing
-  sellPrice    Decimal @db.Decimal(12, 2)
-  reorderLevel Int     @default(0)
+  sellPrice    Decimal          @db.Decimal(12, 2)
+  reorderLevel Int              @default(0)
   /// Units in one pack as bought (100 tablets in a box); stock is still kept in units.
   packSize     Int?
   /// What the pack is called: box, strip, bottle…
   packName     String?
   /// Narcotic or psychotropic: every unit in and out goes in the controlled-drug register.
   controlled   ControlledClass?
-  active       Boolean @default(true)
+  active       Boolean          @default(true)
 
   batches           StockBatch[]
   prescriptionItems PrescriptionItem[]
@@ -456,25 +456,32 @@ model StockMovement {
 // ───────────────────────────── Lab ─────────────────────────────
 
 model LabTest {
-  id            String   @id @default(uuid())
+  id            String           @id @default(uuid())
   tenantId      String
-  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  tenant        Tenant           @relation(fields: [tenantId], references: [id])
   name          String
   loincCode     String?
   unit          String?
-  refLow        Decimal? @db.Decimal(12, 3)
-  refHigh       Decimal? @db.Decimal(12, 3)
-  price         Decimal  @db.Decimal(12, 2)
+  refLow        Decimal?         @db.Decimal(12, 3)
+  refHigh       Decimal?         @db.Decimal(12, 3)
+  price         Decimal          @db.Decimal(12, 2)
   /// Critical (panic) limits: a result beyond them is called to the doctor at once.
-  critLow       Decimal? @db.Decimal(12, 3)
-  critHigh      Decimal? @db.Decimal(12, 3)
+  critLow       Decimal?         @db.Decimal(12, 3)
+  critHigh      Decimal?         @db.Decimal(12, 3)
   // For qualitative tests (e.g. malaria film): the allowed answers. Empty = numeric or free text.
   resultOptions String[]
-  active        Boolean  @default(true)
+  active        Boolean          @default(true)
   /// Target turnaround, sample taken to result released (minutes); empty = no target.
   tatMinutes    Int?
+  /// What the sample is and the tube or container it goes in (EDTA, SERUM, URINE…); tests with the same one share a tube.
+  specimen      String?
+  /// Not done here: the sample goes to a reference lab (usually this one).
+  sendOut       Boolean          @default(false)
+  referenceLab  String?
   /// Ranges for men, women and age groups; the test's own range is the default.
   ranges        LabRange[]
+  qcControls    LabQcControl[]
+  reagents      LabTestReagent[]
 
   orders     LabOrder[]
   // A panel (CBC, urinalysis…) has several components, each with its own range or answers; the
@@ -574,6 +581,110 @@ model LabSampleRejection {
   @@index([tenantId, createdAt])
 }
 
+/// A control material run to check a test gives right answers: a QC level with a target mean and
+/// SD, or a rapid kit's positive or negative control with the answer it must give.
+model LabQcControl {
+  id        String        @id @default(uuid())
+  tenantId  String
+  labTestId String
+  labTest   LabTest       @relation(fields: [labTestId], references: [id], onDelete: Cascade)
+  name      String // "Level 1 (normal)", "Positive control"
+  lot       String?
+  expiresAt DateTime?
+  mean      Decimal?      @db.Decimal(12, 3)
+  sd        Decimal?      @db.Decimal(12, 3)
+  expected  String? // qualitative controls: the answer it must give
+  active    Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  results   LabQcResult[]
+
+  @@index([tenantId, labTestId])
+}
+
+/// One run of a control: its value, how far from the mean, and the verdict by the Westgard rules.
+model LabQcResult {
+  id        String       @id @default(uuid())
+  tenantId  String
+  controlId String
+  control   LabQcControl @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  value     String
+  z         Decimal?     @db.Decimal(8, 3) // standard deviations from the mean
+  /// PASS; WARN (1-2s: look closer, results may go out); FAIL (patient results held until a passing run).
+  status    String
+  rule      String? // the rule broken: 1-2s, 1-3s, 2-2s, R-4s, 4-1s, 10x, or "expected Negative"
+  note      String?
+  action    String? // what was done about a failure (new reagent, recalibration…)
+  userId    String
+  createdAt DateTime     @default(now())
+
+  @@index([controlId, createdAt])
+  @@index([tenantId, createdAt])
+}
+
+/// Lab supplies kept in stock: test kits, strips, reagent packs (counted in whole units).
+model LabReagent {
+  id           String               @id @default(uuid())
+  tenantId     String
+  name         String
+  unit         String // "test", "strip", "pack"
+  reorderLevel Int                  @default(0)
+  active       Boolean              @default(true)
+  createdAt    DateTime             @default(now())
+  lots         LabReagentLot[]
+  uses         LabTestReagent[]
+  movements    LabReagentMovement[]
+
+  @@unique([tenantId, name])
+}
+
+model LabReagentLot {
+  id         String               @id @default(uuid())
+  tenantId   String
+  reagentId  String
+  reagent    LabReagent           @relation(fields: [reagentId], references: [id], onDelete: Cascade)
+  lot        String?
+  expiresAt  DateTime?
+  quantity   Int // on hand, never below zero
+  receivedAt DateTime             @default(now())
+  movements  LabReagentMovement[]
+
+  @@index([reagentId])
+}
+
+/// Every change to reagent stock, never edited: received, used by a test or QC run, counted, expired.
+model LabReagentMovement {
+  id         String         @id @default(uuid())
+  tenantId   String
+  reagentId  String
+  reagent    LabReagent     @relation(fields: [reagentId], references: [id], onDelete: Cascade)
+  /// Null when a test used more than the stock on record (a count to correct).
+  lotId      String?
+  lotRow     LabReagentLot? @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  type       String // RECEIVE, USE, QC, ADJUST, EXPIRED
+  quantity   Int // signed: + in, - out
+  labOrderId String?
+  reason     String?
+  userId     String?
+  createdAt  DateTime       @default(now())
+
+  @@index([reagentId, createdAt])
+  @@index([tenantId, createdAt])
+}
+
+/// What a test uses: so many units of a reagent per test (and per QC run).
+model LabTestReagent {
+  id        String     @id @default(uuid())
+  tenantId  String
+  labTestId String
+  labTest   LabTest    @relation(fields: [labTestId], references: [id], onDelete: Cascade)
+  reagentId String
+  reagent   LabReagent @relation(fields: [reagentId], references: [id], onDelete: Cascade)
+  perTest   Int        @default(1)
+
+  @@unique([labTestId, reagentId])
+  @@index([reagentId])
+}
+
 enum LabOrderStatus {
   ORDERED
   SAMPLE_COLLECTED
@@ -583,52 +694,57 @@ enum LabOrderStatus {
 }
 
 model LabOrder {
-  id                String           @id @default(uuid())
-  tenantId          String
-  tenant            Tenant           @relation(fields: [tenantId], references: [id])
-  visitId           String
-  visit             Visit            @relation(fields: [visitId], references: [id])
-  labTestId         String
-  labTest           LabTest          @relation(fields: [labTestId], references: [id])
-  orderedById       String
-  orderedBy         User             @relation(fields: [orderedById], references: [id])
-  status            LabOrderStatus   @default(ORDERED)
+  id                 String               @id @default(uuid())
+  tenantId           String
+  tenant             Tenant               @relation(fields: [tenantId], references: [id])
+  visitId            String
+  visit              Visit                @relation(fields: [visitId], references: [id])
+  labTestId          String
+  labTest            LabTest              @relation(fields: [labTestId], references: [id])
+  orderedById        String
+  orderedBy          User                 @relation(fields: [orderedById], references: [id])
+  status             LabOrderStatus       @default(ORDERED)
   /// Lab-only visits: who asked for the test (a doctor or clinic outside), if anyone.
-  requestedBy       String?
+  requestedBy        String?
   /// Needed now (STAT): first on the bench, with a shorter turnaround target.
-  urgent            Boolean          @default(false)
-  sampleId          String?
-  sampleCollectedAt DateTime?
-  collectedById     String?
-  collectedBy       User?            @relation("LabCollectedBy", fields: [collectedById], references: [id])
-  resultValue       String?
-  resultFlag        String? // HH, H, N, L, LL (numeric only; double letters = critical)
+  urgent             Boolean              @default(false)
+  sampleId           String?
+  sampleCollectedAt  DateTime?
+  /// Sent to a reference lab: where, its number for the sample there, when and by whom. The result is entered when it comes back.
+  sentTo             String?
+  sentRef            String?
+  sentAt             DateTime?
+  sentById           String?
+  collectedById      String?
+  collectedBy        User?                @relation("LabCollectedBy", fields: [collectedById], references: [id])
+  resultValue        String?
+  resultFlag         String? // HH, H, N, L, LL (numeric only; double letters = critical)
   /// The range the result was judged against, as printed (single-value tests).
-  rangeText         String?
+  rangeText          String?
   /// A result beyond a critical limit: phoned to the doctor before it is released.
-  critical          Boolean          @default(false)
+  critical           Boolean              @default(false)
   /// Who was told of the critical result, how and when (written by the lab at verification).
-  criticalNotified  String?
+  criticalNotified   String?
   criticalNotifiedAt DateTime?
   /// Needs the doctor's attention: CRITICAL result, or AMENDED after release; cleared when they mark it seen.
-  alert             String?
-  alertSeenAt       DateTime?
-  alertSeenById     String?
-  amendedAt         DateTime?
+  alert              String?
+  alertSeenAt        DateTime?
+  alertSeenById      String?
+  amendedAt          DateTime?
   /// Samples rejected for this order (haemolysed, clotted…); the last reason, while a new one is awaited.
-  rejections        Int              @default(0)
-  rejectReason      String?
-  resultNote        String?
-  orderedAt         DateTime         @default(now())
-  resultedAt        DateTime?
-  resultedById      String?
-  resultedBy        User?            @relation("LabResultedBy", fields: [resultedById], references: [id])
-  verifiedAt        DateTime?
-  verifiedById      String?
-  verifiedBy        User?            @relation("LabVerifiedBy", fields: [verifiedById], references: [id])
-  values            LabResultValue[] // panel tests: one per component
-  amendments        LabAmendment[]
-  sampleRejections  LabSampleRejection[]
+  rejections         Int                  @default(0)
+  rejectReason       String?
+  resultNote         String?
+  orderedAt          DateTime             @default(now())
+  resultedAt         DateTime?
+  resultedById       String?
+  resultedBy         User?                @relation("LabResultedBy", fields: [resultedById], references: [id])
+  verifiedAt         DateTime?
+  verifiedById       String?
+  verifiedBy         User?                @relation("LabVerifiedBy", fields: [verifiedById], references: [id])
+  values             LabResultValue[] // panel tests: one per component
+  amendments         LabAmendment[]
+  sampleRejections   LabSampleRejection[]
 
   @@index([tenantId, status])
 }
@@ -1066,56 +1182,56 @@ model Subscription {
 
 /// "We would like to use HMIS": sent from the public request page, reviewed by HMIS.
 model ClinicRequest {
-  id            String              @id @default(uuid())
-  reference     String              @unique
-  clinicName    String
-  clinicNameAm  String?
-  type          FacilityType        @default(CLINIC)
-  region        String
-  city          String
-  address       String?
-  licenceNumber String?
-  contactName   String
-  contactPhone  String
-  contactEmail  String?
-  planCode      String?
-  staffCount    Int?
-  deployment    DeploymentType      @default(CLOUD)
-  message       String?
-  status        ClinicRequestStatus @default(PENDING)
-  ip            String?
-  reviewedById  String?
-  reviewedAt    DateTime?
-  rejectReason  String?
+  id              String              @id @default(uuid())
+  reference       String              @unique
+  clinicName      String
+  clinicNameAm    String?
+  type            FacilityType        @default(CLINIC)
+  region          String
+  city            String
+  address         String?
+  licenceNumber   String?
+  contactName     String
+  contactPhone    String
+  contactEmail    String?
+  planCode        String?
+  staffCount      Int?
+  deployment      DeploymentType      @default(CLOUD)
+  message         String?
+  status          ClinicRequestStatus @default(PENDING)
+  ip              String?
+  reviewedById    String?
+  reviewedAt      DateTime?
+  rejectReason    String?
   /// The clinic created on approval.
-  tenantId      String?
+  tenantId        String?
   /// The version (date) of the Terms of Service and Privacy Policy the requester accepted.
-  termsVersion  String?
+  termsVersion    String?
   termsAcceptedAt DateTime?
-  createdAt     DateTime            @default(now())
+  createdAt       DateTime            @default(now())
 
   @@index([status, createdAt])
 }
 
 /// HMIS staff who run the platform console. Separate from clinic staff: never in a clinic.
 model PlatformUser {
-  id                 String       @id @default(uuid())
-  fullName           String
-  email              String       @unique
-  role               PlatformRole @default(SUPPORT)
-  passwordHash       String
-  active             Boolean      @default(true)
-  mustChangePassword Boolean      @default(true)
+  id                         String       @id @default(uuid())
+  fullName                   String
+  email                      String       @unique
+  role                       PlatformRole @default(SUPPORT)
+  passwordHash               String
+  active                     Boolean      @default(true)
+  mustChangePassword         Boolean      @default(true)
   /// A temporary password stops working after this.
   temporaryPasswordExpiresAt DateTime?
-  sessionsValidAfter DateTime?
-  totpSecret         String?
-  totpPendingSecret  String?
-  totpEnabledAt      DateTime?
-  totpLastStep       Int?
-  totpRecoveryCodes  String[]     @default([])
-  lastSignInAt       DateTime?
-  createdAt          DateTime     @default(now())
+  sessionsValidAfter         DateTime?
+  totpSecret                 String?
+  totpPendingSecret          String?
+  totpEnabledAt              DateTime?
+  totpLastStep               Int?
+  totpRecoveryCodes          String[]     @default([])
+  lastSignInAt               DateTime?
+  createdAt                  DateTime     @default(now())
 }
 
 model PlatformAuditLog {
@@ -1135,22 +1251,22 @@ model PlatformAuditLog {
 
 /// Platform-wide settings (a single row, id 1).
 model PlatformSetting {
-  id           Int      @id @default(1)
-  trialDays    Int      @default(30)
-  graceDays    Int      @default(14)
+  id                Int      @id @default(1)
+  trialDays         Int      @default(30)
+  graceDays         Int      @default(14)
   /// Added to subscription invoices (Ethiopian VAT is 15%).
-  vatPercent   Decimal  @default(15) @db.Decimal(5, 2)
+  vatPercent        Decimal  @default(15) @db.Decimal(5, 2)
   /// Shown to clinics paying by bank transfer: bank, account name and number.
-  bankDetails  String?
-  supportPhone String?
-  supportEmail String?
-  nextInvoice  Int      @default(1)
+  bankDetails       String?
+  supportPhone      String?
+  supportEmail      String?
+  nextInvoice       Int      @default(1)
   /// Issue each clinic's next invoice by itself, this many days before its trial or paid period ends.
-  autoInvoice        Boolean  @default(true)
-  invoiceDaysBefore  Int      @default(10)
+  autoInvoice       Boolean  @default(true)
+  invoiceDaysBefore Int      @default(10)
   /// A cancelled clinic's records can be deleted this many days after cancellation (time to export).
-  dataRetentionDays  Int      @default(60)
-  updatedAt    DateTime @updatedAt
+  dataRetentionDays Int      @default(60)
+  updatedAt         DateTime @updatedAt
 }
 
 /// The voice that calls patients on the waiting-room TVs: one short recording per word or phrase,
@@ -1228,21 +1344,21 @@ enum CheckoutStatus {
 /// An online payment of an invoice (Chapa or Telebirr), from the clinic leaving for the payment page
 /// until the provider confirms it. Only ever marked paid after asking the provider ourselves.
 model PlatformCheckout {
-  id           String                @id @default(uuid())
+  id          String                @id @default(uuid())
   /// Our reference at the provider: Chapa tx_ref, Telebirr merch_order_id.
-  reference    String                @unique
-  provider     PlatformPaymentMethod
-  invoiceId    String
-  tenantId     String
-  amount       Decimal               @db.Decimal(12, 2)
-  status       CheckoutStatus        @default(CREATED)
-  checkoutUrl  String?
-  createdById  String?
-  createdAt    DateTime              @default(now())
-  checkedAt    DateTime?
-  completedAt  DateTime?
-  paymentId    String?
-  lastError    String?
+  reference   String                @unique
+  provider    PlatformPaymentMethod
+  invoiceId   String
+  tenantId    String
+  amount      Decimal               @db.Decimal(12, 2)
+  status      CheckoutStatus        @default(CREATED)
+  checkoutUrl String?
+  createdById String?
+  createdAt   DateTime              @default(now())
+  checkedAt   DateTime?
+  completedAt DateTime?
+  paymentId   String?
+  lastError   String?
 
   @@index([status, createdAt])
   @@index([tenantId, createdAt])

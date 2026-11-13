@@ -76,6 +76,7 @@ export function LabPanel({
                     <LabValue o={o} />
                     {(o.rangeText ?? rangeText(o.labTest)) && <span className="text-xs text-slate-500"> (ref {o.rangeText ?? rangeText(o.labTest)})</span>}
                     {o.resultNote && <span className="block text-xs text-slate-500">{o.resultNote}</span>}
+                    {o.sentTo && <span className="block text-xs text-slate-500">Done at {o.sentTo}</span>}
                     <Earlier orders={history.filter((h) => h.labTest.id === o.labTest.id)} />
                     {o.amendedAt && o.amendments && o.amendments.length > 0 && (
                       <span className="block text-xs text-amber-800 dark:text-amber-300">
@@ -87,7 +88,7 @@ export function LabPanel({
                 ) : o.status === "ORDERED" && o.rejectReason ? (
                   <span className="text-xs font-medium text-amber-800 dark:text-amber-300"> · New sample needed ({o.rejectReason})</span>
                 ) : (
-                  <span className="text-xs text-slate-500"> · {LAB_STATUS[o.status]}</span>
+                  <span className="text-xs text-slate-500"> · {o.status === "SAMPLE_COLLECTED" && o.sentTo ? `Sent to ${o.sentTo}` : LAB_STATUS[o.status]}</span>
                 )}
                 {o.alert && !o.alertSeenAt && (
                   <span
