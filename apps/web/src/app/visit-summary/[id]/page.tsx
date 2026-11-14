@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { PrintButton } from "@/components/print-button";
 import { api, ApiError, type VisitSummary } from "@/lib/api";
 import { directions } from "@/lib/directions";
-import { ageFrom, countOf, formatDualDate, formatTime, fullName } from "@/lib/format";
+import { ageText, countOf, formatDualDate, formatTime, fullName } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Visit summary" };
 
@@ -40,7 +40,7 @@ async function Summary({ params }: { params: Promise<{ id: string }> }) {
     if (e instanceof ApiError && (e.status === 404 || e.status === 403 || e.status === 409)) notFound();
     throw e;
   }
-  const age = ageFrom(s.patient.dateOfBirth);
+  const age = ageText(s.patient.dateOfBirth);
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4 text-sm text-black">
@@ -62,7 +62,7 @@ async function Summary({ params }: { params: Promise<{ id: string }> }) {
         </p>
         <p>
           <span className="text-slate-600">Sex / age:</span> {s.patient.sex === "MALE" ? "Male" : "Female"}
-          {age !== null && ` · ${age} years`}
+          {age !== null && ` · ${age}`}
         </p>
         <p>
           <span className="text-slate-600">Date:</span> {formatDualDate(s.checkedInAt)}

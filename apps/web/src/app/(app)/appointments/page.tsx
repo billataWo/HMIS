@@ -96,6 +96,9 @@ async function Day({ searchParams }: { searchParams: Promise<Search> }) {
                     )}
                     {CAN_BOOK.includes(me.role) && (
                       <div className="flex gap-2">
+                        <Link href={`/appointments/new?patientId=${a.patient.id}&move=${a.id}`} className={`${secondaryButtonClass} px-3 py-1 text-xs`}>
+                          Move
+                        </Link>
                         {day <= today && (
                           <form action={setAppointmentStatus.bind(null, a.id, "NO_SHOW", returnTo)}>
                             <button className={`${secondaryButtonClass} px-3 py-1 text-xs`}>No-show</button>
@@ -118,7 +121,15 @@ async function Day({ searchParams }: { searchParams: Promise<Search> }) {
 export default function AppointmentsPage({ searchParams }: PageProps<"/appointments">) {
   return (
     <>
-      <PageHeader title="Appointments" subtitle="ቀጠሮዎች" />
+      <PageHeader
+        title="Appointments"
+        subtitle="ቀጠሮዎች"
+        actions={
+          <Link href="/appointments/follow-up" className={secondaryButtonClass}>
+            Reminders and missed
+          </Link>
+        }
+      />
       <Suspense fallback={<Skeleton className="h-64" />}>
         <Day searchParams={searchParams as Promise<Search>} />
       </Suspense>

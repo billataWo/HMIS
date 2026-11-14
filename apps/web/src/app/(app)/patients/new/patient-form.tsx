@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 import { createPatient, updatePatient, type FormState } from "../../../actions";
-import { Alert, buttonClass, Field, Input, Notice, secondaryButtonClass } from "@/components/ui";
-import { ageFrom, fullName } from "@/lib/format";
+import { Alert, buttonClass, Field, Input, inputClass, Notice, secondaryButtonClass } from "@/components/ui";
+import { REGIONS } from "@/lib/address";
+import { ageText, ET_MONTHS, fullName } from "@/lib/format";
 
 /** Registers a patient, or with patientId corrects an existing one (empty fields are cleared). */
 export function PatientForm({
@@ -19,7 +20,9 @@ export function PatientForm({
   const [state, action, pending] = useActionState<FormState, FormData>(patientId ? updatePatient : createPatient, {});
   const v = { ...defaults, ...state.values };
   const err = state.fieldErrors ?? {};
-  const [dobMode, setDobMode] = useState<"age" | "date">(v.dateOfBirth ? "date" : "age");
+  const [dobMode, setDobMode] = useState<"age" | "date">(v.dateOfBirth || v.ecYear ? "date" : "age");
+  // Most patients know their birth date in the Ethiopian calendar; a stored date is Gregorian.
+  const [calendar, setCalendar] = useState<"ec" | "gc">(v.dateOfBirth ? "gc" : "ec");
 
   return (
     <form action={action} className="max-w-2xl space-y-6">
@@ -28,14 +31,14 @@ export function PatientForm({
           <p className="font-medium">This patient may already have a card. Check before registering again:</p>
           <ul className="mt-2 space-y-1">
             {state.duplicates.map((d) => {
-              const age = ageFrom(d.dateOfBirth);
+              const age = ageText(d.dateOfBirth, true);
               return (
                 <li key={d.id}>
                   <Link href={`/patients/${d.id}`} className="font-medium underline">
                     {fullName(d)}
                   </Link>{" "}
                   · {d.mrn} · {d.sex === "MALE" ? "M" : "F"}
-                  {age !== null && ` · ${age}y`}
+                  {age !== null && ` · ${age}`}
                   {d.phone && ` · ${d.phone}`}
                 </li>
               );
@@ -101,23 +104,95 @@ export function PatientForm({
             </button>
           </div>
           {dobMode === "age" ? (
-            <Field label="" error={err.ageYears} hint="Approximate age in years, when the birth date is unknown">
-              <Input name="ageYears" type="number" min={0} max={130} defaultValue={v.ageYears} className="max-w-32" />
+            <Field label="" error={err.ageYears ?? err.ageMonths} hint="When the birth date is unknown. For a baby or young child, give the months too.">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <Input name="ageYears" type="number" min={0} max={130} defaultValue={v.ageYears} aria-label="Years" className="w-24" />
+                <span>years</span>
+                <Input name="ageMonths" type="number" min={0} max={11} defaultValue={v.ageMonths} aria-label="Months" className="w-20" />
+                <span>months</span>
+              </div>
             </Field>
           ) : (
-            <Field label="" error={err.dateOfBirth} hint="Gregorian date">
-              <Input name="dateOfBirth" type="date" defaultValue={v.dateOfBirth} className="max-w-48" />
+            <Field label="" error={err.dateOfBirthEc ?? err.dateOfBirth} hint={calendar === "ec" ? "Ethiopian calendar (ዓ.ም.)" : "Gregorian calendar"}>
+              <div className="space-y-2">
+                <div className="flex gap-3 text-xs">
+                  <button type="button" onClick={() => setCalendar("ec")} className={calendar === "ec" ? "font-semibold" : "text-slate-500 underline"}>
+                    Ethiopian · ዓ.ም.
+                  </button>
+                  <button type="button" onClick={() => setCalendar("gc")} className={calendar === "gc" ? "font-semibold" : "text-slate-500 underline"}>
+                    Gregorian
+                  </button>
+                </div>
+                {calendar === "ec" ? (
+                  <div className="flex flex-wrap gap-2">
+                    <Input name="ecDay" type="number" min={1} max={30} placeholder="Day" aria-label="Day" defaultValue={v.ecDay} className="w-20" />
+                    <select name="ecMonth" aria-label="Month" defaultValue={v.ecMonth ?? ""} className={`${inputClass} w-40`}>
+                      <option value="">Month</option>
+                      {ET_MONTHS.map((m, i) => (
+                        <option key={m} value={i + 1}>
+                          {i + 1}. {m}
+                        </option>
+                      ))}
+                    </select>
+                    <Input name="ecYear" type="number" min={1900} max={2100} placeholder="Year" aria-label="Year" defaultValue={v.ecYear} className="w-24" />
+                  </div>
+                ) : (
+                  <Input name="dateOfBirth" type="date" defaultValue={v.dateOfBirth} className="max-w-48" />
+                )}
+              </div>
             </Field>
           )}
         </div>
         <Field label="Phone" error={err.phone}>
           <Input name="phone" type="tel" inputMode="tel" placeholder="09XX XXX XXX" defaultValue={v.phone} />
         </Field>
-        <Field label="Address" error={err.address}>
-          <Input name="address" placeholder="Sub-city, woreda, kebele" defaultValue={v.address} />
+        <Field label="National ID (Fayda)" error={err.nationalId} hint="12 or 16 digits">
+          <Input name="nationalId" inputMode="numeric" defaultValue={v.nationalId} />
         </Field>
         <Field label="Allergies" error={err.allergies} hint="Separate with commas">
           <Input name="allergies" placeholder="e.g. Penicillin" defaultValue={v.allergies} />
+        </Field>
+      </fieldset>
+
+      <fieldset className="grid gap-4 sm:grid-cols-3">
+        <legend className="mb-2 text-sm font-semibold text-slate-500">Address · አድራሻ</legend>
+        <Field label="Region" error={err.region}>
+          <select name="region" defaultValue={v.region ?? ""} className={inputClass}>
+            <option value="">—</option>
+            {REGIONS.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Zone or sub-city" error={err.zone}>
+          <Input name="zone" defaultValue={v.zone} />
+        </Field>
+        <Field label="Woreda" error={err.woreda}>
+          <Input name="woreda" defaultValue={v.woreda} />
+        </Field>
+        <Field label="Kebele" error={err.kebele}>
+          <Input name="kebele" defaultValue={v.kebele} />
+        </Field>
+        <Field label="House number" error={err.houseNo}>
+          <Input name="houseNo" defaultValue={v.houseNo} />
+        </Field>
+        <Field label="Other details" error={err.address}>
+          <Input name="address" placeholder="e.g. near the church" defaultValue={v.address} />
+        </Field>
+      </fieldset>
+
+      <fieldset className="grid gap-4 sm:grid-cols-3">
+        <legend className="mb-2 text-sm font-semibold text-slate-500">Next of kin · የቅርብ ዘመድ</legend>
+        <Field label="Name" error={err.nextOfKinName}>
+          <Input name="nextOfKinName" defaultValue={v.nextOfKinName} />
+        </Field>
+        <Field label="Relation" error={err.nextOfKinRelation}>
+          <Input name="nextOfKinRelation" placeholder="e.g. mother, husband" defaultValue={v.nextOfKinRelation} />
+        </Field>
+        <Field label="Phone" error={err.nextOfKinPhone}>
+          <Input name="nextOfKinPhone" type="tel" inputMode="tel" placeholder="09XX XXX XXX" defaultValue={v.nextOfKinPhone} />
         </Field>
       </fieldset>
 

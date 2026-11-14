@@ -6,7 +6,7 @@ import { Flash } from "@/components/flash";
 import { LabValue } from "@/components/lab-result";
 import { Badge, buttonClass, EmptyState, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { api, ApiError, type LabWorkOrder, type QcState } from "@/lib/api";
-import { ageFrom, formatDuration, formatMinutes, formatTime, fullName, minutesBetween } from "@/lib/format";
+import { ageText, formatDuration, formatMinutes, formatTime, fullName, minutesBetween } from "@/lib/format";
 import { AmendResult, BenchRow, CollectTubes } from "./bench-row";
 
 /** Groups a flat list of orders by visit, keeping the order of first appearance. */
@@ -33,7 +33,7 @@ const shortDay = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { da
 /** One patient's tests on the bench: who, who asked, the samples to take, and each test. */
 function VisitGroup({ group, prepayment, labs, qc, short }: { group: LabWorkOrder[]; prepayment: boolean; labs: string[]; qc: Record<string, QcState>; short: Record<string, string[]> }) {
   const { visit, orderedBy, orderedAt } = group[0];
-  const age = ageFrom(visit.patient.dateOfBirth);
+  const age = ageText(visit.patient.dateOfBirth, true);
   const urgent = group.some((o) => o.urgent);
   return (
     <section className={`surface p-4 ${urgent ? "border-red-300 ring-1 ring-red-200 dark:border-red-800 dark:ring-red-900" : "dark:border-slate-800"}`}>
@@ -42,7 +42,7 @@ function VisitGroup({ group, prepayment, labs, qc, short }: { group: LabWorkOrde
           {urgent && <Badge tone="danger">Urgent</Badge>} <span className="font-medium">{fullName(visit.patient)}</span>
           <span className="text-sm text-slate-500">
             {" "}· {visit.patient.mrn} · {visit.patient.sex === "MALE" ? "M" : "F"}
-            {age !== null && ` · ${age}y`}
+            {age !== null && ` · ${age}`}
             {visit.kind === "LAB" ? "" : ` · queue #${visit.queueNumber}`}
           </span>
         </div>

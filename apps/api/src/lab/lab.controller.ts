@@ -4,9 +4,10 @@ import { z } from 'zod';
 import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { AuditService } from '../common/audit.service.js';
 import { clinicDay, DAY_PATTERN, dayRange } from '../common/clinic-day.js';
-import { chargeTerms, isSettled, prepaymentRequired, settlementSelect } from '../common/settlement.js';
+import { chargeTerms, isSettled, isEmergency, prepaymentRequired, settlementSelect } from '../common/settlement.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { assertNotMerged } from '../patients/merged.js';
 import { queuePatientSelect } from '../visits/visits.controller.js';
 import { qcStates, reagentShortTests, useReagents } from './qc.js';
 import { visitCoverage } from '../billing/coverage.js';
@@ -298,7 +299,7 @@ export class LabController {
   @Roles(...LAB)
   async worklist(@CurrentUser() me: AuthUser) {
     const db = this.prisma.client;
-    const include = { ...orderInclude, visit: { select: { id: true, queueNumber: true, kind: true, patient: { select: queuePatientSelect } } } };
+    const include = { ...orderInclude, visit: { select: { id: true, queueNumber: true, kind: true, triageLevel: true, patient: { select: queuePatientSelect } } } };
     const [open, verifiedToday, prepayment, tenant] = await Promise.all([
       db.labOrder.findMany({ where: { tenantId: me.tenantId, status: { in: OPEN } }, orderBy: [{ urgent: 'desc' }, { orderedAt: 'asc' }, { id: 'asc' }], include }),
       db.labOrder.findMany({
@@ -324,7 +325,8 @@ export class LabController {
       prepayment,
       qc: Object.fromEntries(qc),
       reagentShort: Object.fromEntries(short),
-      open: open.map((o) => ({ ...o, paid: !unpaid.has(o.id), ...target(o) })),
+      // Emergencies (triaged red) are sampled before payment.
+      open: open.map((o) => ({ ...o, paid: !unpaid.has(o.id), emergency: isEmergency(o.visit), ...target(o) })),
       verifiedToday: verifiedToday.map((o) => ({ ...o, ...target(o) })),
     };
   }
@@ -359,7 +361,8 @@ export class LabController {
         const what = (o: Order) => (o.labTest.specimen ? SPECIMENS[o.labTest.specimen as Specimen] : 'no specimen set');
         throw new ConflictException(`${first.labTest.name} (${what(first)}) and ${other.labTest.name} (${what(other)}) need different samples`);
       }
-      if (await prepaymentRequired(tx, me.tenantId)) {
+      const visit = await tx.visit.findUniqueOrThrow({ where: { id: first.visitId }, select: { triageLevel: true } });
+      if (!isEmergency(visit) && (await prepaymentRequired(tx, me.tenantId))) {
         const charges = await tx.charge.findMany({ where: { source: 'LAB', sourceId: { in: ids } }, select: { sourceId: true, ...settlementSelect } });
         const unpaid = orders.find((o) => charges.some((c) => c.sourceId === o.id && !isSettled(c)));
         if (unpaid) throw new ConflictException(`${unpaid.labTest.name} has not been paid for yet; send the patient to the cashier`);
@@ -729,6 +732,7 @@ export class LabController {
     return this.prisma.client.$transaction(async (tx) => {
       const patient = await tx.patient.findFirst({ where: { id: body.patientId, tenantId: me.tenantId } });
       if (!patient) throw new NotFoundException('Patient not found');
+      await assertNotMerged(tx, patient);
       const tests = await tx.labTest.findMany({ where: { id: { in: body.labTestIds }, tenantId: me.tenantId, active: true } });
       if (tests.length !== body.labTestIds.length) throw new NotFoundException('One or more tests were not found');
       const coverage = body.coverageId ? await visitCoverage(tx, me.tenantId, patient.id, body.coverageId, body.authorizationNo) : null;

@@ -6,12 +6,12 @@ import { Flash } from "@/components/flash";
 import { ReturnForm } from "@/components/return-form";
 import { Badge, buttonClass, EmptyState, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { api, ApiError, type DrugReturnRow, type Me, type PharmacyPrescription } from "@/lib/api";
-import { ageFrom, formatDuration, formatTime, fullName } from "@/lib/format";
+import { ageText, formatDuration, formatTime, fullName } from "@/lib/format";
 import { ClosePrescriptionForm, DispenseForm } from "./dispense-form";
 
 function PatientLine({ p }: { p: PharmacyPrescription }) {
   const pt = p.visit.patient;
-  const age = ageFrom(pt.dateOfBirth);
+  const age = ageText(pt.dateOfBirth, true);
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-2">
       <div>
@@ -20,7 +20,7 @@ function PatientLine({ p }: { p: PharmacyPrescription }) {
         </Link>
         <span className="text-sm text-slate-500">
           {" "}· {pt.mrn} · {pt.sex === "MALE" ? "M" : "F"}
-          {age !== null && ` · ${age}y`}
+          {age !== null && ` · ${age}`}
           {p.visit.kind === "WALK_IN" ? "" : ` · queue #${p.visit.queueNumber}`}
         </span>
         {p.visit.kind === "WALK_IN" && (

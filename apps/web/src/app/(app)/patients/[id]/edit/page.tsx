@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { AllergyEditor } from "@/components/allergy-editor";
 import { Notice, PageHeader, Skeleton } from "@/components/ui";
 import { api, ApiError, type Me, type PatientDetail } from "@/lib/api";
+import { ageParts } from "@/lib/format";
 import { canRegister } from "@/lib/roles";
 import { PatientForm } from "../../new/patient-form";
 
@@ -39,9 +40,21 @@ async function EditForm({ params }: { params: Promise<{ id: string }> }) {
         firstNameAm: p.firstNameAm ?? "",
         fatherNameAm: p.fatherNameAm ?? "",
         sex: p.sex,
-        dateOfBirth: p.dateOfBirth ? p.dateOfBirth.slice(0, 10) : "",
+        // A birth date worked out from an age is shown as that age again.
+        ...(p.dobEstimated && p.dateOfBirth
+          ? { ageYears: String(ageParts(p.dateOfBirth).years), ageMonths: String(ageParts(p.dateOfBirth).months) }
+          : { dateOfBirth: p.dateOfBirth ? p.dateOfBirth.slice(0, 10) : "" }),
         phone: p.phone ?? "",
         address: p.address ?? "",
+        region: p.region ?? "",
+        zone: p.zone ?? "",
+        woreda: p.woreda ?? "",
+        kebele: p.kebele ?? "",
+        houseNo: p.houseNo ?? "",
+        nationalId: p.nationalId ?? "",
+        nextOfKinName: p.nextOfKinName ?? "",
+        nextOfKinRelation: p.nextOfKinRelation ?? "",
+        nextOfKinPhone: p.nextOfKinPhone ?? "",
         allergies: p.allergies.join(", "),
       }}
     />

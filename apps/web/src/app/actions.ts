@@ -98,7 +98,7 @@ export async function logout() {
 
 export async function createPatient(_: FormState, form: FormData): Promise<FormState> {
   const values = Object.fromEntries([...form.entries()].map(([k, v]) => [k, String(v)]));
-  const age = text(form, "ageYears");
+  const birth = birthBody(form);
   const body = {
     firstName: text(form, "firstName"),
     fatherName: text(form, "fatherName"),
@@ -106,10 +106,19 @@ export async function createPatient(_: FormState, form: FormData): Promise<FormS
     firstNameAm: text(form, "firstNameAm"),
     fatherNameAm: text(form, "fatherNameAm"),
     sex: text(form, "sex") || undefined,
-    dateOfBirth: text(form, "dateOfBirth") || undefined,
-    ageYears: age ? Number(age) : undefined,
+    ...birth,
+    ...("dateOfBirth" in birth && { dateOfBirth: birth.dateOfBirth || undefined }),
     phone: text(form, "phone"),
     address: text(form, "address"),
+    region: text(form, "region"),
+    zone: text(form, "zone"),
+    woreda: text(form, "woreda"),
+    kebele: text(form, "kebele"),
+    houseNo: text(form, "houseNo"),
+    nationalId: text(form, "nationalId"),
+    nextOfKinName: text(form, "nextOfKinName"),
+    nextOfKinRelation: text(form, "nextOfKinRelation"),
+    nextOfKinPhone: text(form, "nextOfKinPhone"),
     relativeId: text(form, "relativeId") || undefined,
     confirmDuplicate: form.get("confirmDuplicate") === "on",
     allergies: text(form, "allergies")
@@ -169,6 +178,7 @@ export async function checkIn(_: FormState, form: FormData): Promise<FormState> 
         doctorId: text(form, "doctorId") || undefined,
         serviceId: text(form, "serviceId") || undefined,
         appointmentId: text(form, "appointmentId") || undefined,
+        referredFrom: text(form, "referredFrom") || undefined,
         // Billed to the patient's credit company or insurer.
         coverageId: text(form, "coverageId") || undefined,
         authorizationNo: text(form, "authorizationNo") || undefined,
@@ -178,6 +188,42 @@ export async function checkIn(_: FormState, form: FormData): Promise<FormState> 
     return toFormState(e, {});
   }
   back(returnTo, `checkedIn=${visit.queueNumber}`);
+}
+
+/** Cancels a waiting visit with the reason given. */
+export async function cancelVisit(id: string, returnTo: string, form: FormData) {
+  try {
+    await api(`/visits/${id}/status`, { method: "PATCH", body: JSON.stringify({ status: "CANCELLED", reason: text(form, "reason") || undefined }) });
+  } catch (e) {
+    if (e instanceof ApiError) back(returnTo, `error=${encodeURIComponent(e.message)}`);
+    throw e;
+  }
+  back(returnTo);
+}
+
+/** Hands a waiting patient to another doctor (empty: whoever is free). */
+export async function transferVisit(id: string, returnTo: string, form: FormData) {
+  try {
+    await api(`/visits/${id}/doctor`, { method: "PATCH", body: JSON.stringify({ doctorId: text(form, "doctorId") || null }) });
+  } catch (e) {
+    if (e instanceof ApiError) back(returnTo, `error=${encodeURIComponent(e.message)}`);
+    throw e;
+  }
+  back(returnTo);
+}
+
+/** The birth date fields of the patient form: an age in years and months, or a date in either calendar. */
+function birthBody(form: FormData) {
+  if (form.has("ageYears") || form.has("ageMonths")) {
+    const y = text(form, "ageYears");
+    const m = text(form, "ageMonths");
+    return { ...(y && { ageYears: Number(y) }), ...(m && { ageMonths: Number(m) }) };
+  }
+  if (form.has("ecYear")) {
+    const [y, m, d] = ["ecYear", "ecMonth", "ecDay"].map((k) => text(form, k));
+    return y || m || d ? { dateOfBirthEc: `${y.padStart(4, "0")}-${m.padStart(2, "0")}-${d.padStart(2, "0")}` } : {};
+  }
+  return { dateOfBirth: text(form, "dateOfBirth") || null };
 }
 
 export async function moveVisit(id: string, status: string, returnTo: string) {
@@ -195,6 +241,19 @@ export async function bookAppointment(_: FormState, form: FormData): Promise<For
   const date = text(form, "date");
   const time = text(form, "time");
   if (!date || !time) return { error: "Choose a date and time.", values };
+  // Moving a booked appointment rather than booking a new one.
+  const moving = text(form, "appointmentId");
+  if (moving) {
+    try {
+      await api(`/appointments/${moving}/move`, {
+        method: "PATCH",
+        body: JSON.stringify({ scheduledAt: `${date}T${time}:00+03:00`, doctorId: text(form, "doctorId") || null }),
+      });
+    } catch (e) {
+      return toFormState(e, values);
+    }
+    redirect(`/appointments?day=${date}&done=${encodeURIComponent("Appointment moved.")}`);
+  }
   try {
     await api("/appointments", {
       method: "POST",
@@ -209,6 +268,31 @@ export async function bookAppointment(_: FormState, form: FormData): Promise<For
     return toFormState(e, values);
   }
   redirect(`/appointments?day=${date}&booked=1`);
+}
+
+/** What came of a reminder call. */
+export async function recordReminder(id: string, outcome: string, returnTo: string) {
+  try {
+    await api(`/appointments/${id}/reminder`, { method: "POST", body: JSON.stringify({ outcome }) });
+  } catch (e) {
+    if (e instanceof ApiError) back(returnTo, `error=${encodeURIComponent(e.message)}`);
+    throw e;
+  }
+  back(returnTo);
+}
+
+/** What came of the call after a missed appointment. */
+export async function traceMissed(_: FormState, form: FormData): Promise<FormState> {
+  try {
+    await api(`/appointments/${text(form, "appointmentId")}/trace`, {
+      method: "POST",
+      body: JSON.stringify({ outcome: text(form, "outcome"), note: text(form, "note") || undefined }),
+    });
+  } catch (e) {
+    return toFormState(e, formValues(form));
+  }
+  refresh();
+  return { ok: true };
 }
 
 export async function setAppointmentStatus(id: string, status: "CANCELLED" | "NO_SHOW", returnTo: string) {
@@ -958,8 +1042,6 @@ const list = (raw: string) =>
 export async function updatePatient(_: FormState, form: FormData): Promise<FormState> {
   const values = formValues(form);
   const id = text(form, "patientId");
-  const age = text(form, "ageYears");
-  const dob = text(form, "dateOfBirth");
   const body = {
     firstName: text(form, "firstName"),
     fatherName: text(form, "fatherName"),
@@ -967,9 +1049,18 @@ export async function updatePatient(_: FormState, form: FormData): Promise<FormS
     firstNameAm: text(form, "firstNameAm"),
     fatherNameAm: text(form, "fatherNameAm"),
     sex: text(form, "sex") || undefined,
-    ...(form.has("ageYears") ? (age ? { ageYears: Number(age) } : {}) : { dateOfBirth: dob || null }),
+    ...birthBody(form),
     phone: text(form, "phone"),
     address: text(form, "address"),
+    region: text(form, "region"),
+    zone: text(form, "zone"),
+    woreda: text(form, "woreda"),
+    kebele: text(form, "kebele"),
+    houseNo: text(form, "houseNo"),
+    nationalId: text(form, "nationalId"),
+    nextOfKinName: text(form, "nextOfKinName"),
+    nextOfKinRelation: text(form, "nextOfKinRelation"),
+    nextOfKinPhone: text(form, "nextOfKinPhone"),
     allergies: list(text(form, "allergies")),
   };
   try {
@@ -978,6 +1069,18 @@ export async function updatePatient(_: FormState, form: FormData): Promise<FormS
     return toFormState(e, values);
   }
   redirect(`/patients/${id}`);
+}
+
+/** Admins: merges a duplicate record into this one (it can't be undone; the screen asks first). */
+export async function mergePatient(keeperId: string, duplicateId: string, _: FormState, form: FormData): Promise<FormState> {
+  if (form.get("sure") !== "on") return { error: "Tick the box to confirm these are the same person." };
+  let moved: { visits: number };
+  try {
+    ({ moved } = await api<{ moved: { visits: number } }>(`/patients/${keeperId}/merge`, { method: "POST", body: JSON.stringify({ duplicateId }) }));
+  } catch (e) {
+    return toFormState(e, formValues(form));
+  }
+  redirect(`/patients/${keeperId}?done=${encodeURIComponent(`Records merged: ${moved.visits} visit${moved.visits === 1 ? "" : "s"} moved here.`)}`);
 }
 
 /** Doctors and nurses: update just the allergy list (it feeds the prescribing checks). */

@@ -137,22 +137,41 @@ enum Sex {
 }
 
 model Patient {
-  id           String    @id @default(uuid())
-  tenantId     String
-  tenant       Tenant    @relation(fields: [tenantId], references: [id])
-  mrn          String // medical record number, unique per facility
-  firstName    String
-  fatherName   String // Ethiopian naming: given name + father's name + grandfather's name
-  grandfather  String?
-  firstNameAm  String?
-  fatherNameAm String?
-  sex          Sex
-  dateOfBirth  DateTime?
-  phone        String?
-  address      String?
-  familyId     String? // links household members
-  allergies    String[]
-  createdAt    DateTime  @default(now())
+  id                String    @id @default(uuid())
+  tenantId          String
+  tenant            Tenant    @relation(fields: [tenantId], references: [id])
+  mrn               String // medical record number, unique per facility
+  firstName         String
+  fatherName        String // Ethiopian naming: given name + father's name + grandfather's name
+  grandfather       String?
+  firstNameAm       String?
+  fatherNameAm      String?
+  sex               Sex
+  dateOfBirth       DateTime?
+  /// Worked out from an age the patient gave, not a known birth date.
+  dobEstimated      Boolean   @default(false)
+  phone             String?
+  /// Other address details or a landmark, besides the structured address below.
+  address           String?
+  region            String?
+  /// Zone, or sub-city in Addis Ababa and Dire Dawa.
+  zone              String?
+  woreda            String?
+  kebele            String?
+  houseNo           String?
+  /// Fayda national ID number (digits only), one patient per number in a clinic.
+  nationalId        String?
+  nextOfKinName     String?
+  nextOfKinRelation String?
+  nextOfKinPhone    String?
+  familyId          String? // links household members
+  /// A duplicate record merged into another: kept (its MRN still finds the patient) but hidden.
+  mergedIntoId      String?
+  mergedInto        Patient?  @relation("PatientMerge", fields: [mergedIntoId], references: [id])
+  mergedFrom        Patient[] @relation("PatientMerge")
+  mergedAt          DateTime?
+  allergies         String[]
+  createdAt         DateTime  @default(now())
 
   appointments Appointment[]
   visits       Visit[]
@@ -161,6 +180,7 @@ model Patient {
   problems     PatientProblem[]
 
   @@unique([tenantId, mrn])
+  @@unique([tenantId, nationalId])
   @@index([tenantId, phone])
   @@index([tenantId, familyId])
 }
@@ -175,18 +195,26 @@ enum AppointmentStatus {
 }
 
 model Appointment {
-  id             String            @id @default(uuid())
-  tenantId       String
-  tenant         Tenant            @relation(fields: [tenantId], references: [id])
-  patientId      String
-  patient        Patient           @relation(fields: [patientId], references: [id])
-  doctorId       String?
-  doctor         User?             @relation("AppointmentDoctor", fields: [doctorId], references: [id])
-  scheduledAt    DateTime
-  reason         String?
-  status         AppointmentStatus @default(BOOKED)
-  reminderSentAt DateTime?
-  createdAt      DateTime          @default(now())
+  id              String            @id @default(uuid())
+  tenantId        String
+  tenant          Tenant            @relation(fields: [tenantId], references: [id])
+  patientId       String
+  patient         Patient           @relation(fields: [patientId], references: [id])
+  doctorId        String?
+  doctor          User?             @relation("AppointmentDoctor", fields: [doctorId], references: [id])
+  scheduledAt     DateTime
+  reason          String?
+  status          AppointmentStatus @default(BOOKED)
+  /// The reminder call: when, by whom, and what came of it (CONFIRMED, NO_ANSWER, CANNOT_COME, WRONG_NUMBER).
+  reminderSentAt  DateTime?
+  reminderOutcome String?
+  reminderById    String?
+  /// A missed appointment followed up: REBOOKED, WILL_COME, NO_ANSWER, WRONG_NUMBER or DECLINED.
+  traceOutcome    String?
+  traceNote       String?
+  tracedAt        DateTime?
+  tracedById      String?
+  createdAt       DateTime          @default(now())
 
   visit Visit?
 
@@ -227,6 +255,10 @@ model Visit {
   // WALK_IN: a pharmacy counter sale with no consultation; kept out of the queue and OPD reports.
   kind            VisitKind    @default(OPD)
   status          VisitStatus  @default(WAITING)
+  /// Where the patient was referred from (a health post, another clinic), if anyone.
+  referredFrom    String?
+  /// Why a cancelled visit was cancelled (LEFT_WITHOUT_BEING_SEEN, CANNOT_PAY, SENT_ELSEWHERE, CHECKED_IN_BY_MISTAKE, OTHER).
+  cancelReason    String?
   /// Billed to a credit company or insurer (the patient's coverage, chosen at check-in): covered
   /// charges go to them at their tariff, and the patient pays the co-payment.
   payerId         String?

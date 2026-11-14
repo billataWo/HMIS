@@ -2,16 +2,18 @@ import { ChevronDown, CircleCheck, Clock, ExternalLink, Search, TriangleAlert, U
 import Form from "next/form";
 import Link from "next/link";
 import { Suspense } from "react";
-import { moveVisit } from "@/app/actions";
+import { cancelVisit, moveVisit, transferVisit } from "@/app/actions";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { CheckInForm } from "@/components/check-in-form";
-import { ConfirmCancel } from "@/components/confirm-cancel";
+import { CancelVisit } from "@/components/cancel-visit";
+import { CANCEL_REASONS } from "@/lib/cancel-reasons";
+import { TransferDoctor } from "@/components/transfer-doctor";
 import { Flash } from "@/components/flash";
 import { StaggerItem, StaggerList } from "@/components/enter";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge, buttonClass, inputClass, linkClass, PageHeader, pillClass, secondaryButtonClass, Skeleton, StatCard } from "@/components/ui";
 import { api, type Doctor, type Me, type Patient, type QueueResponse, type QueueVisit, type Role, type Service, type VisitStatus } from "@/lib/api";
-import { ageFrom, etb, formatDualDate, formatDuration, formatTime, fullName } from "@/lib/format";
+import { ageText, etb, formatDualDate, formatDuration, formatTime, fullName } from "@/lib/format";
 import { TRIAGE } from "../visits/[id]/vital-flags";
 import { type Lang, tr } from "@/lib/i18n";
 import { getLang } from "@/lib/lang";
@@ -60,9 +62,13 @@ function nextSteps(v: QueueVisit, unpaid: boolean): Step[] {
   }
 }
 
-function VisitRow({ v, role, returnTo, prepayment, lang }: { v: QueueVisit; role: Role; returnTo: string; prepayment: boolean; lang: Lang }) {
-  const age = ageFrom(v.patient.dateOfBirth);
-  const unpaid = prepayment && v.status === "WAITING" && v.consultationPaid === false;
+function VisitRow({ v, role, returnTo, prepayment, lang, doctors }: { v: QueueVisit; role: Role; returnTo: string; prepayment: boolean; lang: Lang; doctors: Doctor[] }) {
+  const age = ageText(v.patient.dateOfBirth, true);
+  // An emergency (triaged red) is seen before paying; the fee stays owed.
+  const emergency = v.triageLevel === "RED";
+  const feeOwed = prepayment && v.status === "WAITING" && v.consultationPaid === false;
+  const unpaid = feeOwed && !emergency;
+  const canTransfer = v.status === "WAITING" && (FRONT_DESK.includes(role) || role === "DOCTOR") && doctors.length > (v.doctor ? 1 : 0);
   const steps = CLINICAL.includes(role) ? nextSteps(v, unpaid) : [];
   const canCancel = v.status === "WAITING" && role !== "CASHIER" && role !== "PHARMACIST" && role !== "LAB_TECH";
   const small = "px-3 py-1.5 text-xs";
@@ -87,7 +93,7 @@ function VisitRow({ v, role, returnTo, prepayment, lang }: { v: QueueVisit; role
           </Link>
           <span className="text-xs text-slate-500">
             {v.patient.mrn} · {v.patient.sex === "MALE" ? "M" : "F"}
-            {age !== null && ` · ${age}y`}
+            {age !== null && ` · ${age}`}
           </span>
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-500">
@@ -98,6 +104,7 @@ function VisitRow({ v, role, returnTo, prepayment, lang }: { v: QueueVisit; role
           {v.status !== "WAITING" && <StatusBadge status={v.status} lang={lang} />}
           {v.carriedOver && <Badge tone="warning">Open since {formatDualDate(v.checkedInAt)}</Badge>}
           {unpaid && <Badge tone="danger">{tr(lang, "Awaiting payment")}</Badge>}
+          {feeOwed && emergency && <Badge tone="warning">{tr(lang, "Emergency: pays after")}</Badge>}
           {(v.status === "AWAITING_LAB" || v.status === "AWAITING_PHARMACY") && v.labReady && (
             <Badge tone="success">
               <CircleCheck aria-hidden className="size-3" />
@@ -143,13 +150,17 @@ function VisitRow({ v, role, returnTo, prepayment, lang }: { v: QueueVisit; role
             <button className={`${s.primary ? buttonClass : secondaryButtonClass} ${small}`}>{tr(lang, s.label)}</button>
           </form>
         ))}
+        {canTransfer && (
+          <TransferDoctor action={transferVisit.bind(null, v.id, returnTo)} doctors={doctors} currentId={v.doctor?.id ?? null} label={tr(lang, "Change doctor")} move={tr(lang, "Move")} keep={tr(lang, "Keep")} />
+        )}
         {canCancel && (
-          <ConfirmCancel
-            action={moveVisit.bind(null, v.id, "CANCELLED", returnTo)}
+          <CancelVisit
+            action={cancelVisit.bind(null, v.id, returnTo)}
             label={tr(lang, "Cancel")}
             question={tr(lang, "Cancel this visit?")}
             yes={tr(lang, "Yes, cancel")}
             no={tr(lang, "Keep")}
+            reasons={CANCEL_REASONS.map((r) => ({ value: r.value, label: tr(lang, r.label) }))}
           />
         )}
       </div>
@@ -165,6 +176,7 @@ function Column({
   returnTo,
   prepayment,
   lang,
+  doctors,
 }: {
   title: string;
   visits: QueueVisit[];
@@ -173,6 +185,7 @@ function Column({
   returnTo: string;
   prepayment: boolean;
   lang: Lang;
+  doctors: Doctor[];
 }) {
   return (
     <section className="surface overflow-hidden">
@@ -185,7 +198,7 @@ function Column({
       ) : (
         <StaggerList className="divide-y divide-slate-100 dark:divide-slate-800">
           {visits.map((v) => (
-            <VisitRow key={v.id} v={v} role={role} returnTo={returnTo} prepayment={prepayment} lang={lang} />
+            <VisitRow key={v.id} v={v} role={role} returnTo={returnTo} prepayment={prepayment} lang={lang} doctors={doctors} />
           ))}
         </StaggerList>
       )}
@@ -330,8 +343,8 @@ async function Queue({ searchParams }: { searchParams: Promise<Search> }) {
       )}
 
       <div className="space-y-6">
-        <Column title="Waiting" visits={waiting} empty="Nobody is waiting." role={me.role} returnTo={returnTo} prepayment={prepayment} lang={lang} />
-        <Column title="In progress" visits={active} empty="No patient is with a doctor, at the lab or at the pharmacy." role={me.role} returnTo={returnTo} prepayment={prepayment} lang={lang} />
+        <Column title="Waiting" visits={waiting} empty="Nobody is waiting." role={me.role} returnTo={returnTo} prepayment={prepayment} lang={lang} doctors={doctors} />
+        <Column title="In progress" visits={active} empty="No patient is with a doctor, at the lab or at the pharmacy." role={me.role} returnTo={returnTo} prepayment={prepayment} lang={lang} doctors={doctors} />
         {done.length > 0 && (
           <details className="group surface overflow-hidden">
             <summary className="flex items-center justify-between px-4 py-3 font-semibold text-slate-900 sm:px-5 dark:text-white">
@@ -343,7 +356,7 @@ async function Queue({ searchParams }: { searchParams: Promise<Search> }) {
             </summary>
             <StaggerList className="divide-y divide-slate-100 border-t border-slate-100 dark:divide-slate-800 dark:border-slate-800">
               {done.map((v) => (
-                <VisitRow key={v.id} v={v} role={me.role} returnTo={returnTo} prepayment={prepayment} lang={lang} />
+                <VisitRow key={v.id} v={v} role={me.role} returnTo={returnTo} prepayment={prepayment} lang={lang} doctors={doctors} />
               ))}
             </StaggerList>
           </details>

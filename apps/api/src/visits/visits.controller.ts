@@ -16,16 +16,24 @@ import { type AuthUser, CurrentUser, Roles, AllStaff } from '../auth/auth.decora
 import { AuditService } from '../common/audit.service.js';
 import { clinicDay, DAY_PATTERN, dayRange } from '../common/clinic-day.js';
 import { fromCents, toCents } from '../common/money.js';
-import { chargeTerms, coPayOf, isSettled, prepaymentRequired, settlementSelect } from '../common/settlement.js';
+import { chargeTerms, coPayOf, isEmergency, isSettled, prepaymentRequired, settlementSelect } from '../common/settlement.js';
 import { visitCoverage } from '../billing/coverage.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { assertNotMerged } from '../patients/merged.js';
 
 const CheckInSchema = z.object({
   patientId: z.uuid(),
   doctorId: z.uuid().optional(),
   serviceId: z.uuid().optional(), // consultation fee to charge on arrival
   appointmentId: z.uuid().optional(),
+  /** Where the patient was referred from (a health post, another clinic), if anyone. */
+  referredFrom: z
+    .string()
+    .trim()
+    .max(200)
+    .transform((s) => s || undefined)
+    .optional(),
   /** Billed to one of the patient's coverages (credit company or insurer). */
   coverageId: z.uuid().optional(),
   authorizationNo: z
@@ -42,7 +50,10 @@ const QueueQuerySchema = z.object({
 });
 
 const STATUSES = ['WAITING', 'IN_CONSULTATION', 'AWAITING_LAB', 'AWAITING_PHARMACY', 'COMPLETED', 'CANCELLED'] as const;
-const StatusSchema = z.object({ status: z.enum(STATUSES) });
+/** Why a visit was cancelled; "left without being seen" is counted on the dashboard. */
+export const CANCEL_REASONS = ['LEFT_WITHOUT_BEING_SEEN', 'CANNOT_PAY', 'SENT_ELSEWHERE', 'CHECKED_IN_BY_MISTAKE', 'OTHER'] as const;
+const StatusSchema = z.object({ status: z.enum(STATUSES), reason: z.enum(CANCEL_REASONS).optional() });
+const TransferSchema = z.object({ doctorId: z.uuid().nullable() });
 
 const ACTIVE: VisitStatus[] = ['WAITING', 'IN_CONSULTATION', 'AWAITING_LAB', 'AWAITING_PHARMACY'];
 const STATUS_LABEL: Record<VisitStatus, string> = {
@@ -144,10 +155,11 @@ export class VisitsController {
         consultationPaid: charges.filter((c) => c.source === 'CONSULTATION').every(isSettled),
         diagnosed: _count.diagnoses > 0,
         // Anything else the patient still has to pay (procedures, tests, drugs), so nobody leaves owing.
-        // (On a covered charge, only the patient's co-payment.)
+        // (On a covered charge, only the patient's co-payment.) An emergency seen before paying owes
+        // the consultation fee too.
         owed: fromCents(
           charges
-            .filter((c) => c.source !== 'CONSULTATION' && !isSettled(c))
+            .filter((c) => (c.source !== 'CONSULTATION' || isEmergency(v)) && !isSettled(c))
             .reduce((s, c) => s + (c.payerId ? coPayOf(toCents(c.unitPrice) * c.quantity, v.coPayPercent) : toCents(c.unitPrice) * c.quantity), 0),
         ),
         // Every ordered test has a verified result, so the doctor can resume.
@@ -173,6 +185,7 @@ export class VisitsController {
     return db.$transaction(async (tx) => {
       const patient = await tx.patient.findFirst({ where: { id: body.patientId, tenantId: me.tenantId } });
       if (!patient) throw new NotFoundException('Patient not found');
+      await assertNotMerged(tx, patient);
 
       let doctorId = body.doctorId;
       if (body.appointmentId) {
@@ -222,6 +235,7 @@ export class VisitsController {
           patientId: patient.id,
           doctorId,
           appointmentId: body.appointmentId,
+          referredFrom: body.referredFrom,
           queueNumber: last,
           ...(coverage && {
             payerId: coverage.payerId,
@@ -255,7 +269,7 @@ export class VisitsController {
   async setStatus(
     @CurrentUser() me: AuthUser,
     @Param('id') id: string,
-    @Body(new ZodPipe(StatusSchema)) { status }: z.infer<typeof StatusSchema>,
+    @Body(new ZodPipe(StatusSchema)) { status, reason }: z.infer<typeof StatusSchema>,
   ) {
     if (!z.uuid().safeParse(id).success) throw new NotFoundException('Visit not found');
 
@@ -272,10 +286,14 @@ export class VisitsController {
         throw new ForbiddenException('Only doctors and nurses can move patients through consultation');
       }
 
-      // Pay first: the doctor can't start until the consultation fee is settled.
+      // Pay first: the doctor can't start until the consultation fee is settled (emergencies excepted).
+      let seenUnpaid = false;
       if (status === 'IN_CONSULTATION' && visit.status === 'WAITING' && (await prepaymentRequired(tx, me.tenantId))) {
         const fees = await tx.charge.findMany({ where: { visitId: id, source: 'CONSULTATION', voidedAt: null }, select: settlementSelect });
-        if (!fees.every(isSettled)) throw new ConflictException('The consultation fee has not been paid yet; send the patient to the cashier');
+        if (!fees.every(isSettled)) {
+          if (!isEmergency(visit)) throw new ConflictException('The consultation fee has not been paid yet; send the patient to the cashier');
+          seenUnpaid = true;
+        }
       }
 
       if (status === 'AWAITING_LAB') {
@@ -321,6 +339,7 @@ export class VisitsController {
       if (status === 'COMPLETED') data.completedAt = new Date();
 
       if (status === 'CANCELLED') {
+        data.cancelReason = reason ?? null;
         // Nothing was delivered, so drop charges that haven't been invoiced yet.
         await tx.charge.deleteMany({ where: { visitId: id, invoiceId: null } });
         // Free the appointment so the patient can still be checked in for it later.
@@ -335,8 +354,34 @@ export class VisitsController {
         data,
         include: { patient: { select: queuePatientSelect }, doctor: { select: { id: true, fullName: true } } },
       });
-      await this.audit.log(me, 'visit.status', 'Visit', id, { from: visit.status, to: status }, tx);
+      await this.audit.log(me, 'visit.status', 'Visit', id, { from: visit.status, to: status, ...(reason && status === 'CANCELLED' && { reason }), ...(seenUnpaid && { emergencyUnpaid: true }) }, tx);
       return updated;
     });
+  }
+
+  /**
+   * Hands a waiting patient to another doctor (or to whoever is free, with null): their doctor is
+   * away or has a long line. Once the consultation has started the visit stays with that doctor.
+   */
+  @Patch('visits/:id/doctor')
+  @Roles('ADMIN', 'RECEPTIONIST', 'NURSE', 'DOCTOR')
+  async transfer(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(TransferSchema)) { doctorId }: z.infer<typeof TransferSchema>) {
+    if (!z.uuid().safeParse(id).success) throw new NotFoundException('Visit not found');
+    const visit = await this.prisma.client.visit.findFirst({ where: { id, tenantId: me.tenantId }, select: { status: true, kind: true, doctorId: true } });
+    if (!visit) throw new NotFoundException('Visit not found');
+    if (visit.kind !== 'OPD') throw new ConflictException('Only consultations have a doctor');
+    if (visit.status !== 'WAITING') throw new ConflictException('Only a waiting patient can be moved to another doctor');
+    if (doctorId === visit.doctorId) throw new ConflictException('The patient is already with this doctor');
+    if (doctorId) {
+      const doctor = await this.prisma.client.user.findFirst({ where: { id: doctorId, tenantId: me.tenantId, role: 'DOCTOR', active: true } });
+      if (!doctor) throw new NotFoundException('Doctor not found');
+    }
+    const updated = await this.prisma.client.visit.update({
+      where: { id },
+      data: { doctorId },
+      include: { patient: { select: queuePatientSelect }, doctor: { select: { id: true, fullName: true, room: true } } },
+    });
+    await this.audit.log(me, 'visit.transfer', 'Visit', id, { from: visit.doctorId, to: doctorId });
+    return updated;
   }
 }

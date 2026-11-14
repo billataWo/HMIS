@@ -190,7 +190,7 @@ function Tube({ orders }: { orders: LabWorkOrder[] }) {
  * specimen share one); a test with no specimen set gets a sample of its own.
  */
 export function CollectTubes({ orders, prepayment }: { orders: LabWorkOrder[]; prepayment: boolean }) {
-  const ready = orders.filter((o) => o.status === "ORDERED" && !(prepayment && !o.paid));
+  const ready = orders.filter((o) => o.status === "ORDERED" && !(prepayment && !o.paid && !o.emergency));
   if (!ready.length) return null;
   const tubes = new Map<string, LabWorkOrder[]>();
   for (const o of ready) {
@@ -335,7 +335,7 @@ export function BenchRow({
 }) {
   const [state, action, pending] = useActionState<FormState, FormData>(labStep, {});
   const t = o.labTest;
-  const unpaid = prepayment && o.status === "ORDERED" && !o.paid;
+  const unpaid = prepayment && o.status === "ORDERED" && !o.paid && !o.emergency;
 
   return (
     <li className="space-y-2 py-3">

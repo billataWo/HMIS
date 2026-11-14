@@ -11,6 +11,7 @@ import {
   LogOut,
   Menu,
   Package,
+  PhoneCall,
   Pill,
   Receipt,
   ScrollText,
@@ -45,6 +46,7 @@ const GROUPS: { title?: string; items: Item[] }[] = [
     items: [
       { href: "/queue", label: "Queue", labelAm: "ወረፋ", icon: ListOrdered },
       { href: "/appointments", label: "Appointments", labelAm: "ቀጠሮዎች", icon: CalendarDays },
+      { href: "/appointments/follow-up", label: "Follow-up", labelAm: "ክትትል", icon: PhoneCall, roles: ["ADMIN", "RECEPTIONIST", "NURSE", "DOCTOR"] },
       { href: "/patients", label: "Patients", labelAm: "ታካሚዎች", icon: Users },
     ],
   },

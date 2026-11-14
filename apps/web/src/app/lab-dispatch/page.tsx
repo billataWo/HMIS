@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { PrintButton } from "@/components/print-button";
 import { api, ApiError, type LabSendOuts, type LabWorkOrder } from "@/lib/api";
-import { ageFrom, formatDualDate, formatTime, fullName, shiftDay } from "@/lib/format";
+import { ageText, formatDualDate, formatTime, fullName, shiftDay } from "@/lib/format";
 import { specimenShort } from "@/lib/specimens";
 
 export const metadata: Metadata = { title: "Dispatch list" };
@@ -66,7 +66,7 @@ async function Dispatch({ searchParams }: { searchParams: Promise<{ day?: string
             <tbody>
               {orders.map((o, i) => {
                 const p = o.visit.patient;
-                const age = ageFrom(p.dateOfBirth);
+                const age = ageText(p.dateOfBirth, true);
                 return (
                   <tr key={o.id} className="border-b border-slate-300 align-top">
                     <td className="py-1 pr-2">{i + 1}</td>
@@ -75,7 +75,7 @@ async function Dispatch({ searchParams }: { searchParams: Promise<{ day?: string
                       {fullName(p)}
                       <span className="block text-xs">
                         {p.mrn} · {p.sex === "MALE" ? "M" : "F"}
-                        {age !== null && ` · ${age}y`}
+                        {age !== null && ` · ${age}`}
                       </span>
                     </td>
                     <td className="py-1 pr-2">

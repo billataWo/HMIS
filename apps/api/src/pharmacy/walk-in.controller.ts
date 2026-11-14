@@ -8,6 +8,7 @@ import { WALK_IN_MRN } from '../patients/patients.controller.js';
 import { allergyAlerts, interactionAlerts } from '../prescriptions/drug-safety.js';
 import { currentMedicines, prescriptionInclude } from '../prescriptions/prescriptions.controller.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { assertNotMerged } from '../patients/merged.js';
 
 const SaleSchema = z.object({
   patientId: z.uuid().optional(), // a registered patient, or none for an unnamed customer
@@ -45,6 +46,7 @@ export class WalkInController {
         ? await tx.patient.findFirst({ where: { id: body.patientId, tenantId: me.tenantId } })
         : await this.walkInPatient(tx, me.tenantId);
       if (!patient) throw new NotFoundException('Patient not found');
+      await assertNotMerged(tx, patient);
 
       const drugIds = [...new Set(body.items.map((i) => i.drugId))];
       if (drugIds.length !== body.items.length) throw new ConflictException('Each drug may appear only once');

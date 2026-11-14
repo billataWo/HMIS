@@ -35,7 +35,7 @@ const caseSelect = {
   id: true,
   checkedInAt: true,
   patientId: true,
-  patient: { select: { ...queuePatientSelect, address: true } },
+  patient: { select: { ...queuePatientSelect, address: true, region: true, zone: true, woreda: true, kebele: true, houseNo: true } },
   diagnoses: { select: { icd11Code: true, label: true } },
   notifications: true,
 } as const;

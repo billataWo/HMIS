@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Fragment, Suspense } from "react";
 import { FLAG_TEXT, isAbnormal, rangeText } from "@/components/lab-result";
 import { api, ApiError, type LabOrder, type LabReport } from "@/lib/api";
-import { ageFrom, formatDualDate, formatTime, fullName } from "@/lib/format";
+import { ageText, formatDualDate, formatTime, fullName } from "@/lib/format";
 import { specimenShort } from "@/lib/specimens";
 import { PrintButton } from "@/components/print-button";
 
@@ -29,7 +29,7 @@ async function Report({ params }: { params: Promise<{ id: string }> }) {
     if (e instanceof ApiError && (e.status === 404 || e.status === 403)) notFound();
     throw e;
   }
-  const age = ageFrom(r.patient.dateOfBirth);
+  const age = ageText(r.patient.dateOfBirth);
   const verifiers = [...new Set(r.labOrders.map((o) => o.verifiedBy?.fullName).filter(Boolean))];
 
   return (
@@ -50,7 +50,7 @@ async function Report({ params }: { params: Promise<{ id: string }> }) {
         </p>
         <p>
           <span className="text-slate-600">Sex / age:</span> {r.patient.sex === "MALE" ? "Male" : "Female"}
-          {age !== null && ` · ${age} years`}
+          {age !== null && ` · ${age}`}
         </p>
         <p>
           <span className="text-slate-600">Visit:</span> {formatDualDate(r.checkedInAt)}

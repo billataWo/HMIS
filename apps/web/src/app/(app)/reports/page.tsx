@@ -94,7 +94,11 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
 
       <StaggerGrid className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Tile label="Patient visits" value={String(d.patients.visits)} note={`${d.patients.newPatients} new patients registered`} />
-        <Tile label="Average wait to see a doctor" value={d.patients.avgWaitMinutes === null ? "—" : `${d.patients.avgWaitMinutes} min`} />
+        <Tile
+          label="Average wait to see a doctor"
+          value={d.patients.avgWaitMinutes === null ? "—" : `${d.patients.avgWaitMinutes} min`}
+          note={d.patients.cancelled ? `${d.patients.cancelled} cancelled · ${d.patients.cancelledByReason?.LEFT_WITHOUT_BEING_SEEN ?? 0} left without being seen` : undefined}
+        />
         <Tile label="Cash collected" value={etb(r.collected)} note={`Billed ${etb(r.billed)} · discounts ${etb(r.discounts)}`} />
         <Tile
           label="Delivered but not billed"

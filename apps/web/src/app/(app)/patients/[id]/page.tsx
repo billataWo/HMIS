@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
 import { CheckInForm } from "@/components/check-in-form";
 import { CoverageSection } from "@/components/coverage-section";
@@ -14,7 +14,8 @@ import { ProblemList } from "@/components/problem-list";
 import { ReturnForm } from "@/components/return-form";
 import { api, ApiError, type Appointment, type Doctor, type LabHistoryOrder, type Me, type Medication, type PatientBalance, type PatientCoverage, type PatientProblem, type PatientDetail, type Payer, type QueueVisit, type Service } from "@/lib/api";
 import { shortDirections } from "@/lib/directions";
-import { ageFrom, clinicToday, etb, formatDualDate, formatTime, fullName } from "@/lib/format";
+import { ageText, clinicToday, etb, formatDualDate, formatTime, fullName } from "@/lib/format";
+import { formatAddress } from "@/lib/address";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -42,6 +43,8 @@ async function Patient({
     if (e instanceof ApiError && (e.status === 404 || e.status === 400)) notFound();
     throw e;
   }
+  // A duplicate merged away: its MRN or an old link leads to the record it was merged into.
+  if (p.mergedIntoId) redirect(`/patients/${p.mergedIntoId}`);
   const [me, upcoming, doctors, services, queue] = await Promise.all([
     api<Me>("/auth/me"),
     api<Appointment[]>(`/appointments?patientId=${p.id}`),
@@ -71,7 +74,7 @@ async function Patient({
     : [[], []];
   // Money owed from earlier visits: asked for at check-in, before it builds up.
   const balance = ["ADMIN", "RECEPTIONIST", "NURSE", "CASHIER"].includes(me.role) ? await api<PatientBalance>(`/patients/${p.id}/balance`) : null;
-  const age = ageFrom(p.dateOfBirth);
+  const age = ageText(p.dateOfBirth);
 
   return (
     <>
@@ -98,6 +101,14 @@ async function Patient({
             {canRegister(me) && (
               <Link href={`/patients/new?relativeOf=${p.id}`} className={secondaryButtonClass}>
                 Add family member
+              </Link>
+            )}
+            <Link href={`/patient-card/${p.id}`} target="_blank" className={secondaryButtonClass}>
+              Patient card
+            </Link>
+            {me.role === "ADMIN" && (
+              <Link href={`/patients/${p.id}/merge`} className={secondaryButtonClass}>
+                Merge a duplicate
               </Link>
             )}
             {me.role === "ADMIN" && (
@@ -188,11 +199,27 @@ async function Patient({
           <dl className="divide-y divide-slate-100 dark:divide-slate-800">
             <Row label="Sex">{p.sex === "MALE" ? "Male · ወንድ" : "Female · ሴት"}</Row>
             <Row label="Age">
-              {age !== null ? `${age} years` : "—"}
-              {p.dateOfBirth && <span className="block text-xs text-slate-500">Born {formatDualDate(p.dateOfBirth)}</span>}
+              {age !== null ? `${age}` : "—"}
+              {p.dateOfBirth && (
+                <span className="block text-xs text-slate-500">
+                  {p.dobEstimated ? "Estimated from the age given" : `Born ${formatDualDate(p.dateOfBirth)}`}
+                </span>
+              )}
             </Row>
             <Row label="Phone">{p.phone ?? "—"}</Row>
-            <Row label="Address">{p.address ?? "—"}</Row>
+            <Row label="Address">{formatAddress(p) ?? "—"}</Row>
+            {p.nationalId && <Row label="National ID">{p.nationalId}</Row>}
+            <Row label="Next of kin">
+              {p.nextOfKinName ? (
+                <>
+                  {p.nextOfKinName}
+                  {p.nextOfKinRelation && ` (${p.nextOfKinRelation})`}
+                  {p.nextOfKinPhone && <span className="block text-xs text-slate-500">{p.nextOfKinPhone}</span>}
+                </>
+              ) : (
+                "—"
+              )}
+            </Row>
             <Row label="Registered">{formatDualDate(p.createdAt)}</Row>
           </dl>
         </section>
@@ -210,7 +237,7 @@ async function Patient({
                   </Link>
                   <span className="text-slate-500">
                     {" "}· {f.mrn} · {f.sex === "MALE" ? "M" : "F"}
-                    {ageFrom(f.dateOfBirth) !== null && ` · ${ageFrom(f.dateOfBirth)}y`}
+                    {ageText(f.dateOfBirth, true) && ` · ${ageText(f.dateOfBirth, true)}`}
                   </span>
                 </li>
               ))}

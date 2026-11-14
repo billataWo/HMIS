@@ -53,6 +53,7 @@ export function CheckInForm({
             </option>
           ))}
         </select>
+        <input name="referredFrom" maxLength={200} placeholder="Referred from (if any)" aria-label="Referred from" className={`${inputClass} w-auto min-w-44 flex-1`} />
         {/* A covered patient is checked in on their payer unless the desk chooses otherwise. */}
         <CoverageChoice coverages={coverages} className="w-auto min-w-64 flex-1" />
         <button type="submit" disabled={pending} className={buttonClass}>

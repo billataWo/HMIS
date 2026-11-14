@@ -10,7 +10,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { buttonClass, Notice, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { Flash } from "@/components/flash";
 import { api, ApiError, type ClinicalDocument, type LabHistoryOrder, type PatientProblem, type VitalsRow, type LabOrder, type LabTest, type Me, type Prescription, type ProcedureCharge, type Service, type VisitDetail } from "@/lib/api";
-import { ageFrom, etb, formatDualDate, formatDuration, formatTime, fullName } from "@/lib/format";
+import { ageText, etb, formatDualDate, formatDuration, formatTime, fullName } from "@/lib/format";
 import { ConsultationForm } from "./consultation-form";
 import { Addenda } from "@/components/addenda";
 import { NotifiablePanel } from "@/components/notifiable-panel";
@@ -90,8 +90,9 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
   // A pharmacy counter sale is shown for reference only: it is not a consultation.
   const closed = v.status === "COMPLETED" || v.status === "CANCELLED" || v.kind !== "OPD";
   const mode = v.kind !== "OPD" ? null : me.role === "DOCTOR" ? "doctor" : me.role === "NURSE" ? "nurse" : null;
-  const feeUnpaid = v.prepayment && !v.consultationPaid;
-  const age = ageFrom(v.patient.dateOfBirth);
+  // An emergency (triaged red) is seen before paying; the fee stays owed.
+  const feeUnpaid = v.prepayment && !v.consultationPaid && v.triageLevel !== "RED";
+  const age = ageText(v.patient.dateOfBirth);
   const returnTo = `/visits/${v.id}`;
   // The record beyond this visit: long-term conditions and how the vitals have moved.
   const clinical = ["ADMIN", "DOCTOR", "NURSE"].includes(me.role);
@@ -103,7 +104,7 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
     <>
       <PageHeader
         title={fullName(v.patient)}
-        subtitle={`${v.patient.mrn} · ${v.patient.sex === "MALE" ? "Male" : "Female"}${age !== null ? ` · ${age} years` : ""} · queue number ${v.queueNumber}`}
+        subtitle={`${v.patient.mrn} · ${v.patient.sex === "MALE" ? "Male" : "Female"}${age !== null ? ` · ${age}` : ""} · queue number ${v.queueNumber}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={v.status} />
@@ -144,6 +145,7 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
         {formatDualDate(v.checkedInAt)} · arrived {formatTime(v.checkedInAt)}
         {v.calledAt && ` · seen after ${formatDuration(v.checkedInAt, v.calledAt)}`}
         {v.doctor && ` · Dr. ${v.doctor.fullName}`}
+        {v.referredFrom && ` · referred from ${v.referredFrom}`}
       </p>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] xl:gap-8">

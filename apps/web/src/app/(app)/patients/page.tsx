@@ -5,7 +5,7 @@ import { Suspense } from "react";
 import { buttonClass, EmptyState, inputClass, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { api, type Me, type Patient } from "@/lib/api";
 import { canRegister } from "@/lib/roles";
-import { ageFrom, formatDualDate, fullName } from "@/lib/format";
+import { ageText, formatDualDate, fullName } from "@/lib/format";
 
 async function Results({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const q = (await searchParams).q?.trim() ?? "";
@@ -57,7 +57,7 @@ async function Results({ searchParams }: { searchParams: Promise<{ q?: string }>
             </thead>
             <tbody>
               {patients.map((p) => {
-                const age = ageFrom(p.dateOfBirth);
+                const age = ageText(p.dateOfBirth, true);
                 return (
                   <tr key={p.id} className="border-t border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-900">
                     <td className="px-4 py-3 font-mono text-xs">
@@ -77,7 +77,7 @@ async function Results({ searchParams }: { searchParams: Promise<{ q?: string }>
                     </td>
                     <td className="px-4 py-3">
                       {p.sex === "MALE" ? "M" : "F"}
-                      {age !== null && ` · ${age}y`}
+                      {age !== null && ` · ${age}`}
                     </td>
                     <td className="px-4 py-3">{p.phone ?? "—"}</td>
                     <td className="px-4 py-3 text-slate-500">{formatDualDate(p.createdAt)}</td>

@@ -4,8 +4,9 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { PrintButton } from "@/components/print-button";
 import { PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
+import { formatAddress } from "@/lib/address";
 import { api, ApiError, type IdsrReport } from "@/lib/api";
-import { ageFrom, formatDualDate, fullName, shiftDay } from "@/lib/format";
+import { ageText, formatDualDate, fullName, shiftDay } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Weekly IDSR report" };
 
@@ -148,7 +149,7 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
               </thead>
               <tbody>
                 {r.immediateCases.map((c) => {
-                  const age = ageFrom(c.patient.dateOfBirth);
+                  const age = ageText(c.patient.dateOfBirth, true);
                   return (
                     <tr key={`${c.visitId}:${c.disease}`}>
                       <td className={`${cell} whitespace-nowrap`}>{formatDualDate(c.checkedInAt)}</td>
@@ -159,10 +160,10 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
                         </Link>{" "}
                         <span className="text-xs text-slate-500">
                           {c.patient.mrn} · {c.patient.sex === "MALE" ? "M" : "F"}
-                          {age !== null && `, ${age} y`}
+                          {age !== null && `, ${age}`}
                         </span>
                       </td>
-                      <td className={cell}>{c.patient.address ?? "—"}</td>
+                      <td className={cell}>{formatAddress(c.patient) ?? "—"}</td>
                       <td className={cell}>
                         {c.notification ? (
                           <>

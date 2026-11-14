@@ -5,7 +5,7 @@ import { Suspense } from "react";
 import { PrintButton } from "@/components/print-button";
 import { api, ApiError, type RxLabel } from "@/lib/api";
 import { directions } from "@/lib/directions";
-import { ageFrom, formatDualDate, fullName } from "@/lib/format";
+import { ageText, formatDualDate, fullName } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Medicine labels" };
 
@@ -28,7 +28,7 @@ async function Labels({ params, searchParams }: { params: Promise<{ id: string }
   // Once dispensing has started, label what was handed over; before that, what will be.
   const items = anyGiven ? p.items.filter((i) => i.dispensedQty > 0) : p.items;
   const pt = p.visit.patient;
-  const age = ageFrom(pt.dateOfBirth);
+  const age = ageText(pt.dateOfBirth, true);
   const onSheet = sheet === "1";
 
   return (
@@ -62,7 +62,7 @@ async function Labels({ params, searchParams }: { params: Promise<{ id: string }
             </header>
             <p>
               <span className="font-bold">{fullName(pt)}</span> · {pt.mrn}
-              {age !== null && ` · ${age}y`}
+              {age !== null && ` · ${age}`}
             </p>
             <p className="text-[13px] font-bold">
               {i.drug.genericName} {i.drug.strength} {i.drug.form}

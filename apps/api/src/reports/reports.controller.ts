@@ -183,6 +183,8 @@ export class ReportsController {
       ]);
 
     const { labUrgentMinutes } = await db.tenant.findUniqueOrThrow({ where: { id: t }, select: { labUrgentMinutes: true } });
+    // Visits cancelled, by why: patients who left without being seen are the front desk's warning sign.
+    const cancelled = await db.visit.groupBy({ by: ['cancelReason'], where: { tenantId: t, kind: 'OPD', checkedInAt: range, status: 'CANCELLED' }, _count: { _all: true } });
     const waits = visits.filter((v) => v.calledAt).map((v) => (v.calledAt!.getTime() - v.checkedInAt.getTime()) / 60000);
     const byMethod: Record<string, number> = {};
     for (const p of payments) byMethod[p.method] = (byMethod[p.method] ?? 0) + toCents(p.amount);
@@ -250,6 +252,8 @@ export class ReportsController {
         newPatients,
         avgWaitMinutes: waits.length ? Math.round(waits.reduce((a, b) => a + b, 0) / waits.length) : null,
         byDoctor: tally(visits.filter((v) => v.doctor), (v) => v.doctor!.fullName).map(([name, count]) => ({ name, count })),
+        cancelled: cancelled.reduce((n, c) => n + c._count._all, 0),
+        cancelledByReason: Object.fromEntries(cancelled.map((c) => [c.cancelReason ?? 'NOT_GIVEN', c._count._all])),
       },
       revenue: {
         collected: fromCents(collected),
@@ -305,7 +309,7 @@ export class ReportsController {
     const db = this.prisma.client;
     const t = me.tenantId;
 
-    const [tenant, visits, malaria, referralsOut] = await Promise.all([
+    const [tenant, visits, malaria, referralsOut, referralsIn] = await Promise.all([
       db.tenant.findUniqueOrThrow({ where: { id: t }, select: { name: true, nameAm: true, address: true } }),
       db.visit.findMany({
         where: { tenantId: t, kind: 'OPD', checkedInAt: range, status: { not: 'CANCELLED' } },
@@ -321,6 +325,7 @@ export class ReportsController {
         select: { resultValue: true },
       }),
       db.clinicalDocument.count({ where: { tenantId: t, type: 'REFERRAL', createdAt: range } }),
+      db.visit.count({ where: { tenantId: t, kind: 'OPD', checkedInAt: range, status: { not: 'CANCELLED' }, referredFrom: { not: null } } }),
     ]);
 
     // A visit is "new" if it is the patient's first ever visit at this facility.
@@ -367,6 +372,7 @@ export class ReportsController {
         byAge: groups.map((g) => ({ ageGroup: g, ...opd[g] })),
         withoutDiagnosis: visits.filter((v) => v.diagnoses.length === 0).length,
         referralsOut,
+        referralsIn,
       },
       morbidity: [...morbidity.entries()]
         .map(([code, r]) => ({ code, ...r, total: r.male + r.female }))

@@ -1,6 +1,6 @@
 import type { BadgeTone } from "@/components/ui";
 
-const ET_MONTHS = [
+export const ET_MONTHS = [
   "መስከረም", "ጥቅምት", "ኅዳር", "ታኅሣሥ", "ጥር", "የካቲት", "መጋቢት", "ሚያዝያ", "ግንቦት", "ሰኔ", "ሐምሌ", "ነሐሴ", "ጳጉሜ",
 ];
 
@@ -124,6 +124,33 @@ export function ageFrom(iso: string | null) {
   let age = now.getFullYear() - dob.getFullYear();
   if (now < new Date(now.getFullYear(), dob.getMonth(), dob.getDate())) age--;
   return age;
+}
+
+/** Whole months from a birth date to now. */
+function monthsSince(iso: string) {
+  const dob = new Date(iso);
+  const now = new Date();
+  let m = (now.getFullYear() - dob.getFullYear()) * 12 + (now.getMonth() - dob.getMonth());
+  if (now.getDate() < dob.getDate()) m--;
+  return Math.max(0, m);
+}
+
+/** An age as whole years and the months beyond them. */
+export function ageParts(iso: string) {
+  const months = monthsSince(iso);
+  return { years: Math.floor(months / 12), months: months % 12 };
+}
+
+/**
+ * Age for display: months under two years (where they matter for doses and growth), then years.
+ * Short: "7m", "30y"; long: "7 months", "30 years".
+ */
+export function ageText(iso: string | null, short = false) {
+  if (!iso) return null;
+  const months = monthsSince(iso);
+  if (months < 24) return short ? `${months}m` : `${months} month${months === 1 ? "" : "s"}`;
+  const years = Math.floor(months / 12);
+  return short ? `${years}y` : `${years} years`;
 }
 
 export function fullName(p: { firstName: string; fatherName: string; grandfather?: string | null }) {

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { PrintButton } from "@/components/print-button";
 import { api, ApiError, type ClinicalDocumentDetail } from "@/lib/api";
-import { ageFrom, formatDualDate, fullName, shiftDay } from "@/lib/format";
+import { ageText, formatDualDate, fullName, shiftDay } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Medical document" };
 
@@ -20,7 +20,7 @@ async function Document({ params }: { params: Promise<{ id: string }> }) {
   }
   const { visit, data } = doc;
   const p = visit.patient;
-  const age = ageFrom(p.dateOfBirth);
+  const age = ageText(p.dateOfBirth);
   const restDays = Number(data.restDays ?? 0);
   const from = String(data.fromDate ?? "");
 
@@ -44,7 +44,7 @@ async function Document({ params }: { params: Promise<{ id: string }> }) {
         </p>
         <p>
           <span className="text-slate-600">Sex / age:</span> {p.sex === "MALE" ? "Male" : "Female"}
-          {age !== null && ` · ${age} years`}
+          {age !== null && ` · ${age}`}
         </p>
         <p>
           <span className="text-slate-600">Seen on:</span> {formatDualDate(visit.checkedInAt)}

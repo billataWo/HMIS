@@ -5,7 +5,7 @@ import QRCode from "qrcode";
 import { Suspense } from "react";
 import { PrintButton } from "@/components/print-button";
 import { api, ApiError, type LabLabels } from "@/lib/api";
-import { ageFrom, fullName } from "@/lib/format";
+import { ageText, fullName } from "@/lib/format";
 import { specimenShort } from "@/lib/specimens";
 
 export const metadata: Metadata = { title: "Sample labels" };
@@ -32,7 +32,7 @@ async function Labels({ params, searchParams }: { params: Promise<{ id: string }
     tubes.map(async (t) => `data:image/svg+xml;base64,${Buffer.from(await QRCode.toString(t.sampleId, { type: "svg", margin: 0, errorCorrectionLevel: "M" })).toString("base64")}`),
   );
   const p = data.patient;
-  const age = ageFrom(p.dateOfBirth);
+  const age = ageText(p.dateOfBirth, true);
   const onSheet = sheet === "1";
   const here = `/lab-labels/${id}${sample ? `?sample=${encodeURIComponent(sample)}` : ""}`;
 
@@ -73,7 +73,7 @@ async function Labels({ params, searchParams }: { params: Promise<{ id: string }
               <span className="truncate text-[8pt] font-bold">{fullName(p)}</span>
               <span className="truncate">
                 {p.mrn} · {p.sex === "MALE" ? "M" : "F"}
-                {age !== null && ` · ${age}y`}
+                {age !== null && ` · ${age}`}
               </span>
               <span className="truncate font-mono text-[8.5pt] font-bold">{t.sampleId}</span>
               <span className="truncate">{specimenShort(t.specimen) ?? "Sample"}</span>

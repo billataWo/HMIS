@@ -43,6 +43,14 @@ export function coPayOf(amountCents: number, coPayPercent: Money | null | undefi
 /** Charges that still count: not removed from their invoice. */
 export const liveCharge = { voidedAt: null } satisfies Prisma.ChargeWhereInput;
 
+/**
+ * An emergency (triaged red) is treated first and paid for after: pay-first never holds up the
+ * doctor or the lab for it. The charges stay on the visit and the cashier collects them later.
+ */
+export function isEmergency(visit: { triageLevel: string | null }) {
+  return visit.triageLevel === 'RED';
+}
+
 export async function prepaymentRequired(tx: Prisma.TransactionClient | { tenant: Prisma.TransactionClient['tenant'] }, tenantId: string) {
   const t = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { requirePrepayment: true } });
   return t.requirePrepayment;

@@ -129,9 +129,24 @@ export interface Patient {
   fatherNameAm: string | null;
   sex: "MALE" | "FEMALE";
   dateOfBirth: string | null;
+  /** Worked out from an age, not a known birth date. */
+  dobEstimated?: boolean;
   phone: string | null;
+  /** Other address details or a landmark, besides the structured address. */
   address: string | null;
+  region?: string | null;
+  zone?: string | null;
+  woreda?: string | null;
+  kebele?: string | null;
+  houseNo?: string | null;
+  /** Fayda number, digits only. */
+  nationalId?: string | null;
+  nextOfKinName?: string | null;
+  nextOfKinRelation?: string | null;
+  nextOfKinPhone?: string | null;
   familyId: string | null;
+  /** Set on a duplicate merged into another record. */
+  mergedIntoId?: string | null;
   allergies: string[];
   createdAt: string;
   /** In search results: the coverages they can be checked in on. */
@@ -190,6 +205,8 @@ export interface QueueVisit {
   status: VisitStatus;
   checkedInAt: string;
   calledAt: string | null;
+  /** Where the patient was referred from, if anyone. */
+  referredFrom?: string | null;
   completedAt: string | null;
   patient: QueuePatient;
   doctor: { id: string; fullName: string; room?: string | null } | null;
@@ -315,6 +332,8 @@ export interface LabOrder {
 
 export interface LabWorkOrder extends LabOrder {
   paid?: boolean;
+  /** Triaged red: sampled before payment. */
+  emergency?: boolean;
   /** Minutes from the sample to release this test should take (urgent or the test's own); null = none. */
   targetMinutes?: number | null;
   visit: { id: string; queueNumber: number; kind?: "OPD" | "WALK_IN" | "LAB"; patient: QueuePatient };
@@ -544,7 +563,15 @@ export interface LabTurnaround extends TatSummary {
 export interface Dashboard {
   from: string;
   to: string;
-  patients: { visits: number; completed: number; newPatients: number; avgWaitMinutes: number | null; byDoctor: { name: string; count: number }[] };
+  patients: {
+    visits: number;
+    completed: number;
+    newPatients: number;
+    avgWaitMinutes: number | null;
+    byDoctor: { name: string; count: number }[];
+    cancelled?: number;
+    cancelledByReason?: Record<string, number>;
+  };
   revenue: {
     collected: string;
     byMethod: Partial<Record<PaymentMethod, string>>;
@@ -586,6 +613,7 @@ export interface MohReport {
     byAge: { ageGroup: string; male: number; female: number }[];
     withoutDiagnosis: number;
     referralsOut: number;
+    referralsIn?: number;
   };
   morbidity: { code: string; label: string; male: number; female: number; total: number }[];
   malaria: { tested: number; positive: number; byResult: { result: string; count: number }[] };
@@ -662,7 +690,7 @@ export interface ReferralRow {
   followUps: ReferralFollowUp[];
 }
 
-type IdsrPatient = QueuePatient & { address: string | null };
+type IdsrPatient = QueuePatient & { address: string | null; region?: string | null; zone?: string | null; woreda?: string | null; kebele?: string | null; houseNo?: string | null };
 
 export interface IdsrReport {
   facility: { name: string; nameAm: string | null; address: string | null; phone: string | null };
@@ -1019,6 +1047,33 @@ export interface Appointment {
   doctor: { id: string; fullName: string } | null;
   visit: { id: string; queueNumber: number; status: VisitStatus } | null;
 }
+
+export type ReminderOutcome = "CONFIRMED" | "NO_ANSWER" | "CANNOT_COME" | "WRONG_NUMBER";
+export type TraceOutcome = "REBOOKED" | "WILL_COME" | "NO_ANSWER" | "WRONG_NUMBER" | "DECLINED";
+
+/** Tomorrow's (or a day's) booked appointments to phone. */
+export interface ReminderList {
+  day: string;
+  appointments: (Appointment & { reminderSentAt: string | null; reminderOutcome: ReminderOutcome | null; reminderBy: string | null })[];
+}
+
+/** A missed appointment to follow up. */
+export interface MissedAppointment {
+  id: string;
+  scheduledAt: string;
+  reason: string | null;
+  patient: QueuePatient;
+  doctor: { id: string; fullName: string } | null;
+  problems: string[];
+  lastVisitAt: string | null;
+  traceOutcome: TraceOutcome | null;
+  traceNote: string | null;
+  tracedAt: string | null;
+  tracedBy: string | null;
+}
+
+/** Bookings per day and doctor (null: any doctor). */
+export type BookingLoad = { day: string; doctorId: string | null; count: number }[];
 
 export interface Doctor {
   id: string;
