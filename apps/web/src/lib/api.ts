@@ -617,6 +617,26 @@ export interface MohReport {
   };
   morbidity: { code: string; label: string; male: number; female: number; total: number }[];
   malaria: { tested: number; positive: number; byResult: { result: string; count: number }[] };
+  anc?: {
+    contacts: number;
+    firstContacts: number;
+    firstBy12Weeks: number;
+    firstBefore16Weeks: number;
+    fourthContacts: number;
+    eighthContacts: number;
+    syphilisTested: number;
+    syphilisPositive: number;
+    hivTested: number;
+    hivPositive: number;
+    hbsagTested: number;
+    anaemic: number;
+    ifaGiven: number;
+  };
+  immunization?: {
+    doses: { vaccine: string; doseNo: number; label: string; under1: number; over1: number }[];
+    fullyImmunized: number;
+    dropOut: { penta1ToPenta3: number | null; penta1ToMeasles1: number | null };
+  };
 }
 
 export interface ClinicSettings {
@@ -707,6 +727,117 @@ export interface IdsrReport {
   }[];
   unreported: { visitId: string; checkedInAt: string; patient: IdsrPatient; disease: string; label: string }[];
   unreportedDays: number;
+}
+
+export type TestResult = "NEGATIVE" | "POSITIVE" | "NOT_DONE";
+
+export interface AncContact {
+  id: string;
+  contactNo: number;
+  contactOn: string;
+  gaWeeks: number;
+  gaDays: number;
+  weightKg: string | null;
+  systolicBp: number | null;
+  diastolicBp: number | null;
+  fundalHeightCm: number | null;
+  fetalHeartRate: number | null;
+  presentation: string | null;
+  urineProtein: string | null;
+  hb: string | null;
+  syphilis: TestResult | null;
+  hiv: TestResult | null;
+  hbsag: TestResult | null;
+  dangerSigns: string[];
+  ifaTablets: number | null;
+  dewormed: boolean;
+  note: string | null;
+  nextContactOn: string;
+  by: string | null;
+  alerts: { level: "URGENT" | "WARNING"; text: string }[];
+}
+
+/** A pregnancy followed in antenatal care. */
+export interface Pregnancy {
+  id: string;
+  lmp: string;
+  edd: string;
+  eddSource: "LMP" | "ULTRASOUND";
+  gravida: number;
+  para: number;
+  riskFactors: string[];
+  risks: { key: string; label: string }[];
+  bloodGroup: string | null;
+  status: "ACTIVE" | "DELIVERED" | "ENDED";
+  outcome: string | null;
+  endedOn: string | null;
+  gestation: { weeks: number; days: number } | null;
+  nextContactOn: string | null;
+  late: boolean;
+  contacts: AncContact[];
+}
+
+/** A woman in antenatal care due, late, or near her due date. */
+export interface AncDueRow {
+  pregnancyId: string;
+  patient: QueuePatient;
+  gestation: { weeks: number; days: number };
+  edd: string;
+  contacts: number;
+  nextContactOn: string;
+  daysLate: number;
+  late: boolean;
+  dueThisWeek: boolean;
+  deliverySoon: boolean;
+}
+
+export type DoseStatus = "GIVEN" | "UPCOMING" | "DUE" | "OVERDUE" | "MISSED";
+
+export interface ImmunizationDoseRecord {
+  id: string;
+  vaccine: string;
+  doseNo: number;
+  label: string;
+  givenOn: string;
+  lotNo: string | null;
+  site: string | null;
+  elsewhere: boolean;
+  facility: string | null;
+  note: string | null;
+  givenBy: string | null;
+  voidedAt: string | null;
+  voidReason: string | null;
+  voidedBy: string | null;
+}
+
+export interface ScheduledDose {
+  vaccine: string;
+  doseNo: number;
+  label: string;
+  milestone: string;
+  status: DoseStatus;
+  dueOn: string;
+  notBefore: string;
+  waitingFor: string | null;
+  given: { id: string; givenOn: string } | null;
+}
+
+/** A patient's immunization record: schedule, every dose recorded, follow-up calls. */
+export interface ImmunizationRecord {
+  dobKnown: boolean;
+  dobEstimated: boolean;
+  schedule: ScheduledDose[];
+  doses: ImmunizationDoseRecord[];
+  followUps: { id: string; outcome: string; note: string | null; createdAt: string; by: string | null }[];
+}
+
+/** A child due or late for a vaccine. */
+export interface DueChild {
+  patient: QueuePatient;
+  defaulter: boolean;
+  daysLate: number;
+  doses: { label: string; status: DoseStatus; dueOn: string }[];
+  lastFollowUp: { outcome: string; note: string | null; at: string; by: string | null } | null;
 }
 
 export interface VisitAddendum {

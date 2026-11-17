@@ -1003,6 +1003,123 @@ export async function followUpReferral(_: FormState, form: FormData): Promise<Fo
   return { ok: true };
 }
 
+const num = (form: FormData, k: string) => (text(form, k) === "" ? null : Number(text(form, k)));
+
+/** Registers a pregnancy for antenatal care. */
+export async function registerPregnancy(_: FormState, form: FormData): Promise<FormState> {
+  const by = text(form, "dateKind");
+  try {
+    await api(`/patients/${text(form, "patientId")}/pregnancies`, {
+      method: "POST",
+      body: JSON.stringify({
+        ...(by === "edd" ? { edd: text(form, "edd") } : { lmp: text(form, "lmp") }),
+        gravida: Number(text(form, "gravida")),
+        para: Number(text(form, "para")),
+        riskFactors: form.getAll("riskFactors").map(String),
+        bloodGroup: text(form, "bloodGroup") || null,
+      }),
+    });
+  } catch (e) {
+    return toFormState(e, formValues(form));
+  }
+  refresh();
+  return { ok: true };
+}
+
+/** Records an antenatal contact. */
+export async function recordAncContact(_: FormState, form: FormData): Promise<FormState> {
+  const result = (k: string) => text(form, k) || null;
+  try {
+    await api(`/pregnancies/${text(form, "pregnancyId")}/contacts`, {
+      method: "POST",
+      body: JSON.stringify({
+        contactOn: text(form, "contactOn") || undefined,
+        weightKg: num(form, "weightKg"),
+        systolicBp: num(form, "systolicBp"),
+        diastolicBp: num(form, "diastolicBp"),
+        fundalHeightCm: num(form, "fundalHeightCm"),
+        fetalHeartRate: num(form, "fetalHeartRate"),
+        presentation: result("presentation"),
+        urineProtein: result("urineProtein"),
+        hb: num(form, "hb"),
+        syphilis: result("syphilis"),
+        hiv: result("hiv"),
+        hbsag: result("hbsag"),
+        dangerSigns: form.getAll("dangerSigns").map(String),
+        ifaTablets: num(form, "ifaTablets"),
+        dewormed: form.get("dewormed") === "on",
+        note: text(form, "note") || undefined,
+      }),
+    });
+  } catch (e) {
+    return toFormState(e, formValues(form));
+  }
+  refresh();
+  return { ok: true };
+}
+
+/** Ends a pregnancy's antenatal follow-up (delivered, lost, transferred). */
+export async function endPregnancy(_: FormState, form: FormData): Promise<FormState> {
+  try {
+    await api(`/pregnancies/${text(form, "pregnancyId")}/end`, {
+      method: "POST",
+      body: JSON.stringify({ outcome: text(form, "outcome"), endedOn: text(form, "endedOn") || undefined }),
+    });
+  } catch (e) {
+    return toFormState(e, formValues(form));
+  }
+  refresh();
+  return { ok: true };
+}
+
+/** A vaccine dose given here, or recorded from the patient's card. */
+export async function giveDose(_: FormState, form: FormData): Promise<FormState> {
+  const elsewhere = form.get("elsewhere") === "on";
+  try {
+    await api(`/patients/${text(form, "patientId")}/immunizations`, {
+      method: "POST",
+      body: JSON.stringify({
+        vaccine: text(form, "vaccine"),
+        doseNo: Number(text(form, "doseNo")),
+        givenOn: text(form, "givenOn") || undefined,
+        lotNo: text(form, "lotNo") || undefined,
+        site: text(form, "site") || undefined,
+        elsewhere,
+        facility: elsewhere ? text(form, "facility") : undefined,
+      }),
+    });
+  } catch (e) {
+    return toFormState(e, formValues(form));
+  }
+  refresh();
+  return { ok: true };
+}
+
+/** A dose recorded by mistake: voided with the reason. */
+export async function voidDose(_: FormState, form: FormData): Promise<FormState> {
+  try {
+    await api(`/immunizations/${text(form, "doseId")}/void`, { method: "POST", body: JSON.stringify({ reason: text(form, "reason") }) });
+  } catch (e) {
+    return toFormState(e, formValues(form));
+  }
+  refresh();
+  return { ok: true };
+}
+
+/** What came of a call to a child who missed a vaccine. */
+export async function epiFollowUp(_: FormState, form: FormData): Promise<FormState> {
+  try {
+    await api(`/patients/${text(form, "patientId")}/immunization-follow-ups`, {
+      method: "POST",
+      body: JSON.stringify({ outcome: text(form, "outcome"), note: text(form, "note") || undefined }),
+    });
+  } catch (e) {
+    return toFormState(e, formValues(form));
+  }
+  refresh();
+  return { ok: true };
+}
+
 /** The receipt was printed (its Print button): a later reprint says COPY. */
 export async function recordReceiptPrint(invoiceId: string) {
   await api(`/invoices/${invoiceId}/printed`, { method: "POST" }).catch(() => {});

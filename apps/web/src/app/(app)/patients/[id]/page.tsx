@@ -12,10 +12,12 @@ import { Badge, linkClass, PageHeader, secondaryButtonClass, Skeleton } from "@/
 import { LabHistory } from "@/components/lab-history";
 import { ProblemList } from "@/components/problem-list";
 import { ReturnForm } from "@/components/return-form";
-import { api, ApiError, type Appointment, type Doctor, type LabHistoryOrder, type Me, type Medication, type PatientBalance, type PatientCoverage, type PatientProblem, type PatientDetail, type Payer, type QueueVisit, type Service } from "@/lib/api";
+import { api, ApiError, type Appointment, type Doctor, type LabHistoryOrder, type Me, type Medication, type PatientBalance, type PatientCoverage, type ImmunizationRecord, type Pregnancy, type PatientProblem, type PatientDetail, type Payer, type QueueVisit, type Service } from "@/lib/api";
 import { shortDirections } from "@/lib/directions";
-import { ageText, clinicToday, etb, formatDualDate, formatTime, fullName } from "@/lib/format";
+import { ageText, clinicToday, etb, formatDualDate, formatTime, fullName, ageParts } from "@/lib/format";
 import { formatAddress } from "@/lib/address";
+import { ImmunizationCard } from "@/components/immunization-card";
+import { AncSection } from "@/components/anc-section";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -66,6 +68,12 @@ async function Patient({
   const labs = ["ADMIN", "DOCTOR", "NURSE", "LAB_TECH"].includes(me.role) ? await api<LabHistoryOrder[]>(`/patients/${p.id}/lab-results`) : null;
   // Long-term conditions: for clinicians.
   const problems = ["ADMIN", "DOCTOR", "NURSE"].includes(me.role) ? await api<PatientProblem[]>(`/patients/${p.id}/problems`) : null;
+  // Vaccinations: worked out from the birth date; given by nurses and doctors, seen by the front desk.
+  const immunization = ["ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST"].includes(me.role) ? await api<ImmunizationRecord>(`/patients/${p.id}/immunizations`) : null;
+  // Antenatal care: women of childbearing age (or of unknown age).
+  const ageYears = p.dateOfBirth ? ageParts(p.dateOfBirth).years : null;
+  const ancAge = p.sex === "FEMALE" && (ageYears === null || (ageYears >= 10 && ageYears <= 55));
+  const pregnancies = ["ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST"].includes(me.role) && p.sex === "FEMALE" ? await api<Pregnancy[]>(`/patients/${p.id}/pregnancies`) : [];
   const canRequestLab = canCheckIn || me.role === "LAB_TECH";
   // Who pays for the patient (credit company or insurer): kept by the front desk and the cashier.
   const seesCoverage = ["ADMIN", "RECEPTIONIST", "NURSE", "CASHIER", "DOCTOR"].includes(me.role);
@@ -190,6 +198,17 @@ async function Patient({
       {canEditAllergies && (
         <div className="mb-6">
           <AllergyEditor patientId={p.id} allergies={p.allergies} />
+        </div>
+      )}
+
+      {(ancAge || pregnancies.length > 0) && ["ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST"].includes(me.role) && (
+        <div className="mb-6">
+          <AncSection patientId={p.id} pregnancies={pregnancies} canEdit={me.role === "DOCTOR" || me.role === "NURSE"} />
+        </div>
+      )}
+      {immunization && (immunization.schedule.length > 0 || immunization.doses.length > 0) && (
+        <div className="mb-6">
+          <ImmunizationCard patientId={p.id} record={immunization} canGive={me.role === "DOCTOR" || me.role === "NURSE"} />
         </div>
       )}
 

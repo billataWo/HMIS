@@ -132,8 +132,71 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
         )}
       </section>
 
+      {r.anc && (
+        <section>
+          <h2 className="mb-2 font-medium">Antenatal care</h2>
+          <table className="w-full max-w-xl border-collapse text-sm">
+            <tbody>
+              {(
+                [
+                  ["Contacts this month", r.anc.contacts],
+                  ["First contacts (new pregnancies)", r.anc.firstContacts],
+                  ["\u2026 first contact by 12 weeks", r.anc.firstBy12Weeks],
+                  ["\u2026 first contact before 16 weeks", r.anc.firstBefore16Weeks],
+                  ["Fourth contacts", r.anc.fourthContacts],
+                  ["Eighth contacts", r.anc.eighthContacts],
+                  ["Syphilis tested / positive", `${r.anc.syphilisTested} / ${r.anc.syphilisPositive}`],
+                  ["HIV tested / positive", `${r.anc.hivTested} / ${r.anc.hivPositive}`],
+                  ["Hepatitis B tested", r.anc.hbsagTested],
+                  ["Anaemic (Hb under 11)", r.anc.anaemic],
+                  ["Given iron-folic acid", r.anc.ifaGiven],
+                ] as const
+              ).map(([k, v]) => (
+                <tr key={k}>
+                  <td className={cell}>{k}</td>
+                  <td className={`${cell} text-right tabular-nums`}>{v}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {r.immunization && (
+        <section>
+          <h2 className="mb-2 font-medium">3. Immunization (doses given here)</h2>
+          {r.immunization.doses.length === 0 ? (
+            <p className="text-sm text-slate-500">No doses given this month.</p>
+          ) : (
+            <table className="w-full max-w-xl border-collapse text-sm">
+              <thead className="bg-slate-50 dark:bg-slate-900">
+                <tr>
+                  <th className={`${cell} text-left`}>Dose</th>
+                  <th className={`${cell} text-right`}>Under 1 year</th>
+                  <th className={`${cell} text-right`}>1 year and over</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.immunization.doses.map((d) => (
+                  <tr key={d.label}>
+                    <td className={cell}>{d.label}</td>
+                    <td className={`${cell} text-right tabular-nums`}>{d.under1}</td>
+                    <td className={`${cell} text-right tabular-nums`}>{d.over1}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="mt-2 text-sm">
+            Fully immunized before 1 year <strong>{r.immunization.fullyImmunized}</strong>
+            {r.immunization.dropOut.penta1ToPenta3 !== null && <> · drop-out Penta 1 to 3 <strong>{r.immunization.dropOut.penta1ToPenta3}%</strong></>}
+            {r.immunization.dropOut.penta1ToMeasles1 !== null && <> · Penta 1 to measles 1 <strong>{r.immunization.dropOut.penta1ToMeasles1}%</strong></>}
+          </p>
+        </section>
+      )}
+
       <section>
-        <h2 className="mb-2 font-medium">3. Malaria testing</h2>
+        <h2 className="mb-2 font-medium">{r.immunization ? "4" : "3"}. Malaria testing</h2>
         <p className="text-sm">
           Tested <strong>{r.malaria.tested}</strong> · positive <strong>{r.malaria.positive}</strong>
           {r.malaria.tested > 0 && ` (${Math.round((r.malaria.positive / r.malaria.tested) * 100)}% positivity)`}

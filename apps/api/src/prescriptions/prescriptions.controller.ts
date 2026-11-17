@@ -161,6 +161,11 @@ export class PrescriptionsController {
       }),
       currentMedicines(db, me.tenantId, visit.patientId, id),
     ]);
+    // A pregnancy followed in antenatal care counts when this visit's own answer is missing.
+    const anc =
+      visit.patient.sex === 'FEMALE' && !visit.pregnancyStatus
+        ? await db.pregnancy.findFirst({ where: { patientId: visit.patientId, status: 'ACTIVE' }, select: { lmp: true } })
+        : null;
     const before = [...current, ...existing.map((e) => e.drug)];
     const newDrugs = body.items.map((i) => drugs.find((d) => d.id === i.drugId)!);
     const alerts = [
@@ -171,8 +176,8 @@ export class PrescriptionsController {
         {
           sex: visit.patient.sex,
           ageYears: visit.patient.dateOfBirth ? Math.floor((visit.checkedInAt.getTime() - visit.patient.dateOfBirth.getTime()) / (365.25 * 86_400_000)) : null,
-          pregnancyStatus: visit.pregnancyStatus,
-          weeks: pregnancyWeeks(visit.lmpDate, visit.checkedInAt),
+          pregnancyStatus: visit.pregnancyStatus ?? (anc ? 'PREGNANT' : null),
+          weeks: pregnancyWeeks(visit.lmpDate ?? anc?.lmp ?? null, visit.checkedInAt),
           breastfeeding: visit.breastfeeding,
         },
         newDrugs,

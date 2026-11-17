@@ -9,6 +9,8 @@ import { EXPIRY_WARNING_DAYS } from '../inventory/inventory.controller.js';
 import { targetMinutes } from '../lab/lab.controller.js';
 import { patientDue, payerDue } from '../billing/billing.controller.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { immunizationTally } from '../immunization/immunization.controller.js';
+import { ancTally } from '../anc/anc.controller.js';
 
 const RangeSchema = z.object({
   from: z.string().regex(DAY_PATTERN).optional(),
@@ -309,7 +311,7 @@ export class ReportsController {
     const db = this.prisma.client;
     const t = me.tenantId;
 
-    const [tenant, visits, malaria, referralsOut, referralsIn] = await Promise.all([
+    const [tenant, visits, malaria, referralsOut, referralsIn, immunization, anc] = await Promise.all([
       db.tenant.findUniqueOrThrow({ where: { id: t }, select: { name: true, nameAm: true, address: true } }),
       db.visit.findMany({
         where: { tenantId: t, kind: 'OPD', checkedInAt: range, status: { not: 'CANCELLED' } },
@@ -326,6 +328,8 @@ export class ReportsController {
       }),
       db.clinicalDocument.count({ where: { tenantId: t, type: 'REFERRAL', createdAt: range } }),
       db.visit.count({ where: { tenantId: t, kind: 'OPD', checkedInAt: range, status: { not: 'CANCELLED' }, referredFrom: { not: null } } }),
+      immunizationTally(db, t, startDay, endDay),
+      ancTally(db, t, startDay, endDay),
     ]);
 
     // A visit is "new" if it is the patient's first ever visit at this facility.
@@ -378,6 +382,8 @@ export class ReportsController {
         .map(([code, r]) => ({ code, ...r, total: r.male + r.female }))
         .sort((a, b) => b.total - a.total)
         .slice(0, 10),
+      immunization,
+      anc,
       malaria: {
         tested: malaria.length,
         positive: positive.length,

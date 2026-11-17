@@ -173,16 +173,129 @@ model Patient {
   allergies         String[]
   createdAt         DateTime  @default(now())
 
-  appointments Appointment[]
-  visits       Visit[]
-  invoices     Invoice[]
-  coverages    PatientCoverage[]
-  problems     PatientProblem[]
+  appointments      Appointment[]
+  visits            Visit[]
+  invoices          Invoice[]
+  coverages         PatientCoverage[]
+  problems          PatientProblem[]
+  immunizations     ImmunizationDose[]
+  immunizationCalls ImmunizationFollowUp[]
+  pregnancies       Pregnancy[]
 
   @@unique([tenantId, mrn])
   @@unique([tenantId, nationalId])
   @@index([tenantId, phone])
   @@index([tenantId, familyId])
+}
+
+/// A vaccine dose (or vitamin A) given here, or recorded from the patient's card when given
+/// elsewhere. A mistaken entry is voided with a reason, never deleted.
+model ImmunizationDose {
+  id         String    @id @default(uuid())
+  tenantId   String
+  patientId  String
+  patient    Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  /// A key of VACCINES in the API (BCG, OPV, PENTA, PCV, ROTA, IPV, MCV, HPV, TD, VITA).
+  vaccine    String
+  doseNo     Int
+  givenOn    DateTime  @db.Date
+  lotNo      String?
+  site       String?
+  /// Given at another facility, recorded from the card.
+  elsewhere  Boolean   @default(false)
+  facility   String?
+  note       String?
+  givenById  String
+  createdAt  DateTime  @default(now())
+  voidedAt   DateTime?
+  voidReason String?
+  voidedById String?
+
+  @@index([patientId])
+  @@index([tenantId, givenOn])
+}
+
+/// A call or visit to a child who missed a vaccine: what came of it. Never changed.
+model ImmunizationFollowUp {
+  id          String   @id @default(uuid())
+  tenantId    String
+  patientId   String
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  /// WILL_COME, NO_ANSWER, WRONG_NUMBER, VACCINATED_ELSEWHERE or MOVED_AWAY
+  outcome     String
+  note        String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([patientId])
+}
+
+/// A pregnancy followed in antenatal care, from registration to its end (delivery, loss, transfer).
+/// The due date comes from the last period, or from an ultrasound (then the period is worked back).
+model Pregnancy {
+  id          String       @id @default(uuid())
+  tenantId    String
+  patientId   String
+  patient     Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  lmp         DateTime     @db.Date
+  edd         DateTime     @db.Date
+  /// LMP or ULTRASOUND
+  eddSource   String       @default("LMP")
+  gravida     Int
+  para        Int
+  /// Keys of RISK_FACTORS in the API, ticked at registration or later.
+  riskFactors String[]
+  bloodGroup  String?
+  /// ACTIVE, DELIVERED or ENDED
+  status      String       @default("ACTIVE")
+  /// DELIVERED, DELIVERED_ELSEWHERE, MISCARRIAGE, ABORTION, STILLBIRTH, TRANSFERRED, LOST_TO_FOLLOW_UP
+  outcome     String?
+  endedOn     DateTime?    @db.Date
+  createdById String
+  createdAt   DateTime     @default(now())
+  contacts    AncContact[]
+
+  @@index([patientId])
+  @@index([tenantId, status])
+}
+
+/// One antenatal contact: what was measured, tested and given, and when the next is due.
+model AncContact {
+  id             String    @id @default(uuid())
+  tenantId       String
+  pregnancyId    String
+  pregnancy      Pregnancy @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
+  visitId        String?
+  contactNo      Int
+  contactOn      DateTime  @db.Date
+  gaWeeks        Int
+  gaDays         Int
+  weightKg       Decimal?  @db.Decimal(5, 2)
+  systolicBp     Int?
+  diastolicBp    Int?
+  fundalHeightCm Int?
+  fetalHeartRate Int?
+  /// CEPHALIC, BREECH or TRANSVERSE (from about 36 weeks)
+  presentation   String?
+  /// NEGATIVE, TRACE, PLUS1, PLUS2, PLUS3
+  urineProtein   String?
+  hb             Decimal?  @db.Decimal(4, 1)
+  /// NEGATIVE, POSITIVE or NOT_DONE
+  syphilis       String?
+  hiv            String?
+  hbsag          String?
+  /// Keys of DANGER_SIGNS in the API.
+  dangerSigns    String[]
+  /// Iron-folic acid tablets given at this contact.
+  ifaTablets     Int?
+  dewormed       Boolean   @default(false)
+  note           String?
+  nextContactOn  DateTime  @db.Date
+  createdById    String
+  createdAt      DateTime  @default(now())
+
+  @@index([pregnancyId])
+  @@index([tenantId, contactOn])
 }
 
 // ───────────────────────────── Appointments & queue ─────────────────────────────
