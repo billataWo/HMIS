@@ -6,6 +6,7 @@ import { clientAddress } from "@/lib/client-address";
 import { STAFF_BROWSER_COOKIE, STAFF_BROWSER_COOKIE_OPTIONS } from "@/lib/staff-browser";
 import { redirect } from "next/navigation";
 import { LANG_COOKIE } from "@/lib/i18n";
+import { getT } from "@/lib/lang";
 import { setChallenge } from "./two-step-actions";
 import {
   api,
@@ -1423,12 +1424,13 @@ export async function saveStockCount(_: FormState, form: FormData): Promise<Form
   }
   refresh();
   const lost = res.differences.reduce((s, d) => s + Number(d.value), 0);
+  const t = await getT();
   return {
     ok: true,
     values: {
       summary: res.differences.length
-        ? `${res.counted} batches counted, ${res.differences.length} corrected (${lost >= 0 ? "+" : ""}${lost.toFixed(2)} ETB at cost).`
-        : `${res.counted} batches counted; everything matched.`,
+        ? t("{n} batches counted, {k} corrected ({amount} at cost).", { n: res.counted, k: res.differences.length, amount: `${lost >= 0 ? "+" : ""}${lost.toFixed(2)} ${t("ETB")}` })
+        : t("{n} batches counted; everything matched.", { n: res.counted }),
     },
   };
 }

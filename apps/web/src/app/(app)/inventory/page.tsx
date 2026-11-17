@@ -5,7 +5,9 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { writeOffExpired } from "@/app/actions";
 import { Flash } from "@/components/flash";
-import { EmptyState, buttonClass, inputClass, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
+import { PageTitle } from "@/components/page-title";
+import { EmptyState, buttonClass, inputClass, secondaryButtonClass, Skeleton } from "@/components/ui";
+import { getT } from "@/lib/lang";
 import { api, ApiError, type InventoryResponse } from "@/lib/api";
 import { etb, formatDualDate } from "@/lib/format";
 import { inPacks } from "@/lib/packs";
@@ -42,11 +44,12 @@ async function Inventory({ searchParams }: { searchParams: Promise<Search> }) {
   const params = await searchParams;
   const filter = FILTERS.some(([k]) => k === params.filter) ? params.filter! : "all";
   const q = params.q?.trim() ?? "";
+  const t = await getT();
   let data: InventoryResponse;
   try {
     data = await api<InventoryResponse>(`/inventory?filter=${filter}&q=${encodeURIComponent(q)}`);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">Only pharmacists and admins manage stock.</p>;
+    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only pharmacists and admins manage stock.")}</p>;
     throw e;
   }
   const s = data.summary;
@@ -55,24 +58,24 @@ async function Inventory({ searchParams }: { searchParams: Promise<Search> }) {
     <>
       <Flash params={params} />
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Tile label={`Stock value (cost) · ${s.drugs} drugs`} value={etb(s.stockValue)} />
-        <Tile label="Low stock" value={String(s.low)} href="/inventory?filter=low" tone={s.low ? "warn" : undefined} />
-        <Tile label={`Expiring within ${s.expiryWarningDays} days`} value={String(s.expiring)} href="/inventory?filter=expiring" tone={s.expiring ? "warn" : undefined} />
-        <Tile label={`Expired on shelf · ${etb(s.expiredValue)}`} value={String(s.expired)} href="/inventory?filter=expired" tone={s.expired ? "bad" : undefined} />
+        <Tile label={t("Stock value (cost) · {n} drugs", { n: s.drugs })} value={etb(s.stockValue, t)} />
+        <Tile label={t("Low stock")} value={String(s.low)} href="/inventory?filter=low" tone={s.low ? "warn" : undefined} />
+        <Tile label={t("Expiring within {n} days", { n: s.expiryWarningDays })} value={String(s.expiring)} href="/inventory?filter=expiring" tone={s.expiring ? "warn" : undefined} />
+        <Tile label={t("Expired on shelf · {amount}", { amount: etb(s.expiredValue, t) })} value={String(s.expired)} href="/inventory?filter=expired" tone={s.expired ? "bad" : undefined} />
       </div>
 
       {s.expired > 0 && (
         <form action={writeOffExpired} className="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-100">
-          Expired stock can&apos;t be dispensed. Remove it from the shelf, then record the write-off.
-          <button className={`${secondaryButtonClass} px-3 py-1 text-xs`}>Write off all expired stock</button>
+          {t("Expired stock can't be dispensed. Remove it from the shelf, then record the write-off.")}
+          <button className={`${secondaryButtonClass} px-3 py-1 text-xs`}>{t("Write off all expired stock")}</button>
         </form>
       )}
 
       {data.summary.multiStore && (
         <p className="mb-4 flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-          Stock is kept in several stores; the pharmacy dispenses from the dispensary.
+          {t("Stock is kept in several stores; the pharmacy dispenses from the dispensary.")}
           <Link href="/inventory/transfers" className={secondaryButtonClass}>
-            Transfers between stores
+            {t("Transfers between stores")}
           </Link>
         </p>
       )}
@@ -84,12 +87,12 @@ async function Inventory({ searchParams }: { searchParams: Promise<Search> }) {
             href={`/inventory?filter=${k}${q ? `&q=${encodeURIComponent(q)}` : ""}`}
             className={`rounded-full px-3 py-1 text-sm ${filter === k ? "bg-brand-700 text-white" : "border border-slate-300 dark:border-slate-700"}`}
           >
-            {label}
+            {t(label)}
           </Link>
         ))}
         <Form action="/inventory" className="ml-auto flex gap-2">
           <input type="hidden" name="filter" value={filter} />
-          <input name="q" defaultValue={q} placeholder="Search drugs" className={`${inputClass} w-48`} />
+          <input name="q" defaultValue={q} placeholder={t("Search drugs")} aria-label={t("Search drugs")} className={`${inputClass} w-48`} />
         </Form>
       </div>
 
@@ -98,34 +101,34 @@ async function Inventory({ searchParams }: { searchParams: Promise<Search> }) {
           // A new clinic: start the drug list without typing it all in.
           <EmptyState
             icon={Package}
-            title="Your drug list is empty"
+            title={t("Your drug list is empty")}
             action={
               <div className="flex flex-wrap justify-center gap-2">
                 <Link href="/inventory/drugs/starter" className={buttonClass}>
-                  Pick from the essential medicines list
+                  {t("Pick from the essential medicines list")}
                 </Link>
                 <Link href="/inventory/drugs/import" className={secondaryButtonClass}>
-                  Import a spreadsheet
+                  {t("Import a spreadsheet")}
                 </Link>
               </div>
             }
           >
-            Pick the medicines you stock from a ready list, import your own list from Excel, or add drugs one by one.
+            {t("Pick the medicines you stock from a ready list, import your own list from Excel, or add drugs one by one.")}
           </EmptyState>
         ) : (
-          <EmptyState icon={Package} title="No drugs match this view" />
+          <EmptyState icon={Package} title={t("No drugs match this view")} />
         )
       ) : (
         <div className="overflow-x-auto surface">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50/80 text-slate-500 dark:bg-slate-800/40">
               <tr>
-                <th className="px-4 py-3 font-medium">Drug</th>
-                <th className="px-4 py-3 text-right font-medium">On hand</th>
-                <th className="px-4 py-3 text-right font-medium">Reorder at</th>
-                <th className="px-4 py-3 font-medium">Nearest expiry</th>
-                <th className="px-4 py-3 text-right font-medium">Price</th>
-                <th className="px-4 py-3 text-right font-medium">Value</th>
+                <th className="px-4 py-3 font-medium">{t("Drug")}</th>
+                <th className="px-4 py-3 text-right font-medium">{t("On hand")}</th>
+                <th className="px-4 py-3 text-right font-medium">{t("Reorder at")}</th>
+                <th className="px-4 py-3 font-medium">{t("Nearest expiry")}</th>
+                <th className="px-4 py-3 text-right font-medium">{t("Price")}</th>
+                <th className="px-4 py-3 text-right font-medium">{t("Value")}</th>
               </tr>
             </thead>
             <tbody>
@@ -144,15 +147,15 @@ async function Inventory({ searchParams }: { searchParams: Promise<Search> }) {
                     {d.byStore && d.byStore.length > 0 && (
                       <span className="block text-xs whitespace-nowrap text-slate-500">{d.byStore.map((b) => `${b.name} ${b.quantity}`).join(" · ")}</span>
                     )}
-                    {d.expiredQty > 0 && <span className="block text-xs font-medium text-red-700 dark:text-red-400">+{d.expiredQty} expired</span>}
+                    {d.expiredQty > 0 && <span className="block text-xs font-medium text-red-700 dark:text-red-400">{t("+{n} expired", { n: d.expiredQty })}</span>}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-slate-500">{d.reorderLevel || "—"}</td>
                   <td className="px-4 py-3">
                     {d.nearestExpiry ? formatDualDate(d.nearestExpiry) : "—"}
-                    {d.expiringSoon > 0 && <span className="block text-xs font-medium text-amber-700 dark:text-amber-400">{d.expiringSoon} expiring soon</span>}
+                    {d.expiringSoon > 0 && <span className="block text-xs font-medium text-amber-700 dark:text-amber-400">{t("{n} expiring soon", { n: d.expiringSoon })}</span>}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums">{Number(d.sellPrice).toFixed(2)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">{etb(d.stockValue)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{etb(d.stockValue, t)}</td>
                 </tr>
               ))}
             </tbody>
@@ -163,35 +166,36 @@ async function Inventory({ searchParams }: { searchParams: Promise<Search> }) {
   );
 }
 
+async function Actions() {
+  const t = await getT();
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Link href="/inventory/receive" className={buttonClass}>
+        {t("Receive stock")}
+      </Link>
+      <Link href="/inventory/drugs/new" className={secondaryButtonClass}>
+        {t("Add drug")}
+      </Link>
+      <Link href="/inventory/orders" className={secondaryButtonClass}>
+        {t("Purchase orders")}
+      </Link>
+      <Link href="/inventory/count" className={secondaryButtonClass}>
+        {t("Stock count")}
+      </Link>
+      <Link href="/inventory/controlled" className={secondaryButtonClass}>
+        {t("Controlled register")}
+      </Link>
+      <Link href="/inventory/suppliers" className={secondaryButtonClass}>
+        {t("Suppliers")}
+      </Link>
+    </div>
+  );
+}
+
 export default function InventoryPage({ searchParams }: PageProps<"/inventory">) {
   return (
     <>
-      <PageHeader
-        title="Inventory"
-        subtitle="መድኃኒት ክምችት · stock, expiry and value"
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Link href="/inventory/receive" className={buttonClass}>
-              Receive stock
-            </Link>
-            <Link href="/inventory/drugs/new" className={secondaryButtonClass}>
-              Add drug
-            </Link>
-            <Link href="/inventory/orders" className={secondaryButtonClass}>
-              Purchase orders
-            </Link>
-            <Link href="/inventory/count" className={secondaryButtonClass}>
-              Stock count
-            </Link>
-            <Link href="/inventory/controlled" className={secondaryButtonClass}>
-              Controlled register
-            </Link>
-            <Link href="/inventory/suppliers" className={secondaryButtonClass}>
-              Suppliers
-            </Link>
-          </div>
-        }
-      />
+      <PageTitle title="Inventory" subtitle="stock, expiry and value" actions={<Actions />} />
       <Suspense fallback={<Skeleton className="h-64" />}>
         <Inventory searchParams={searchParams as Promise<Search>} />
       </Suspense>

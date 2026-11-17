@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 import { returnDrugs, type ReturnState } from "@/app/actions";
+import { useT } from "@/components/lang-provider";
 import { Alert, buttonClass, Input, inputClass, Notice, secondaryButtonClass } from "@/components/ui";
 
 /**
@@ -27,29 +28,32 @@ export function ReturnForm({
   const [state, action, pending] = useActionState<ReturnState, FormData>(returnDrugs, {});
   const [open, setOpen] = useState(false);
   const r = state.ok && !pending ? state.result : undefined;
+  const t = useT();
 
   if (r) {
     return (
       <Notice tone={r.refundDue ? "warning" : "success"} className="mt-2 text-xs">
         <p>
-          {r.quantity} {unit} of {drug} returned{r.restocked ? " and put back on the shelf" : ", kept aside for destruction"}.
+          {t(r.restocked ? "{n} {unit} of {drug} returned and put back on the shelf." : "{n} {unit} of {drug} returned, kept aside for destruction.", { n: r.quantity, unit, drug })}
         </p>
         {r.refundDue > 0 && (
           <p className="mt-1">
-            {r.refundDue} {unit} {r.refundDue === 1 ? "is" : "are"} still charged on{" "}
-            {r.invoices.map((inv, i) => (
-              <span key={inv.id}>
-                {i > 0 && ", "}
-                {canOpenInvoices ? (
-                  <Link href={`/billing/invoices/${inv.id}`} className="font-medium underline">
-                    {inv.number}
-                  </Link>
-                ) : (
-                  <strong>{inv.number}</strong>
-                )}
-              </span>
-            ))}
-            : an admin refunds {r.refundDue === 1 ? "it" : "them"} there (Remove line).
+            {t.rich("{n} {unit} still charged on {invoices}: an admin refunds them there (Remove line).", {
+              n: r.refundDue,
+              unit,
+              invoices: r.invoices.map((inv, i) => (
+                <span key={inv.id}>
+                  {i > 0 && ", "}
+                  {canOpenInvoices ? (
+                    <Link href={`/billing/invoices/${inv.id}`} className="font-medium underline">
+                      {inv.number}
+                    </Link>
+                  ) : (
+                    <strong>{inv.number}</strong>
+                  )}
+                </span>
+              )),
+            })}
           </p>
         )}
       </Notice>
@@ -59,7 +63,7 @@ export function ReturnForm({
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)} className="text-xs text-brand-700 hover:underline dark:text-brand-400">
-        {label}
+        {t(label)}
       </button>
     );
   }
@@ -68,11 +72,11 @@ export function ReturnForm({
     <form action={action} className="mt-2 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/40">
       <input type="hidden" name="itemId" value={itemId} />
       <p className="font-medium">
-        Return of {drug} <span className="font-normal text-slate-500">· {withPatient} {unit} with the patient</span>
+        {t("Return of {drug}", { drug })} <span className="font-normal text-slate-500">· {t("{n} {unit} with the patient", { n: withPatient, unit })}</span>
       </p>
-      {state.error && <Alert>{state.error}</Alert>}
+      {state.error && <Alert>{t(state.error)}</Alert>}
       <label className="flex items-center gap-2">
-        <span className="w-20 text-slate-600 dark:text-slate-300">Units</span>
+        <span className="w-20 text-slate-600 dark:text-slate-300">{t("Units")}</span>
         <input
           name="quantity"
           type="number"
@@ -80,29 +84,29 @@ export function ReturnForm({
           max={withPatient}
           required
           defaultValue={state.values?.quantity ?? withPatient}
-          aria-label={`Units of ${drug} returned`}
+          aria-label={t("Units of {drug} returned", { drug })}
           className={`${inputClass} w-24`}
         />
         <span className="text-xs text-slate-500">{unit}</span>
       </label>
       <fieldset className="space-y-1">
-        <legend className="sr-only">Condition</legend>
+        <legend className="sr-only">{t("Condition")}</legend>
         <label className="flex items-start gap-2">
           <input type="radio" name="condition" value="restock" required defaultChecked={state.values?.condition === "restock"} className="mt-1" />
-          <span>Sealed and in date: put back on the shelf</span>
+          <span>{t("Sealed and in date: put back on the shelf")}</span>
         </label>
         <label className="flex items-start gap-2">
           <input type="radio" name="condition" value="discard" required defaultChecked={state.values?.condition === "discard"} className="mt-1" />
-          <span>Opened, damaged or doubtful: keep aside for destruction</span>
+          <span>{t("Opened, damaged or doubtful: keep aside for destruction")}</span>
         </label>
       </fieldset>
-      <Input name="reason" required minLength={3} maxLength={300} placeholder="Why? e.g. side effects, treatment changed" aria-label="Reason for the return" defaultValue={state.values?.reason} />
+      <Input name="reason" required minLength={3} maxLength={300} placeholder={t("Why? e.g. side effects, treatment changed")} aria-label={t("Reason for the return")} defaultValue={state.values?.reason} />
       <div className="flex gap-2">
         <button type="submit" disabled={pending} className={`${buttonClass} px-3 py-1.5 text-xs`}>
-          {pending ? "Saving…" : "Record return"}
+          {pending ? t("Saving…") : t("Record return")}
         </button>
         <button type="button" onClick={() => setOpen(false)} className={`${secondaryButtonClass} px-3 py-1.5 text-xs`}>
-          Cancel
+          {t("Cancel")}
         </button>
       </div>
     </form>

@@ -1,8 +1,11 @@
 import { ClipboardList, Plus } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
-import { Badge, buttonClass, EmptyState, linkClass, PageHeader, Skeleton } from "@/components/ui";
-import { inPlan, PlanNotice } from "@/components/plan-notice";
+import { PageTitle } from "@/components/page-title";
+import { Badge, buttonClass, EmptyState, linkClass, Skeleton } from "@/components/ui";
+import { getT } from "@/lib/lang";
+import { PlanNotice } from "@/components/plan-notice";
+import { inPlan } from "@/lib/plan";
 import { api, ApiError, type Me, type PurchaseOrder } from "@/lib/api";
 import { PO_STATUS } from "./po-status";
 import { etb, formatDualDate } from "@/lib/format";
@@ -10,26 +13,29 @@ import { etb, formatDualDate } from "@/lib/format";
 
 async function Orders() {
   let orders: PurchaseOrder[], me: Me;
+  const t = await getT();
   try {
     [orders, me] = await Promise.all([api<PurchaseOrder[]>("/purchase-orders"), api<Me>("/auth/me")]);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">Only pharmacists and admins manage purchase orders.</p>;
+    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only pharmacists and admins manage purchase orders.")}</p>;
     throw e;
   }
   const notice = !inPlan(me, "PURCHASE_ORDERS") && (
     <PlanNotice me={me} what="Purchase orders">
-      Record deliveries in{" "}
-      <Link href="/inventory/receive" className="font-medium underline">
-        Receive stock
-      </Link>{" "}
-      instead.
+      {t.rich("Record deliveries in {link} instead.", {
+        link: (
+          <Link href="/inventory/receive" className="font-medium underline">
+            {t("Receive stock")}
+          </Link>
+        ),
+      })}
     </PlanNotice>
   );
   if (!orders.length) {
     if (notice) return notice;
     return (
-      <EmptyState icon={ClipboardList} title="No purchase orders yet">
-        Draft an order for a supplier, print it, and receive the delivery against it.
+      <EmptyState icon={ClipboardList} title={t("No purchase orders yet")}>
+        {t("Draft an order for a supplier, print it, and receive the delivery against it.")}
       </EmptyState>
     );
   }
@@ -40,12 +46,12 @@ async function Orders() {
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50/80 text-slate-500 dark:bg-slate-800/40">
             <tr>
-              <th className="px-4 py-3">Order</th>
-              <th className="px-4 py-3">Supplier</th>
-              <th className="px-4 py-3">Date</th>
-              <th className="px-4 py-3 text-right">Lines</th>
-              <th className="px-4 py-3 text-right">Value</th>
-              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">{t("Order")}</th>
+              <th className="px-4 py-3">{t("Supplier")}</th>
+              <th className="px-4 py-3">{t("Date")}</th>
+              <th className="px-4 py-3 text-right">{t("Lines")}</th>
+              <th className="px-4 py-3 text-right">{t("Value")}</th>
+              <th className="px-4 py-3">{t("Status")}</th>
             </tr>
           </thead>
           <tbody>
@@ -59,10 +65,10 @@ async function Orders() {
                 <td className="px-4 py-3">{o.supplier.name}</td>
                 <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{formatDualDate(o.createdAt)}</td>
                 <td className="px-4 py-3 text-right">{o.lines.length}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{etb(o.total)}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{etb(o.total, t)}</td>
                 <td className="px-4 py-3">
                   <Badge tone={PO_STATUS[o.status].tone} dot>
-                    {PO_STATUS[o.status].label}
+                    {t(PO_STATUS[o.status].label)}
                   </Badge>
                 </td>
               </tr>
@@ -74,19 +80,20 @@ async function Orders() {
   );
 }
 
+async function NewOrderLink() {
+  const t = await getT();
+  return (
+    <Link href="/inventory/orders/new" className={buttonClass}>
+      <Plus aria-hidden />
+      {t("New order")}
+    </Link>
+  );
+}
+
 export default function OrdersPage() {
   return (
     <>
-      <PageHeader
-        title="Purchase orders"
-        subtitle="የግዢ ትዕዛዞች"
-        actions={
-          <Link href="/inventory/orders/new" className={buttonClass}>
-            <Plus aria-hidden />
-            New order
-          </Link>
-        }
-      />
+      <PageTitle title="Purchase orders" actions={<NewOrderLink />} />
       <Suspense fallback={<Skeleton className="h-64" />}>
         <Orders />
       </Suspense>

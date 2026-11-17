@@ -2,7 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+// i18n: english-only — medicine labels are printed in English and Amharic side by side; the
+// controls above them follow the screen's language.
+import { LangBoundary } from "@/components/lang-boundary";
 import { PrintButton } from "@/components/print-button";
+import { getT } from "@/lib/lang";
 import { api, ApiError, type RxLabel } from "@/lib/api";
 import { directions } from "@/lib/directions";
 import { ageText, formatDualDate, fullName } from "@/lib/format";
@@ -16,7 +20,7 @@ const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "2
  * them all on one A4 sheet to cut out.
  */
 async function Labels({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ sheet?: string }> }) {
-  const [{ id }, { sheet }] = await Promise.all([params, searchParams]);
+  const [{ id }, { sheet }, t] = await Promise.all([params, searchParams, getT()]);
   let p: RxLabel;
   try {
     p = await api<RxLabel>(`/prescriptions/${id}/label`);
@@ -34,16 +38,18 @@ async function Labels({ params, searchParams }: { params: Promise<{ id: string }
   return (
     <div className="mx-auto w-full max-w-[72mm] space-y-4 print:max-w-none">
       <div className="space-y-2 font-sans text-sm print:hidden">
-        <PrintButton />
+        <LangBoundary>
+          <PrintButton />
+        </LangBoundary>
         <p className="text-center text-xs text-slate-500">
-          {items.length} {items.length === 1 ? "label" : "labels"} ·{" "}
+          {t(items.length === 1 ? "{n} label" : "{n} labels", { n: items.length })} ·{" "}
           {onSheet ? (
             <Link href={`/rx-label/${id}`} className="underline">
-              one per label (label printer)
+              {t("one per label (label printer)")}
             </Link>
           ) : (
             <Link href={`/rx-label/${id}?sheet=1`} className="underline">
-              all on one A4 sheet
+              {t("all on one A4 sheet")}
             </Link>
           )}
         </p>
@@ -98,7 +104,7 @@ async function Labels({ params, searchParams }: { params: Promise<{ id: string }
 export default function LabelPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ sheet?: string }> }) {
   return (
     <main className="flex-1 bg-white px-4 py-6 print:p-0">
-      <Suspense fallback={<p className="text-center text-sm">Loading…</p>}>
+      <Suspense fallback={<p className="text-center text-sm">…</p>}>
         <Labels params={params} searchParams={searchParams} />
       </Suspense>
     </main>

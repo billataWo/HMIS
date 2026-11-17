@@ -1,21 +1,25 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { PageHeader, Skeleton } from "@/components/ui";
+import { PageTitle } from "@/components/page-title";
+import { Skeleton } from "@/components/ui";
+import { getT } from "@/lib/lang";
 import { api, ApiError, type Appointment, type BookingLoad, type Doctor, type Patient } from "@/lib/api";
 import { clinicToday, fullName } from "@/lib/format";
 import { BookForm } from "./book-form";
 
 async function Booking({ searchParams }: { searchParams: Promise<{ patientId?: string; move?: string }> }) {
-  const { patientId, move } = await searchParams;
+  const [{ patientId, move }, t] = await Promise.all([searchParams, getT()]);
   if (!patientId) {
     return (
       <p className="text-sm text-slate-500">
-        Choose the patient first:{" "}
-        <Link href="/patients" className="text-brand-700 underline dark:text-brand-400">
-          find a patient
-        </Link>{" "}
-        and click “Book appointment”.
+        {t.rich("Choose the patient first: {link} and click “Book appointment”.", {
+          link: (
+            <Link href="/patients" className="text-brand-700 underline dark:text-brand-400">
+              {t("find a patient")}
+            </Link>
+          ),
+        })}
       </p>
     );
   }
@@ -40,7 +44,7 @@ async function Booking({ searchParams }: { searchParams: Promise<{ patientId?: s
   return (
     <>
       <p className="mb-4 text-sm">
-        {moving ? "Moving the appointment of" : "For"} <strong>{fullName(patient)}</strong> <span className="text-slate-500">· {patient.mrn}</span>
+        {t.rich(moving ? "Moving the appointment of {name}" : "For {name}", { name: <strong>{fullName(patient)}</strong> })} <span className="text-slate-500">· {patient.mrn}</span>
         {moving?.reason && <span className="text-slate-500"> · {moving.reason}</span>}
       </p>
       <BookForm
@@ -57,7 +61,7 @@ async function Booking({ searchParams }: { searchParams: Promise<{ patientId?: s
 export default function NewAppointmentPage({ searchParams }: PageProps<"/appointments/new">) {
   return (
     <>
-      <PageHeader title="Book appointment" subtitle="ቀጠሮ መያዝ" />
+      <PageTitle title="Book appointment" />
       <Suspense fallback={<Skeleton className="h-64" />}>
         <Booking searchParams={searchParams as Promise<{ patientId?: string; move?: string }>} />
       </Suspense>

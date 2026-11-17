@@ -5,7 +5,9 @@ import { Suspense, type ReactNode } from "react";
 import { setAppointmentStatus } from "@/app/actions";
 import { CheckInForm } from "@/components/check-in-form";
 import { Flash } from "@/components/flash";
-import { Badge, type BadgeTone, EmptyState, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
+import { PageTitle } from "@/components/page-title";
+import { Badge, type BadgeTone, EmptyState, secondaryButtonClass, Skeleton } from "@/components/ui";
+import { getT } from "@/lib/lang";
 import { api, type Appointment, type Doctor, type Me, type Role, type Service } from "@/lib/api";
 import { clinicToday, formatDualDate, formatTime, fullName, shiftDay } from "@/lib/format";
 import { ConfirmCancel } from "@/components/confirm-cancel";
@@ -27,11 +29,12 @@ async function Day({ searchParams }: { searchParams: Promise<Search> }) {
   await connection(); // "today" is the request's, not a prerender's
   const today = clinicToday();
   const day = params.day && /^\d{4}-\d{2}-\d{2}$/.test(params.day) ? params.day : today;
-  const [me, appts, doctors, services] = await Promise.all([
+  const [me, appts, doctors, services, t] = await Promise.all([
     api<Me>("/auth/me"),
     api<Appointment[]>(`/appointments?day=${day}`),
     api<Doctor[]>("/lookups/doctors"),
     api<Service[]>("/lookups/services"),
+    getT(),
   ]);
   const returnTo = `/appointments?day=${day}`;
   const dayLink = (d: string, label: ReactNode, aria?: string) => (
@@ -44,18 +47,18 @@ async function Day({ searchParams }: { searchParams: Promise<Search> }) {
     <>
       <Flash params={params} />
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {dayLink(shiftDay(day, -1), <ChevronLeft aria-hidden />, "Previous day")}
+        {dayLink(shiftDay(day, -1), <ChevronLeft aria-hidden />, t("Previous day"))}
         <span className="px-2 font-medium">
           {formatDualDate(`${day}T12:00:00+03:00`)}
-          {day === today && <span className="text-slate-500"> · today</span>}
+          {day === today && <span className="text-slate-500"> · {t("today")}</span>}
         </span>
-        {dayLink(shiftDay(day, 1), <ChevronRight aria-hidden />, "Next day")}
-        {day !== today && dayLink(today, "Today")}
+        {dayLink(shiftDay(day, 1), <ChevronRight aria-hidden />, t("Next day"))}
+        {day !== today && dayLink(today, t("Today"))}
       </div>
 
       {appts.length === 0 ? (
-        <EmptyState icon={CalendarDays} title="No appointments on this day">
-          {CAN_BOOK.includes(me.role) && "To book one, open a patient and choose “Book appointment”."}
+        <EmptyState icon={CalendarDays} title={t("No appointments on this day")}>
+          {CAN_BOOK.includes(me.role) && t("To book one, open a patient and choose “Book appointment”.")}
         </EmptyState>
       ) : (
         <ul className="divide-y divide-slate-200 surface dark:divide-slate-800 dark:border-slate-800">
@@ -74,11 +77,11 @@ async function Day({ searchParams }: { searchParams: Promise<Search> }) {
                   </span>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                     <Badge tone={s.tone} dot>
-                      {a.status === "CANCELLED" ? <s>{s.label}</s> : s.label}
+                      {a.status === "CANCELLED" ? <s>{t(s.label)}</s> : t(s.label)}
                     </Badge>
-                    {a.doctor && <span>Dr. {a.doctor.fullName}</span>}
+                    {a.doctor && <span>{t("Dr. {name}", { name: a.doctor.fullName })}</span>}
                     {a.reason && <span>{a.reason}</span>}
-                    {a.visit && <span>Queue number {a.visit.queueNumber}</span>}
+                    {a.visit && <span>{t("Queue number {n}", { n: a.visit.queueNumber })}</span>}
                   </div>
                 </div>
                 {a.status === "BOOKED" && (
@@ -97,14 +100,14 @@ async function Day({ searchParams }: { searchParams: Promise<Search> }) {
                     {CAN_BOOK.includes(me.role) && (
                       <div className="flex gap-2">
                         <Link href={`/appointments/new?patientId=${a.patient.id}&move=${a.id}`} className={`${secondaryButtonClass} px-3 py-1 text-xs`}>
-                          Move
+                          {t("Move")}
                         </Link>
                         {day <= today && (
                           <form action={setAppointmentStatus.bind(null, a.id, "NO_SHOW", returnTo)}>
-                            <button className={`${secondaryButtonClass} px-3 py-1 text-xs`}>No-show</button>
+                            <button className={`${secondaryButtonClass} px-3 py-1 text-xs`}>{t("No-show")}</button>
                           </form>
                         )}
-                        <ConfirmCancel action={setAppointmentStatus.bind(null, a.id, "CANCELLED", returnTo)} question="Cancel this appointment?" />
+                        <ConfirmCancel action={setAppointmentStatus.bind(null, a.id, "CANCELLED", returnTo)} question={t("Cancel this appointment?")} />
                       </div>
                     )}
                   </div>
@@ -118,18 +121,19 @@ async function Day({ searchParams }: { searchParams: Promise<Search> }) {
   );
 }
 
+async function FollowUpLink() {
+  const t = await getT();
+  return (
+    <Link href="/appointments/follow-up" className={secondaryButtonClass}>
+      {t("Reminders and missed")}
+    </Link>
+  );
+}
+
 export default function AppointmentsPage({ searchParams }: PageProps<"/appointments">) {
   return (
     <>
-      <PageHeader
-        title="Appointments"
-        subtitle="ቀጠሮዎች"
-        actions={
-          <Link href="/appointments/follow-up" className={secondaryButtonClass}>
-            Reminders and missed
-          </Link>
-        }
-      />
+      <PageTitle title="Appointments" actions={<FollowUpLink />} />
       <Suspense fallback={<Skeleton className="h-64" />}>
         <Day searchParams={searchParams as Promise<Search>} />
       </Suspense>

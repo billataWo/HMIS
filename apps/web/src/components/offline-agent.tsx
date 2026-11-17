@@ -3,6 +3,7 @@
 import { CircleAlert, CloudCheck, CloudOff, CloudUpload } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
 import type { Me } from "@/lib/api";
+import { useT } from "./lang-provider";
 import { cacheShell, refreshSnapshot, replay } from "@/lib/offline/engine";
 import { clearSnapshot, getOps, getSnapshot, purgeIfExpired } from "@/lib/offline/idb";
 
@@ -97,13 +98,14 @@ export function OfflineAgent({ me }: { me: Me }) {
 /** The small status line in the sidebar: offline readiness, work waiting, work needing a look. */
 export function OfflineChip() {
   const s = useSyncExternalStore(subscribe, () => state, () => SERVER_STATE);
+  const t = useT();
   const base = "mb-2 flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors";
   // A plain link (full page load): offline, the service worker answers with the cached workspace.
   if (s.failed) {
     return (
       <a href="/offline" className={`${base} bg-red-50 font-medium text-red-800 hover:bg-red-100 dark:bg-red-950/60 dark:text-red-200`}>
         <CircleAlert aria-hidden className="size-3.5 shrink-0" />
-        {s.failed} offline {s.failed === 1 ? "item needs" : "items need"} attention
+        {t(s.failed === 1 ? "{n} offline item needs attention" : "{n} offline items need attention", { n: s.failed })}
       </a>
     );
   }
@@ -111,7 +113,7 @@ export function OfflineChip() {
     return (
       <a href="/offline" className={`${base} bg-amber-50 font-medium text-amber-900 hover:bg-amber-100 dark:bg-amber-950/60 dark:text-amber-100`}>
         <CloudOff aria-hidden className="size-3.5 shrink-0" />
-        Offline: open the offline workspace
+        {t("Offline: open the offline workspace")}
       </a>
     );
   }
@@ -119,16 +121,16 @@ export function OfflineChip() {
     return (
       <a href="/offline" className={`${base} bg-sky-50 text-sky-900 hover:bg-sky-100 dark:bg-sky-950/60 dark:text-sky-100`}>
         <CloudUpload aria-hidden className="size-3.5 shrink-0" />
-        Sending {s.pending} offline {s.pending === 1 ? "item" : "items"}…
+        {t(s.pending === 1 ? "Sending {n} offline item…" : "Sending {n} offline items…", { n: s.pending })}
       </a>
     );
   }
   return (
-    <a href="/offline" title="Open the offline workspace" className={`${base} text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200`}>
+    <a href="/offline" title={t("Open the offline workspace")} className={`${base} text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200`}>
       <CloudCheck aria-hidden className="size-3.5 shrink-0" />
       {s.snapshotAt
-        ? `Ready for offline · ${new Date(s.snapshotAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Addis_Ababa" })}`
-        : "Preparing offline mode…"}
+        ? t("Ready for offline · {time}", { time: new Date(s.snapshotAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Addis_Ababa" }) })
+        : t("Preparing offline mode…")}
     </a>
   );
 }

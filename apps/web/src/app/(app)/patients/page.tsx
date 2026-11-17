@@ -2,14 +2,16 @@ import { Search, UserPlus, Users } from "lucide-react";
 import Form from "next/form";
 import Link from "next/link";
 import { Suspense } from "react";
-import { buttonClass, EmptyState, inputClass, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
+import { PageTitle } from "@/components/page-title";
+import { buttonClass, EmptyState, inputClass, secondaryButtonClass, Skeleton } from "@/components/ui";
+import { getT } from "@/lib/lang";
 import { api, type Me, type Patient } from "@/lib/api";
 import { canRegister } from "@/lib/roles";
 import { ageText, formatDualDate, fullName } from "@/lib/format";
 
 async function Results({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const q = (await searchParams).q?.trim() ?? "";
-  const [patients, me] = await Promise.all([api<Patient[]>(`/patients?q=${encodeURIComponent(q)}`), api<Me>("/auth/me")]);
+  const [patients, me, t] = await Promise.all([api<Patient[]>(`/patients?q=${encodeURIComponent(q)}`), api<Me>("/auth/me"), getT()]);
 
   return (
     <>
@@ -20,28 +22,28 @@ async function Results({ searchParams }: { searchParams: Promise<{ q?: string }>
             name="q"
             defaultValue={q}
             autoFocus
-            aria-label="Search patients"
-            placeholder="Search by name, phone or MRN · በስም፣ በስልክ ወይም በካርድ ቁጥር"
+            aria-label={t("Search patients")}
+            placeholder={t("Search by name, phone or MRN · በስም፣ በስልክ ወይም በካርድ ቁጥር")}
             className={`${inputClass} h-11 pl-9`}
           />
         </div>
-        <button className={`${secondaryButtonClass} h-11`}>Search</button>
+        <button className={`${secondaryButtonClass} h-11`}>{t("Search")}</button>
       </Form>
 
       {patients.length === 0 ? (
         <EmptyState
           icon={Users}
-          title={q ? `No patient matches “${q}”` : "No patients registered yet"}
+          title={q ? t("No patient matches “{q}”.", { q }) : t("No patients registered yet")}
           action={
             canRegister(me) ? (
               <Link href="/patients/new" className={buttonClass}>
                 <UserPlus aria-hidden />
-                Register a new patient
+                {t("Register a new patient")}
               </Link>
             ) : undefined
           }
         >
-          {!canRegister(me) && "New patients are registered at reception."}
+          {!canRegister(me) && t("New patients are registered at reception.")}
         </EmptyState>
       ) : (
         <div className="overflow-x-auto surface">
@@ -49,15 +51,15 @@ async function Results({ searchParams }: { searchParams: Promise<{ q?: string }>
             <thead className="bg-slate-50/80 text-slate-500 dark:bg-slate-800/40">
               <tr>
                 <th className="px-4 py-3 font-medium">MRN</th>
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Sex / age</th>
-                <th className="px-4 py-3 font-medium">Phone</th>
-                <th className="px-4 py-3 font-medium">Registered</th>
+                <th className="px-4 py-3 font-medium">{t("Name")}</th>
+                <th className="px-4 py-3 font-medium">{t("Sex / age")}</th>
+                <th className="px-4 py-3 font-medium">{t("Phone")}</th>
+                <th className="px-4 py-3 font-medium">{t("Registered")}</th>
               </tr>
             </thead>
             <tbody>
               {patients.map((p) => {
-                const age = ageText(p.dateOfBirth, true);
+                const age = ageText(p.dateOfBirth, true, t);
                 return (
                   <tr key={p.id} className="border-t border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-900">
                     <td className="px-4 py-3 font-mono text-xs">
@@ -76,7 +78,7 @@ async function Results({ searchParams }: { searchParams: Promise<{ q?: string }>
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      {p.sex === "MALE" ? "M" : "F"}
+                      {t(p.sex === "MALE" ? "M" : "F")}
                       {age !== null && ` · ${age}`}
                     </td>
                     <td className="px-4 py-3">{p.phone ?? "—"}</td>
@@ -93,12 +95,12 @@ async function Results({ searchParams }: { searchParams: Promise<{ q?: string }>
 }
 
 async function RegisterButton() {
-  const me = await api<Me>("/auth/me");
+  const [me, t] = await Promise.all([api<Me>("/auth/me"), getT()]);
   if (!canRegister(me)) return null;
   return (
     <Link href="/patients/new" className={buttonClass}>
       <UserPlus aria-hidden />
-      Register patient
+      {t("Register patient")}
     </Link>
   );
 }
@@ -106,9 +108,8 @@ async function RegisterButton() {
 export default function PatientsPage({ searchParams }: PageProps<"/patients">) {
   return (
     <>
-      <PageHeader
+      <PageTitle
         title="Patients"
-        subtitle="ታካሚዎች"
         actions={
           <Suspense fallback={null}>
             <RegisterButton />

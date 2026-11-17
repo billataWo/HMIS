@@ -1,7 +1,11 @@
+"use client";
+
 import { TriangleAlert } from "lucide-react";
+import { useT } from "./lang-provider";
 
 /** The patient's allergies, shown the same way on every clinical screen. */
 export function AllergyAlert({ allergies, className = "mb-4" }: { allergies: string[]; className?: string }) {
+  const t = useT();
   if (allergies.length === 0) return null;
   return (
     <div role="alert" className={`flex items-center gap-3 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-red-900 dark:border-red-900 dark:bg-red-950/60 dark:text-red-100 ${className}`}>
@@ -9,7 +13,7 @@ export function AllergyAlert({ allergies, className = "mb-4" }: { allergies: str
         <TriangleAlert aria-hidden className="size-4" />
       </span>
       <p className="text-sm">
-        <span className="font-semibold">Allergies: </span>
+        <span className="font-semibold">{t("Allergies")}: </span>
         {allergies.join(", ")}
       </p>
     </div>

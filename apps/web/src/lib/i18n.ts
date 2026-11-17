@@ -1,104 +1,54 @@
 /**
- * Interface language. English text is the key; `AM` holds the Amharic. Anything not yet in the
- * dictionary stays in English, so screens can be translated one at a time. Have a native speaker
- * on the clinical team review new entries before release.
+ * Interface language. English text is the key; the `am/` dictionaries hold the Amharic. Anything
+ * not in a dictionary stays in English. Have a native speaker on the clinical team review new
+ * entries before release.
+ *
+ * Writing a screen:
+ * - server component: `const t = await getT();` (lib/lang.ts)
+ * - client component: `const t = useT();` (components/lang-provider.tsx)
+ * - `t("Save")`, `t("Queue number {n}", { n: 12 })`: a whole sentence per key, with `{name}` where a
+ *   value goes, so the Amharic can put it where Amharic word order needs it.
+ * - `t.rich("Pay the open invoice: {link}.", { link: <Link …>Subscription</Link> })` when a link or
+ *   other element sits inside the sentence.
+ * - Kept in English on purpose: drug, test and vaccine names, units, ICD codes, people's names and
+ *   anything typed by staff.
+ *
+ * `pnpm --filter web i18n:check` lists keys with no Amharic and English text not yet passed to `t`.
  */
+import { Fragment, createElement, type ReactNode } from "react";
+import { AM } from "./i18n/am";
+
 export type Lang = "en" | "am";
 
 export const LANG_COOKIE = "hmis_lang";
 
-const AM: Record<string, string> = {
-  // Navigation
-  Home: "መነሻ",
-  Queue: "ወረፋ",
-  Appointments: "ቀጠሮዎች",
-  Patients: "ታካሚዎች",
-  Lab: "ላብራቶሪ",
-  Pharmacy: "ፋርማሲ",
-  Inventory: "ክምችት",
-  Billing: "ክፍያ",
-  "Credit & insurance": "ዱቤና መድን",
-  Reports: "ሪፖርቶች",
-  Staff: "ሰራተኞች",
-  Settings: "ቅንብሮች",
-  "Audit log": "የኦዲት መዝገብ",
-  "Front desk": "መቀበያ",
-  Services: "አገልግሎቶች",
-  Finance: "ፋይናንስ",
-  Administration: "አስተዳደር",
-  "Sign out": "ውጣ",
-  Password: "የይለፍ ቃል",
-  "Two-step": "ባለሁለት ደረጃ መግቢያ",
-  Language: "ቋንቋ",
+export type Vars = Record<string, string | number | null | undefined>;
 
-  // Home
-  "Good morning": "እንደምን አደሩ",
-  "Good afternoon": "እንደምን ዋሉ",
-  "Good evening": "እንደምን አመሹ",
-  Welcome: "እንኳን ደህና መጡ",
-  "Your workspace": "የስራ ቦታዎ",
-  "Check in a patient": "ታካሚ ተቀበል",
-  "Register patient": "ታካሚ መዝግብ",
-  "Book appointment": "ቀጠሮ ያዝ",
-  "Open the queue": "ወረፋውን ክፈት",
-  "My patients": "የእኔ ታካሚዎች",
-  "Lab worklist": "የላብራቶሪ ስራዎች",
-  "Prescriptions to dispense": "የሚታደሉ ማዘዣዎች",
-  "Bills to collect": "የሚሰበሰቡ ክፍያዎች",
-  "Today's queue": "የዛሬው ወረፋ",
-  Dashboard: "ዳሽቦርድ",
+/** The text in the chosen language (English when there is no translation yet), values filled in. */
+export function tr(lang: Lang, english: string, vars?: Vars) {
+  const text = lang === "am" ? (AM[english] ?? english) : english;
+  return vars ? text.replace(/\{(\w+)\}/g, (all, k: string) => (k in vars ? String(vars[k] ?? "") : all)) : text;
+}
 
-  // Queue
-  "Patients today": "የዛሬ ታካሚዎች",
-  Waiting: "በመጠባበቅ ላይ",
-  "In progress": "በሂደት ላይ",
-  Finished: "የተጠናቀቁ",
-  "Finished today": "ዛሬ የተጠናቀቁ",
-  Find: "ፈልግ",
-  "New patient": "አዲስ ታካሚ",
-  "All doctors": "ሁሉም ሐኪሞች",
-  "Waiting-room display": "የመጠበቂያ ክፍል ማሳያ",
-  "Call in": "ጥራ",
-  Complete: "ጨርስ",
-  "Send to lab": "ወደ ላብራቶሪ ላክ",
-  "Send to pharmacy": "ወደ ፋርማሲ ላክ",
-  "Back to queue": "ወደ ወረፋ መልስ",
-  "Back to doctor": "ወደ ሐኪም መልስ",
-  Open: "ክፈት",
-  Triage: "ቅድመ ምርመራ",
-  Cancel: "ሰርዝ",
-  "Nobody is waiting.": "የሚጠብቅ የለም።",
-  "Awaiting payment": "ክፍያ ይጠበቃል",
-  "Emergency: pays after": "ድንገተኛ፦ በኋላ ይከፍላል",
-  "Change doctor": "ሐኪም ቀይር",
-  Move: "አዛውር",
-  "Left without being seen": "ሳይታይ ሄደ",
-  "Could not pay": "መክፈል አልቻለም",
-  "Sent to another facility": "ወደ ሌላ ተቋም ተላከ",
-  "Checked in by mistake": "በስህተት ተመዝግቧል",
-  "Other reason": "ሌላ ምክንያት",
-  "Results ready": "ውጤት ደርሷል",
-  "Lab results pending": "የላብራቶሪ ውጤት ይጠበቃል",
-  "Critical lab result": "አስቸኳይ የላብራቶሪ ውጤት",
-  "Lab result corrected": "የላብራቶሪ ውጤት ተስተካክሏል",
-  "New lab sample needed": "አዲስ የላብራቶሪ ናሙና ያስፈልጋል",
-  Owes: "ቀሪ ክፍያ",
-  Emergency: "ድንገተኛ",
-  "Very urgent": "በጣም አስቸኳይ",
-  Urgent: "አስቸኳይ",
-  Routine: "መደበኛ",
-  "from earlier visits": "ከቀደሙት ጉብኝቶች",
-  "No diagnosis yet": "ዲያግኖሲስ ገና አልተመዘገበም",
+/** Like `tr`, but each `{name}` may be an element (a link, a bold amount). */
+export function trRich(lang: Lang, english: string, parts: Record<string, ReactNode>): ReactNode {
+  const text = lang === "am" ? (AM[english] ?? english) : english;
+  const pieces = text.split(/\{(\w+)\}/g);
+  return createElement(
+    Fragment,
+    null,
+    ...pieces.map((p, i) => createElement(Fragment, { key: i }, i % 2 ? (p in parts ? parts[p] : `{${p}}`) : p)),
+  );
+}
 
-  // Visit statuses
-  "With doctor": "ከሐኪም ጋር",
-  "At lab": "ላብራቶሪ",
-  "At pharmacy": "ፋርማሲ",
-  Done: "ተጠናቋል",
-  Cancelled: "ተሰርዟል",
+export type T = ((english: string, vars?: Vars) => string) & {
+  rich: (english: string, parts: Record<string, ReactNode>) => ReactNode;
+  lang: Lang;
 };
 
-/** The text in the chosen language (English when there is no translation yet). */
-export function tr(lang: Lang, english: string) {
-  return lang === "am" ? (AM[english] ?? english) : english;
+export function makeT(lang: Lang): T {
+  const t = ((english: string, vars?: Vars) => tr(lang, english, vars)) as T;
+  t.rich = (english, parts) => trRich(lang, english, parts);
+  t.lang = lang;
+  return t;
 }

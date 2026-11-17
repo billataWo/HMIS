@@ -24,5 +24,5 @@ export function directions(i: { dose: string; frequency: Frequency; durationDays
 }
 
 /** Short form for lists: "1 g TID × 3 d". */
-export const shortDirections = (i: { dose: string; frequency: Frequency; durationDays: number | null }) =>
-  `${i.dose} ${i.frequency}${i.durationDays ? ` × ${i.durationDays} d` : ""}`;
+export const shortDirections = (i: { dose: string; frequency: Frequency; durationDays: number | null }, t?: (s: string, v?: Record<string, number>) => string) =>
+  `${i.dose} ${i.frequency}${i.durationDays ? ` × ${t ? t("{n} d", { n: i.durationDays }) : `${i.durationDays} d`}` : ""}`;

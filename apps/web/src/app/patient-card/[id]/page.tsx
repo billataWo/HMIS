@@ -3,7 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
 import { Suspense } from "react";
+import { LangBoundary } from "@/components/lang-boundary";
 import { PrintButton } from "@/components/print-button";
+import { getT } from "@/lib/lang";
 import { api, ApiError, type Me, type PatientDetail } from "@/lib/api";
 import { ageText, formatDualDate, fullName } from "@/lib/format";
 
@@ -14,7 +16,7 @@ export const metadata: Metadata = { title: "Patient card" };
  * on A4 to cut out. The QR code holds the MRN: scanned into any patient search, it finds them.
  */
 async function Card({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ sheet?: string }> }) {
-  const [{ id }, { sheet }] = await Promise.all([params, searchParams]);
+  const [{ id }, { sheet }, t] = await Promise.all([params, searchParams, getT()]);
   let p: PatientDetail;
   let me: Me;
   try {
@@ -37,11 +39,11 @@ async function Card({ params, searchParams }: { params: Promise<{ id: string }>;
         <p className="text-center text-xs text-slate-500">
           {onSheet ? (
             <Link href={`/patient-card/${id}`} className="underline">
-              card printer (one card per page)
+              {t("card printer (one card per page)")}
             </Link>
           ) : (
             <Link href={`/patient-card/${id}?sheet=1`} className="underline">
-              on an A4 sheet to cut out
+              {t("on an A4 sheet to cut out")}
             </Link>
           )}
         </p>
@@ -58,6 +60,7 @@ async function Card({ params, searchParams }: { params: Promise<{ id: string }>;
               {me.tenant.nameAm}
             </p>
           )}
+          {/* i18n-ignore: the printed card is in both languages */}
           <p className="text-[6.5pt] font-semibold tracking-wide">
             PATIENT CARD · <span lang="am">የታካሚ ካርድ</span>
           </p>
@@ -72,16 +75,20 @@ async function Card({ params, searchParams }: { params: Promise<{ id: string }>;
             )}
             <p className="font-mono text-[12pt] font-bold tracking-wide">{p.mrn}</p>
             <p className="truncate">
+              {/* i18n-ignore: both languages on the card */}
               {p.sex === "MALE" ? "Male · ወንድ" : "Female · ሴት"}
               {age && ` · ${age}`}
             </p>
+            {/* i18n-ignore: printed card, English words with the numbers */}
             {born && <p className="truncate">Born {born}</p>}
+            {/* i18n-ignore */}
             {p.phone && <p className="truncate">Tel {p.phone}</p>}
           </div>
           {/* eslint-disable-next-line @next/next/no-img-element -- a generated data URI, printed */}
           <img src={qr} alt={`QR code: ${p.mrn}`} className="size-[22mm] shrink-0 self-center" />
         </div>
         <p className="border-t border-black pt-[0.8mm] text-center text-[6.5pt]">
+          {/* i18n-ignore: both languages */}
           Bring this card to every visit · <span lang="am">በእያንዳንዱ ጉብኝት ይዘው ይምጡ</span>
         </p>
       </article>
@@ -92,8 +99,10 @@ async function Card({ params, searchParams }: { params: Promise<{ id: string }>;
 export default function PatientCardPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ sheet?: string }> }) {
   return (
     <main className="flex-1 bg-white px-4 py-6 print:p-0">
-      <Suspense fallback={<p className="text-center text-sm">Loading…</p>}>
-        <Card params={params} searchParams={searchParams} />
+      <Suspense fallback={<p className="text-center text-sm">…</p>}>
+        <LangBoundary>
+          <Card params={params} searchParams={searchParams} />
+        </LangBoundary>
       </Suspense>
     </main>
   );

@@ -3,16 +3,18 @@
 import { useState } from "react";
 import type { CoverageOption } from "@/lib/api";
 import { isPast } from "@/lib/format";
+import type { T } from "@/lib/i18n";
+import { useT } from "./lang-provider";
 import { inputClass } from "./ui";
 
 /** "Ethio Telecom · ET-5531 · 20% co-pay", or when it ended. */
-function label(c: CoverageOption) {
+function label(c: CoverageOption, t: T) {
   const ended = c.validUntil && isPast(c.validUntil);
   return [
     c.payer.name,
     c.memberId,
-    Number(c.payer.coPayPercent) > 0 ? `${Number(c.payer.coPayPercent)}% co-pay` : "fully covered",
-    ended && `ended ${c.validUntil!.slice(0, 10)}`,
+    Number(c.payer.coPayPercent) > 0 ? t("{n}% co-pay", { n: Number(c.payer.coPayPercent) }) : t("fully covered"),
+    ended && t("ended {date}", { date: c.validUntil!.slice(0, 10) }),
   ]
     .filter(Boolean)
     .join(" · ");
@@ -27,19 +29,20 @@ export function CoverageChoice({ coverages, className = "" }: { coverages: Cover
   const usable = coverages.filter((c) => !(c.validUntil && isPast(c.validUntil)));
   const [coverageId, setCoverageId] = useState(usable[0]?.id ?? "");
   const chosen = coverages.find((c) => c.id === coverageId);
+  const t = useT();
   if (!coverages.length) return null;
   return (
     <>
-      <select name="coverageId" value={coverageId} onChange={(e) => setCoverageId(e.target.value)} className={`${inputClass} ${className}`} aria-label="Who pays">
-        <option value="">Patient pays</option>
+      <select name="coverageId" value={coverageId} onChange={(e) => setCoverageId(e.target.value)} className={`${inputClass} ${className}`} aria-label={t("Who pays")}>
+        <option value="">{t("Patient pays")}</option>
         {coverages.map((c) => (
           <option key={c.id} value={c.id} disabled={!usable.includes(c)}>
-            {label(c)}
+            {label(c, t)}
           </option>
         ))}
       </select>
       {chosen?.payer.requiresAuthorization && (
-        <input name="authorizationNo" required placeholder={`${chosen.payer.name} authorization no.`} aria-label="Authorization number" className={`${inputClass} ${className}`} />
+        <input name="authorizationNo" required placeholder={t("{payer} authorization no.", { payer: chosen.payer.name })} aria-label={t("Authorization number")} className={`${inputClass} ${className}`} />
       )}
     </>
   );

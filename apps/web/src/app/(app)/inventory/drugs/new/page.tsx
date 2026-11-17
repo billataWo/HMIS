@@ -1,21 +1,27 @@
 import Link from "next/link";
-import { linkClass, PageHeader } from "@/components/ui";
+import { PageTitle } from "@/components/page-title";
+import { linkClass } from "@/components/ui";
+import { getT } from "@/lib/lang";
 import { DrugForm } from "../../inventory-forms";
 
-export default function NewDrugPage() {
+export default async function NewDrugPage() {
+  const t = await getT();
   return (
     <>
-      <PageHeader title="Add drug" subtitle="New item in the clinic's drug list" />
+      <PageTitle title="Add drug" subtitle="New item in the clinic's drug list" />
       <p className="mb-5 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
-        Adding many?{" "}
-        <Link href="/inventory/drugs/starter" className={linkClass}>
-          Pick from the essential medicines list
-        </Link>{" "}
-        or{" "}
-        <Link href="/inventory/drugs/import" className={linkClass}>
-          import a spreadsheet
-        </Link>
-        .
+        {t.rich("Adding many? {starter} or {import}.", {
+          starter: (
+            <Link href="/inventory/drugs/starter" className={linkClass}>
+              {t("Pick from the essential medicines list")}
+            </Link>
+          ),
+          import: (
+            <Link href="/inventory/drugs/import" className={linkClass}>
+              {t("import a spreadsheet")}
+            </Link>
+          ),
+        })}
       </p>
       <div className="max-w-2xl">
         <DrugForm />

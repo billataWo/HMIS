@@ -3,7 +3,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
 import { Suspense } from "react";
+// i18n: english-only — tube labels are printed in English; the controls above them follow the
+// screen's language.
+import { LangBoundary } from "@/components/lang-boundary";
 import { PrintButton } from "@/components/print-button";
+import { getT } from "@/lib/lang";
 import { api, ApiError, type LabLabels } from "@/lib/api";
 import { ageText, fullName } from "@/lib/format";
 import { specimenShort } from "@/lib/specimens";
@@ -19,7 +23,7 @@ const when = (iso: string) =>
  * code holds the sample number, for scanners and phones.
  */
 async function Labels({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ sheet?: string; sample?: string }> }) {
-  const [{ id }, { sheet, sample }] = await Promise.all([params, searchParams]);
+  const [{ id }, { sheet, sample }, t] = await Promise.all([params, searchParams, getT()]);
   let data: LabLabels;
   try {
     data = await api<LabLabels>(`/visits/${id}/lab-labels`);
@@ -41,20 +45,22 @@ async function Labels({ params, searchParams }: { params: Promise<{ id: string }
       {/* A label printer takes one 50 × 25 mm label per page. */}
       {!onSheet && <style>{"@page { size: 50mm 25mm; margin: 0; }"}</style>}
       <div className="space-y-2 font-sans text-sm print:hidden">
-        <PrintButton />
+        <LangBoundary>
+          <PrintButton />
+        </LangBoundary>
         <p className="text-center text-xs text-slate-500">
-          {tubes.length} {tubes.length === 1 ? "label" : "labels"} ·{" "}
+          {t(tubes.length === 1 ? "{n} label" : "{n} labels", { n: tubes.length })} ·{" "}
           {onSheet ? (
             <Link href={here} className="underline">
-              one per label (label printer)
+              {t("one per label (label printer)")}
             </Link>
           ) : (
             <Link href={`${here}${sample ? "&" : "?"}sheet=1`} className="underline">
-              all on one A4 sheet
+              {t("all on one A4 sheet")}
             </Link>
           )}
         </p>
-        {tubes.length === 0 && <p className="text-center text-xs text-slate-500">No samples taken yet.</p>}
+        {tubes.length === 0 && <p className="text-center text-xs text-slate-500">{t("No samples taken yet.")}</p>}
       </div>
       <div className={onSheet ? "flex flex-wrap gap-2" : ""}>
         {tubes.map((t, i) => (
@@ -92,7 +98,7 @@ async function Labels({ params, searchParams }: { params: Promise<{ id: string }
 export default function SampleLabelsPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ sheet?: string; sample?: string }> }) {
   return (
     <main className="flex-1 bg-white px-4 py-6 print:p-0">
-      <Suspense fallback={<p className="text-center text-sm">Loading…</p>}>
+      <Suspense fallback={<p className="text-center text-sm">…</p>}>
         <Labels params={params} searchParams={searchParams} />
       </Suspense>
     </main>

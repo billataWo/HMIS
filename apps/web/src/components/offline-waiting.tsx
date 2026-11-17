@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useT } from "@/components/lang-provider";
 import { Notice } from "@/components/ui";
 import { getNames, getOps, purgeIfExpired } from "@/lib/offline/idb";
 
@@ -9,7 +10,8 @@ import { getNames, getOps, purgeIfExpired } from "@/lib/offline/idb";
  * whose it is. It can only be sent once that person signs in (it is sent as them).
  */
 export function OfflineWaiting() {
-  const [waiting, setWaiting] = useState<{ name: string; count: number }[]>([]);
+  const [waiting, setWaiting] = useState<{ name: string | null; count: number }[]>([]);
+  const t = useT();
   useEffect(() => {
     if (!("indexedDB" in window)) return;
     void (async () => {
@@ -19,7 +21,7 @@ export function OfflineWaiting() {
         const [ops, names] = await Promise.all([getOps(), getNames()]);
         const counts = new Map<string, number>();
         for (const op of ops) if (op.status !== "done") counts.set(op.userId, (counts.get(op.userId) ?? 0) + 1);
-        setWaiting([...counts].map(([id, count]) => ({ name: names[id] ?? "someone who worked on this PC", count })));
+        setWaiting([...counts].map(([id, count]) => ({ name: names[id] ?? null, count })));
       } catch {
         // no offline store in this browser: nothing waiting
       }
@@ -29,12 +31,14 @@ export function OfflineWaiting() {
   return (
     <Notice tone="warning" className="mb-6">
       {waiting.map((w) => (
-        <p key={w.name}>
-          {w.count} {w.count === 1 ? "item" : "items"} recorded offline by <span className="font-medium">{w.name}</span> {w.count === 1 ? "is" : "are"} waiting
-          to be sent.
+        <p key={w.name ?? ""}>
+          {t.rich(w.count === 1 ? "{n} item recorded offline by {name} is waiting to be sent." : "{n} items recorded offline by {name} are waiting to be sent.", {
+            n: w.count,
+            name: <span className="font-medium">{w.name ?? t("someone who worked on this PC")}</span>,
+          })}
         </p>
       ))}
-      <p className="mt-1">Each person&apos;s work is sent as soon as they sign in on this PC.</p>
+      <p className="mt-1">{t("Each person's work is sent as soon as they sign in on this PC.")}</p>
     </Notice>
   );
 }

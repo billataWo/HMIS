@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { saveStore } from "@/app/actions";
+import { useT } from "@/components/lang-provider";
 import { Alert, Badge, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
 import type { Store } from "@/lib/api";
 
@@ -13,6 +14,7 @@ export function StoresPanel({ stores }: { stores: Store[] }) {
   const [rename, setRename] = useState("");
   const [error, setError] = useState<string>();
   const [pending, start] = useTransition();
+  const t = useT();
   const run = (fn: () => Promise<{ error?: string }>, after?: () => void) =>
     start(async () => {
       setError(undefined);
@@ -23,41 +25,41 @@ export function StoresPanel({ stores }: { stores: Store[] }) {
 
   return (
     <div className="space-y-3">
-      {error && <Alert>{error}</Alert>}
+      {error && <Alert>{t(error)}</Alert>}
       <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-800">
         {stores.map((s) => (
           <li key={s.id} className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 ${s.active ? "" : "opacity-60"}`}>
             {editing === s.id ? (
               <span className="flex flex-wrap items-center gap-2">
-                <input value={rename} onChange={(e) => setRename(e.target.value)} aria-label={`New name for ${s.name}`} className={`${inputClass} w-48 py-1.5`} />
+                <input value={rename} onChange={(e) => setRename(e.target.value)} aria-label={t("New name for {store}", { store: s.name })} className={`${inputClass} w-48 py-1.5`} />
                 <button type="button" disabled={pending || rename.trim().length < 2} onClick={() => run(() => saveStore(s.id, { name: rename.trim() }), () => setEditing(undefined))} className={`${buttonClass} px-3 py-1.5 text-xs`}>
-                  Save
+                  {t("Save")}
                 </button>
                 <button type="button" onClick={() => setEditing(undefined)} className={`${secondaryButtonClass} px-3 py-1.5 text-xs`}>
-                  Cancel
+                  {t("Cancel")}
                 </button>
               </span>
             ) : (
               <span>
                 <span className="font-medium">{s.name}</span>{" "}
-                {s.dispensary && <Badge tone="brand">Dispenses</Badge>} {!s.active && <Badge>Closed</Badge>}
+                {s.dispensary && <Badge tone="brand">{t("Dispenses")}</Badge>} {!s.active && <Badge>{t("Closed")}</Badge>}
                 <span className="block text-xs text-slate-500">
-                  {s.units} units of {s.drugs} {s.drugs === 1 ? "drug" : "drugs"} in date
+                  {t(s.drugs === 1 ? "{units} units of {n} drug in date" : "{units} units of {n} drugs in date", { units: s.units, n: s.drugs })}
                 </span>
               </span>
             )}
             {editing !== s.id && (
               <span className="flex flex-wrap gap-3 text-xs">
                 <button type="button" onClick={() => (setEditing(s.id), setRename(s.name))} className="text-brand-700 hover:underline dark:text-brand-400">
-                  Rename
+                  {t("Rename")}
                 </button>
                 {s.active && (
                   <button type="button" disabled={pending} onClick={() => run(() => saveStore(s.id, { dispensary: !s.dispensary }))} className="text-brand-700 hover:underline dark:text-brand-400">
-                    {s.dispensary ? "Stop dispensing from it" : "Dispense from it"}
+                    {t(s.dispensary ? "Stop dispensing from it" : "Dispense from it")}
                   </button>
                 )}
                 <button type="button" disabled={pending} onClick={() => run(() => saveStore(s.id, { active: !s.active }))} className={s.active ? "text-red-700 hover:underline dark:text-red-400" : "text-brand-700 hover:underline dark:text-brand-400"}>
-                  {s.active ? "Close" : "Reopen"}
+                  {t(s.active ? "Close" : "Reopen")}
                 </button>
               </span>
             )}
@@ -65,9 +67,9 @@ export function StoresPanel({ stores }: { stores: Store[] }) {
         ))}
       </ul>
       <div className="flex flex-wrap items-center gap-3">
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New store, e.g. Ward 1" aria-label="New store name" className={`${inputClass} w-56`} />
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("New store, e.g. Ward 1")} aria-label={t("New store name")} className={`${inputClass} w-56`} />
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={dispensary} onChange={(e) => setDispensary(e.target.checked)} /> Dispenses to patients
+          <input type="checkbox" checked={dispensary} onChange={(e) => setDispensary(e.target.checked)} /> {t("Dispenses to patients")}
         </label>
         <button
           type="button"
@@ -75,7 +77,7 @@ export function StoresPanel({ stores }: { stores: Store[] }) {
           onClick={() => run(() => saveStore(null, { name: name.trim(), dispensary }), () => (setName(""), setDispensary(false)))}
           className={secondaryButtonClass}
         >
-          Add store
+          {t("Add store")}
         </button>
       </div>
     </div>

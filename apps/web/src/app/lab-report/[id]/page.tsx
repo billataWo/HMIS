@@ -5,6 +5,9 @@ import { FLAG_TEXT, isAbnormal, rangeText } from "@/components/lab-result";
 import { api, ApiError, type LabOrder, type LabReport } from "@/lib/api";
 import { ageText, formatDualDate, formatTime, fullName } from "@/lib/format";
 import { specimenShort } from "@/lib/specimens";
+// i18n: english-only — the lab report is a clinical record printed in English; only the Print
+// button follows the screen's language.
+import { LangBoundary } from "@/components/lang-boundary";
 import { PrintButton } from "@/components/print-button";
 
 /** A corrected result says so on paper: when, what it was, and why. */
@@ -144,7 +147,9 @@ async function Report({ params }: { params: Promise<{ id: string }> }) {
         <span>Verified by: {verifiers.join(", ") || "—"}</span>
         <span>Signature: ____________________</span>
       </footer>
-      <PrintButton />
+      <LangBoundary>
+        <PrintButton />
+      </LangBoundary>
     </div>
   );
 }
@@ -152,7 +157,7 @@ async function Report({ params }: { params: Promise<{ id: string }> }) {
 export default function LabReportPage({ params }: PageProps<"/lab-report/[id]">) {
   return (
     <main className="flex-1 bg-white px-4 py-6">
-      <Suspense fallback={<p className="text-center text-sm">Loading…</p>}>
+      <Suspense fallback={<p className="text-center text-sm">…</p>}>
         <Report params={params} />
       </Suspense>
     </main>

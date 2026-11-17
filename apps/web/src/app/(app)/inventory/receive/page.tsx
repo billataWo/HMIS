@@ -1,5 +1,7 @@
 import { Suspense } from "react";
-import { PageHeader, Skeleton } from "@/components/ui";
+import { PageTitle } from "@/components/page-title";
+import { Skeleton } from "@/components/ui";
+import { getT } from "@/lib/lang";
 import { api, ApiError, type DrugOption, type DrugStock, type PurchaseOrder, type Store, type Supplier } from "@/lib/api";
 import { clinicToday, shiftDay } from "@/lib/format";
 import { ReceiveForm } from "./receive-form";
@@ -11,7 +13,7 @@ async function Receive({ searchParams }: { searchParams: Promise<{ drug?: string
   try {
     [suppliers, stores] = await Promise.all([api<Supplier[]>("/suppliers"), api<{ multiStore: boolean; stores: Store[] }>("/stores")]);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">Only pharmacists and admins receive stock.</p>;
+    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{(await getT())("Only pharmacists and admins receive stock.")}</p>;
     throw e;
   }
   let preset: DrugOption | undefined;
@@ -51,7 +53,7 @@ async function Receive({ searchParams }: { searchParams: Promise<{ drug?: string
 export default function ReceivePage({ searchParams }: PageProps<"/inventory/receive">) {
   return (
     <>
-      <PageHeader title="Receive stock" subtitle="Record a delivery: one line per batch" />
+      <PageTitle title="Receive stock" subtitle="Record a delivery: one line per batch" />
       <Suspense fallback={<Skeleton className="h-64" />}>
         <Receive searchParams={searchParams as Promise<{ drug?: string; po?: string }>} />
       </Suspense>

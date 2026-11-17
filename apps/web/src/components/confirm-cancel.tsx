@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useT } from "./lang-provider";
 
 const quiet = "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50";
 
@@ -29,6 +30,7 @@ export function ConfirmCancel({
 }) {
   const [asking, setAsking] = useState(false);
   const keep = useRef<HTMLButtonElement>(null);
+  const t = useT();
   useEffect(() => {
     if (asking) keep.current?.focus();
   }, [asking]);
@@ -41,7 +43,7 @@ export function ConfirmCancel({
         onClick={() => setAsking(true)}
         className={`${quiet} text-red-700 hover:bg-red-50 focus-visible:outline-red-600 dark:text-red-300 dark:hover:bg-red-950/50`}
       >
-        {label}
+        {t(label)}
       </button>
     );
   }
@@ -59,26 +61,26 @@ export function ConfirmCancel({
       }
       className={`${quiet} bg-red-600 text-white hover:bg-red-700 focus-visible:outline-red-600`}
     >
-      {yes}
+      {t(yes)}
     </button>
   );
   const body = (
     <>
-      <span className="font-medium text-red-800 dark:text-red-200">{question}</span>
+      <span className="font-medium text-red-800 dark:text-red-200">{t(question)}</span>
       {yesButton}
       <button ref={keep} type="button" onClick={() => setAsking(false)} className={`${quiet} text-slate-700 hover:bg-white focus-visible:outline-brand-600 dark:text-slate-200 dark:hover:bg-slate-800`}>
-        {no}
+        {t(no)}
       </button>
     </>
   );
   const box = "inline-flex flex-wrap items-center gap-2 rounded-lg bg-red-50 py-1 pr-1 pl-3 text-xs dark:bg-red-950/50";
   const escape = (e: React.KeyboardEvent) => e.key === "Escape" && setAsking(false);
   return action ? (
-    <form action={action} onKeyDown={escape} className={box} role="group" aria-label={question}>
+    <form action={action} onKeyDown={escape} className={box} role="group" aria-label={t(question)}>
       {body}
     </form>
   ) : (
-    <div onKeyDown={escape} className={box} role="group" aria-label={question}>
+    <div onKeyDown={escape} className={box} role="group" aria-label={t(question)}>
       {body}
     </div>
   );

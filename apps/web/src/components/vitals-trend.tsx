@@ -1,4 +1,7 @@
+"use client";
+
 import type { VitalsRow } from "@/lib/api";
+import { useT } from "./lang-provider";
 
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit", timeZone: "Africa/Addis_Ababa" });
 
@@ -7,19 +10,20 @@ const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "n
  * is the weight changing? High blood pressure (≥ 140/90) is marked.
  */
 export function VitalsTrend({ rows }: { rows: VitalsRow[] }) {
+  const t = useT();
   if (rows.length < 2) return null;
   const high = (r: VitalsRow) => (r.systolicBp ?? 0) >= 140 || (r.diastolicBp ?? 0) >= 90;
   return (
     <section className="surface space-y-2 p-4 text-sm dark:border-slate-800">
-      <h2 className="font-semibold">Vitals over time</h2>
+      <h2 className="font-semibold">{t("Vitals over time")}</h2>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs">
           <thead className="text-slate-500">
             <tr>
-              <th className="py-1 pr-2 font-medium">Visit</th>
-              <th className="py-1 pr-2 text-right font-medium">BP</th>
-              <th className="py-1 pr-2 text-right font-medium">Pulse</th>
-              <th className="py-1 text-right font-medium">Weight</th>
+              <th className="py-1 pr-2 font-medium">{t("Visit")}</th>
+              <th className="py-1 pr-2 text-right font-medium">{t("BP")}</th>
+              <th className="py-1 pr-2 text-right font-medium">{t("Pulse")}</th>
+              <th className="py-1 text-right font-medium">{t("Weight")}</th>
             </tr>
           </thead>
           <tbody className="tabular-nums">

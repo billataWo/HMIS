@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+// i18n: english-only — certificates and referral letters go to employers and hospitals in
+// English; only the Print button follows the screen's language.
+import { LangBoundary } from "@/components/lang-boundary";
 import { PrintButton } from "@/components/print-button";
 import { api, ApiError, type ClinicalDocumentDetail } from "@/lib/api";
 import { ageText, formatDualDate, fullName, shiftDay } from "@/lib/format";
@@ -102,7 +105,9 @@ async function Document({ params }: { params: Promise<{ id: string }> }) {
         <span>Dr. {String(data.issuedBy ?? "")}</span>
         <span>Signature and stamp: ____________________</span>
       </footer>
-      <PrintButton />
+      <LangBoundary>
+        <PrintButton />
+      </LangBoundary>
     </div>
   );
 }
@@ -110,7 +115,7 @@ async function Document({ params }: { params: Promise<{ id: string }> }) {
 export default function DocumentPage({ params }: PageProps<"/document/[id]">) {
   return (
     <main className="flex-1 bg-white px-4 py-6">
-      <Suspense fallback={<p className="text-center text-sm">Loading…</p>}>
+      <Suspense fallback={<p className="text-center text-sm">…</p>}>
         <Document params={params} />
       </Suspense>
     </main>

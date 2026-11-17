@@ -101,7 +101,7 @@ async function HomeContent() {
               <h3 className="mt-4 font-semibold text-slate-900 dark:text-white">
                 {lang === "am" ? m.nameAm : m.name} <span className="text-sm font-normal text-slate-500">{lang === "am" ? m.name : m.nameAm}</span>
               </h3>
-              <p className="mt-1 text-sm leading-relaxed text-slate-500 dark:text-slate-400">{m.desc}</p>
+              <p className="mt-1 text-sm leading-relaxed text-slate-500 dark:text-slate-400">{tr(lang, m.desc)}</p>
             </Link>
           </StaggerCell>
         ))}

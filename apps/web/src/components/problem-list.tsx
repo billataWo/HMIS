@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { addProblem, setProblemStatus } from "@/app/actions";
 import type { PatientProblem } from "@/lib/api";
+import { useT } from "./lang-provider";
 import { Alert, buttonClass, inputClass, secondaryButtonClass } from "./ui";
 
 const small = "px-2.5 py-1 text-xs";
@@ -28,6 +29,7 @@ export function ProblemList({
   const [adding, setAdding] = useState(false);
   const [label, setLabel] = useState("");
   const [since, setSince] = useState("");
+  const t = useT();
   const active = problems.filter((p) => p.status === "ACTIVE");
   const resolved = problems.filter((p) => p.status === "RESOLVED");
   const listed = (d: { icd11Code: string; label: string }) => active.some((p) => p.icd11Code === d.icd11Code || p.label.toLowerCase() === d.label.toLowerCase());
@@ -47,16 +49,16 @@ export function ProblemList({
   return (
     <section id="problems" className="surface scroll-mt-6 space-y-2 p-4 text-sm dark:border-slate-800">
       <div className="flex items-baseline justify-between gap-2">
-        <h2 className="font-semibold">Problem list</h2>
+        <h2 className="font-semibold">{t("Problem list")}</h2>
         {canEdit && !adding && (
           <button type="button" onClick={() => setAdding(true)} className="text-xs text-brand-700 hover:underline dark:text-brand-400">
-            Add
+            {t("Add")}
           </button>
         )}
       </div>
-      {error && <Alert>{error}</Alert>}
+      {error && <Alert>{t(error)}</Alert>}
       {active.length === 0 ? (
-        <p className="text-slate-500">No long-term conditions recorded.</p>
+        <p className="text-slate-500">{t("No long-term conditions recorded.")}</p>
       ) : (
         <ul className="space-y-1.5">
           {active.map((p) => (
@@ -64,11 +66,11 @@ export function ProblemList({
               <span>
                 <span className="font-medium">{p.label}</span>
                 {p.icd11Code && <span className="font-mono text-xs text-slate-500"> {p.icd11Code}</span>}
-                {p.since && <span className="text-xs text-slate-500"> · since {p.since.slice(0, 4)}</span>}
+                {p.since && <span className="text-xs text-slate-500"> · {t("since {year}", { year: p.since.slice(0, 4) })}</span>}
               </span>
               {canEdit && (
                 <button type="button" disabled={pending} onClick={() => start(() => setProblemStatus(p.id, "RESOLVED"))} className="text-xs text-slate-500 hover:underline">
-                  Resolved
+                  {t("Resolved")}
                 </button>
               )}
             </li>
@@ -77,7 +79,7 @@ export function ProblemList({
       )}
       {canEdit && offer.length > 0 && (
         <div className="space-y-1 border-t border-slate-100 pt-2 dark:border-slate-800">
-          <p className="text-xs text-slate-500">Today&apos;s diagnosis is a long-term condition?</p>
+          <p className="text-xs text-slate-500">{t("Today's diagnosis is a long-term condition?")}</p>
           {offer.map((d) => (
             <button
               key={d.icd11Code}
@@ -93,31 +95,31 @@ export function ProblemList({
       )}
       {adding && (
         <div className="space-y-2 border-t border-slate-100 pt-2 dark:border-slate-800">
-          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Condition (e.g. Epilepsy)" aria-label="Condition" className={inputClass} />
+          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t("Condition (e.g. Epilepsy)")} aria-label={t("Condition")} className={inputClass} />
           <label className="flex items-center gap-2 text-xs text-slate-500">
-            Since
-            <input type="date" value={since} onChange={(e) => setSince(e.target.value)} aria-label="Since" className={`${inputClass} w-auto py-1`} />
+            {t("Since")}
+            <input type="date" value={since} onChange={(e) => setSince(e.target.value)} aria-label={t("Since")} className={`${inputClass} w-auto py-1`} />
           </label>
           <div className="flex gap-2">
             <button type="button" disabled={pending || label.trim().length < 2} onClick={() => add({ label: label.trim(), since: since || null })} className={`${buttonClass} ${small}`}>
-              Add to list
+              {t("Add to list")}
             </button>
             <button type="button" onClick={() => setAdding(false)} className={`${secondaryButtonClass} ${small}`}>
-              Cancel
+              {t("Cancel")}
             </button>
           </div>
         </div>
       )}
       {resolved.length > 0 && (
         <details className="text-xs text-slate-500">
-          <summary className="cursor-pointer">Resolved ({resolved.length})</summary>
+          <summary className="cursor-pointer">{t("Resolved ({n})", { n: resolved.length })}</summary>
           <ul className="mt-1 space-y-1">
             {resolved.map((p) => (
               <li key={p.id} className="flex items-baseline justify-between gap-2">
                 <span className="line-through">{p.label}</span>
                 {canEdit && (
                   <button type="button" disabled={pending} onClick={() => start(() => setProblemStatus(p.id, "ACTIVE"))} className="hover:underline">
-                    Active again
+                    {t("Active again")}
                   </button>
                 )}
               </li>

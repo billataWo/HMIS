@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CANCEL_REASONS } from "@/lib/cancel-reasons";
+import { useT } from "./lang-provider";
 
 const quiet = "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50";
 
@@ -25,6 +26,7 @@ export function CancelVisit({
   reasons?: { value: string; label: string }[];
 }) {
   const [asking, setAsking] = useState(false);
+  const t = useT();
   const select = useRef<HTMLSelectElement>(null);
   useEffect(() => {
     if (asking) select.current?.focus();
@@ -33,7 +35,7 @@ export function CancelVisit({
   if (!asking) {
     return (
       <button type="button" onClick={() => setAsking(true)} className={`${quiet} text-red-700 hover:bg-red-50 focus-visible:outline-red-600 dark:text-red-300 dark:hover:bg-red-950/50`}>
-        {label}
+        {t(label)}
       </button>
     );
   }
@@ -42,25 +44,25 @@ export function CancelVisit({
       action={action}
       onKeyDown={(e) => e.key === "Escape" && setAsking(false)}
       role="group"
-      aria-label={question}
+      aria-label={t(question)}
       className="inline-flex flex-wrap items-center gap-2 rounded-lg bg-red-50 py-1 pr-1 pl-3 text-xs dark:bg-red-950/50"
     >
-      <span className="font-medium text-red-800 dark:text-red-200">{question}</span>
-      <select ref={select} name="reason" required defaultValue="" aria-label="Reason" className="rounded-md border border-red-200 bg-white px-2 py-1 text-xs dark:border-red-900 dark:bg-slate-900">
+      <span className="font-medium text-red-800 dark:text-red-200">{t(question)}</span>
+      <select ref={select} name="reason" required defaultValue="" aria-label={t("Reason")} className="rounded-md border border-red-200 bg-white px-2 py-1 text-xs dark:border-red-900 dark:bg-slate-900">
         <option value="" disabled>
-          Why?
+          {t("Why?")}
         </option>
         {reasons.map((r) => (
           <option key={r.value} value={r.value}>
-            {r.label}
+            {t(r.label)}
           </option>
         ))}
       </select>
       <button type="submit" className={`${quiet} bg-red-600 text-white hover:bg-red-700 focus-visible:outline-red-600`}>
-        {yes}
+        {t(yes)}
       </button>
       <button type="button" onClick={() => setAsking(false)} className={`${quiet} text-slate-700 hover:bg-white focus-visible:outline-brand-600 dark:text-slate-200 dark:hover:bg-slate-800`}>
-        {no}
+        {t(no)}
       </button>
     </form>
   );

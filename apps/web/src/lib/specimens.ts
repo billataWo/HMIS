@@ -17,5 +17,6 @@ export const SPECIMENS: Record<string, { label: string; short: string; cap: stri
   OTHER: { label: "Other", short: "Other", cap: "bg-slate-300" },
 };
 
-export const specimenLabel = (code: string | null | undefined) => (code ? (SPECIMENS[code]?.label ?? code) : null);
-export const specimenShort = (code: string | null | undefined) => (code ? (SPECIMENS[code]?.short ?? code) : null);
+/** In the screen's language when `t` is given (tube labels stay as printed). */
+export const specimenLabel = (code: string | null | undefined, t?: (s: string) => string) => (code ? (t ? t(SPECIMENS[code]?.label ?? code) : (SPECIMENS[code]?.label ?? code)) : null);
+export const specimenShort = (code: string | null | undefined, t?: (s: string) => string) => (code ? (t ? t(SPECIMENS[code]?.short ?? code) : (SPECIMENS[code]?.short ?? code)) : null);

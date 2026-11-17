@@ -4,6 +4,8 @@ import { LoaderCircle, Plus, TriangleAlert } from "lucide-react";
 import { useActionState, useRef, useState } from "react";
 import { saveConsultation, type FormState } from "@/app/actions";
 import { Reveal } from "@/components/motion";
+import { useT } from "@/components/lang-provider";
+import type { T } from "@/lib/i18n";
 import { Alert, Badge, buttonClass, Field, inputClass, Notice, secondaryButtonClass } from "@/components/ui";
 import type { VisitDetail, VisitStatus } from "@/lib/api";
 import { ageFrom } from "@/lib/format";
@@ -32,22 +34,25 @@ function monthsOld(dob: string | null, on: string) {
 }
 
 /** "9 weeks · due 12 Jun 2027" from the first day of the last period. */
-function gestation(lmp: string, on: string) {
+function gestation(lmp: string, on: string, t: T) {
   if (!lmp) return null;
   const start = new Date(`${lmp}T00:00:00Z`);
   const weeks = Math.floor((new Date(on).getTime() - start.getTime()) / (7 * 86_400_000));
   if (!Number.isFinite(weeks) || weeks < 0 || weeks > 44) return null;
   const due = new Date(start.getTime() + 280 * 86_400_000).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-  return `${weeks} weeks · due ${due}`;
+  return t("{n} weeks · due {date}", { n: weeks, date: due });
 }
 
 // Quick-insert text for common normal findings; the doctor edits from there.
+// i18n-ignore-start: the inserted text goes into the clinical notes, which are written in English
+// (the labels are translated where they are shown).
 const EXAM_TEMPLATES: { label: string; text: string }[] = [
   { label: "General: normal", text: "Alert, not in distress. No pallor, no jaundice, no lymphadenopathy." },
   { label: "Chest: normal", text: "Chest: clear, good air entry bilaterally, no added sounds." },
   { label: "CVS: normal", text: "CVS: S1 S2 heard, no murmur." },
   { label: "Abdomen: normal", text: "Abdomen: soft, non-tender, no organomegaly." },
 ];
+// i18n-ignore-end
 
 type CaseTemplate = { label: string; complaint: string; history: string; examination: string; plan: string };
 
@@ -157,7 +162,9 @@ export function ConsultationForm({
   open: { lab: boolean; rx: boolean; diagnosed: boolean };
 }) {
   const [state, action, pending] = useActionState<FormState, FormData>(saveConsultation, {});
-  const err = state.fieldErrors ?? {};
+  const t = useT();
+  const fe = state.fieldErrors ?? {};
+  const err = Object.fromEntries(Object.entries(fe).map(([k, m]) => [k, m ? t(m) : m]));
   // After a failed save, show what was typed (React resets uncontrolled fields after an action).
   const initial = (k: keyof VisitDetail) => {
     if (state.error && state.values && k in state.values) return state.values[k as string];
@@ -187,12 +194,12 @@ export function ConsultationForm({
   const history = useRef<HTMLTextAreaElement>(null);
   const plan = useRef<HTMLTextAreaElement>(null);
   // Fills empty fields and adds to the end of fields already started, so nothing typed is lost.
-  const applyTemplate = (t: CaseTemplate) => {
+  const applyTemplate = (tpl: CaseTemplate) => {
     for (const [ref, text] of [
-      [complaint, t.complaint],
-      [history, t.history],
-      [exam, t.examination],
-      [plan, t.plan],
+      [complaint, tpl.complaint],
+      [history, tpl.history],
+      [exam, tpl.examination],
+      [plan, tpl.plan],
     ] as const) {
       const el = ref.current;
       if (el) el.value = el.value.trim() ? `${el.value.trimEnd()}\n${text}` : text;
@@ -210,16 +217,16 @@ export function ConsultationForm({
   return (
     <form action={action} className="space-y-6">
       <input type="hidden" name="visitId" value={visit.id} />
-      {state.error && <Alert>{state.error}</Alert>}
+      {state.error && <Alert>{t(state.error)}</Alert>}
       <Reveal show={!!state.ok && !pending}>
-        <Notice tone="success">Saved.</Notice>
+        <Notice tone="success">{t("Saved.")}</Notice>
       </Reveal>
 
       <section className="surface p-5">
-        <h2 className="mb-4 font-semibold text-slate-900 dark:text-white">Vitals</h2>
+        <h2 className="mb-4 font-semibold text-slate-900 dark:text-white">{t("Vitals")}</h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {VITALS.filter((f) => f.name !== "muacMm" || showMuac).map((f) => (
-            <Field key={f.name} label={`${f.label} (${f.unit})`} error={err[f.name]}>
+            <Field key={f.name} label={`${t(f.label)} (${f.unit})`} error={err[f.name]}>
               <>
               <input
                 name={f.name}
@@ -233,7 +240,7 @@ export function ConsultationForm({
                 onChange={(e) => {
                   if (f.name === "weightKg") setWeight(e.target.value);
                   else if (f.name === "heightCm") setHeight(e.target.value);
-                  else setTyped((t) => ({ ...t, [f.name]: e.target.value }));
+                  else setTyped((was) => ({ ...was, [f.name]: e.target.value }));
                 }}
                 aria-describedby={flagOf(f.name) ? `${f.name}-flag` : undefined}
                 className={`${inputClass} ${
@@ -249,7 +256,7 @@ export function ConsultationForm({
                   }`}
                 >
                   <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
-                  {flagOf(f.name)!.text}
+                  {t(flagOf(f.name)!.text)}
                 </span>
               )}
               </>
@@ -258,22 +265,22 @@ export function ConsultationForm({
         </div>
         {!adult && ageMonths !== null && (
           <p className="mt-3 text-xs text-slate-500">
-            A child ({ageMonths < 24 ? `${ageMonths} months` : `${Math.floor(ageMonths / 12)} years`}): flags use the usual ranges for this age.
+            {t("A child ({age}): flags use the usual ranges for this age.", { age: ageMonths < 24 ? t("{n} months", { n: ageMonths }) : t("{n} years", { n: Math.floor(ageMonths / 12) }) })}
           </p>
         )}
-        {ageMonths === null && <p className="mt-3 text-xs text-slate-500">Age unknown: only low oxygen is flagged automatically.</p>}
+        {ageMonths === null && <p className="mt-3 text-xs text-slate-500">{t("Age unknown: only low oxygen is flagged automatically.")}</p>}
         {bmi(weight, height) && (
           <p className="mt-3 flex flex-wrap items-center gap-2">
             <Badge tone="brand">BMI {bmi(weight, height)} kg/m²</Badge>
             {adult && bmiFlag(Number(bmi(weight, height))) && (
-              <Badge tone={bmiFlag(Number(bmi(weight, height)))!.urgent ? "danger" : "warning"}>{bmiFlag(Number(bmi(weight, height)))!.text}</Badge>
+              <Badge tone={bmiFlag(Number(bmi(weight, height)))!.urgent ? "danger" : "warning"}>{t(bmiFlag(Number(bmi(weight, height)))!.text)}</Badge>
             )}
           </p>
         )}
 
         {/* Triage priority: the queue is seen in this order (emergencies first). */}
         <fieldset className="mt-5 border-t border-slate-100 pt-4 dark:border-slate-800">
-          <legend className="text-sm font-medium">Triage priority</legend>
+          <legend className="text-sm font-medium">{t("Triage priority")}</legend>
           <div className="mt-2 flex flex-wrap gap-2">
             {(Object.keys(TRIAGE) as TriageLevel[]).map((l) => (
               <label
@@ -284,96 +291,98 @@ export function ConsultationForm({
               >
                 <input type="radio" name="triageLevel" value={l} checked={triage === l} onChange={() => setTriage(l)} className="sr-only" />
                 <span aria-hidden className={`inline-block size-2.5 rounded-full ${TRIAGE[l].tone.split(" ")[0]} ${triage === l ? "ring-2 ring-white" : ""}`} />
-                <span className="font-medium">{TRIAGE[l].label}</span>
-                <span className={`text-xs ${triage === l ? "opacity-90" : "text-slate-500"}`}>{TRIAGE[l].hint}</span>
+                <span className="font-medium">{t(TRIAGE[l].label)}</span>
+                <span className={`text-xs ${triage === l ? "opacity-90" : "text-slate-500"}`}>{t(TRIAGE[l].hint)}</span>
               </label>
             ))}
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            Suggested from the vitals: <span className="font-medium">{TRIAGE[suggestion.level].label}</span>
-            {suggestion.because && ` (${suggestion.because.toLowerCase()})`}. Look at the patient too: danger signs the vitals don&apos;t show come first.
+            {t.rich("Suggested from the vitals: {level}", { level: <span className="font-medium">{t(TRIAGE[suggestion.level].label)}</span> })}
+            {suggestion.because && ` (${t.lang === "am" ? t(suggestion.because) : suggestion.because.toLowerCase()})`}. {t("Look at the patient too: danger signs the vitals don't show come first.")}
           </p>
         </fieldset>
 
         {canBePregnant && (
           <fieldset className="mt-5 border-t border-slate-100 pt-4 dark:border-slate-800">
-            <legend className="text-sm font-medium">Pregnancy and breastfeeding</legend>
+            <legend className="text-sm font-medium">{t("Pregnancy and breastfeeding")}</legend>
             <div className="mt-2 flex flex-wrap items-end gap-3">
-              <Field label="Could she be pregnant?" error={err.pregnancyStatus}>
+              <Field label={t("Could she be pregnant?")} error={err.pregnancyStatus}>
                 <select name="pregnancyStatus" value={pregnancy} onChange={(e) => setPregnancy(e.target.value)} className={`${inputClass} block w-auto`}>
-                  <option value="">Not asked</option>
-                  <option value="NOT_PREGNANT">Not pregnant</option>
-                  <option value="POSSIBLE">Possibly (test pending)</option>
-                  <option value="PREGNANT">Pregnant</option>
+                  <option value="">{t("Not asked")}</option>
+                  <option value="NOT_PREGNANT">{t("Not pregnant")}</option>
+                  <option value="POSSIBLE">{t("Possibly (test pending)")}</option>
+                  <option value="PREGNANT">{t("Pregnant")}</option>
                 </select>
               </Field>
               {pregnancy === "PREGNANT" && (
-                <Field label="First day of last period" error={err.lmpDate}>
+                <Field label={t("First day of last period")} error={err.lmpDate}>
                   <input name="lmpDate" type="date" value={lmp} onChange={(e) => setLmp(e.target.value)} className={`${inputClass} block w-auto`} />
                 </Field>
               )}
-              {pregnancy === "PREGNANT" && gestation(lmp, visit.checkedInAt) && <Badge tone="violet">{gestation(lmp, visit.checkedInAt)}</Badge>}
+              {pregnancy === "PREGNANT" && gestation(lmp, visit.checkedInAt, t) && <Badge tone="violet">{gestation(lmp, visit.checkedInAt, t)}</Badge>}
               <label className="flex items-center gap-2 pb-2 text-sm">
                 <input type="hidden" name="breastfeedingAsked" value="1" />
-                <input type="checkbox" name="breastfeeding" checked={feeding} onChange={(e) => setFeeding(e.target.checked)} /> Breastfeeding
+                <input type="checkbox" name="breastfeeding" checked={feeding} onChange={(e) => setFeeding(e.target.checked)} /> {t("Breastfeeding")}
               </label>
             </div>
-            <p className="mt-2 text-xs text-slate-500">Prescriptions are checked against this: drugs to avoid in pregnancy or while breastfeeding are flagged.</p>
+            <p className="mt-2 text-xs text-slate-500">{t("Prescriptions are checked against this: drugs to avoid in pregnancy or while breastfeeding are flagged.")}</p>
           </fieldset>
         )}
       </section>
 
       <section className="surface space-y-4 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-semibold text-slate-900 dark:text-white">{mode === "doctor" ? "Clinical notes" : "Triage"}</h2>
+          <h2 className="font-semibold text-slate-900 dark:text-white">{t(mode === "doctor" ? "Clinical notes" : "Triage")}</h2>
           {mode === "doctor" && (
             <select
-              aria-label="Start from a template"
+              aria-label={t("Start from a template")}
               value=""
               onChange={(e) => {
-                const t = CASE_TEMPLATES.find((x) => x.label === e.target.value);
-                if (t) applyTemplate(t);
+                const tpl = CASE_TEMPLATES.find((x) => x.label === e.target.value);
+                if (tpl) applyTemplate(tpl);
               }}
               className={`${inputClass} w-auto py-1.5 text-xs`}
             >
-              <option value="">Start from a template…</option>
-              {CASE_TEMPLATES.map((t) => (
-                <option key={t.label}>{t.label}</option>
+              <option value="">{t("Start from a template…")}</option>
+              {CASE_TEMPLATES.map((tpl) => (
+                <option key={tpl.label} value={tpl.label}>
+                  {t(tpl.label)}
+                </option>
               ))}
             </select>
           )}
         </div>
-        <Field label="Chief complaint" error={err.chiefComplaint}>
+        <Field label={t("Chief complaint")} error={err.chiefComplaint}>
           <textarea ref={complaint} name="chiefComplaint" rows={2} defaultValue={initial("chiefComplaint")} className={inputClass} />
         </Field>
         {mode === "doctor" && (
           <>
-            <Field label="History" error={err.history}>
+            <Field label={t("History")} error={err.history}>
               <textarea ref={history} name="history" rows={4} defaultValue={initial("history")} className={inputClass} />
             </Field>
             <div className="space-y-1">
-              <Field label="Examination" error={err.examination}>
+              <Field label={t("Examination")} error={err.examination}>
                 <textarea ref={exam} name="examination" rows={4} defaultValue={initial("examination")} className={inputClass} />
               </Field>
               <div className="flex flex-wrap gap-2">
-                {EXAM_TEMPLATES.map((t) => (
+                {EXAM_TEMPLATES.map((tpl) => (
                   <button
-                    key={t.label}
+                    key={tpl.label}
                     type="button"
-                    onClick={() => insert(t.text)}
+                    onClick={() => insert(tpl.text)}
                     className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200 transition-colors hover:bg-brand-50 hover:text-brand-800 hover:ring-brand-600/20 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700"
                   >
                     <Plus aria-hidden className="size-3" />
-                    {t.label}
+                    {t(tpl.label)}
                   </button>
                 ))}
               </div>
             </div>
-            <Field label="Plan" error={err.plan}>
+            <Field label={t("Plan")} error={err.plan}>
               <textarea ref={plan} name="plan" rows={3} defaultValue={initial("plan")} className={inputClass} />
             </Field>
-            <Field label="Advice for the patient" error={err.patientAdvice} hint="In plain words: printed on the patient's visit summary">
-              <textarea name="patientAdvice" rows={2} defaultValue={initial("patientAdvice")} placeholder="e.g. Drink plenty of fluids. Less salt. Come back in 2 weeks." className={inputClass} />
+            <Field label={t("Advice for the patient")} error={err.patientAdvice} hint={t("In plain words: printed on the patient's visit summary")}>
+              <textarea name="patientAdvice" rows={2} defaultValue={initial("patientAdvice")} placeholder={t("e.g. Drink plenty of fluids. Less salt. Come back in 2 weeks.")} className={inputClass} />
             </Field>
           </>
         )}
@@ -382,12 +391,12 @@ export function ConsultationForm({
       {/* Stays in reach while scrolling a long consultation. */}
       <div className="sticky bottom-0 z-10 -mx-1 space-y-2 rounded-xl border border-slate-200 bg-white/90 p-3 shadow-raised backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/90">
         {/* Repeated here: the top of the form is usually scrolled out of view when these are pressed. */}
-        {state.error && !pending && <Alert>{state.error}</Alert>}
-        {state.ok && !pending && <Notice tone="success">Saved.</Notice>}
+        {state.error && !pending && <Alert>{t(state.error)}</Alert>}
+        {state.ok && !pending && <Notice tone="success">{t("Saved.")}</Notice>}
         <div className="flex flex-wrap items-start gap-2">
           <button type="submit" disabled={pending} className={steps.length ? secondaryButtonClass : buttonClass}>
             {pending && <LoaderCircle aria-hidden className="animate-spin" />}
-            {pending ? "Saving…" : mode === "nurse" ? "Save triage" : "Save"}
+            {pending ? t("Saving…") : mode === "nurse" ? t("Save triage") : t("Save")}
           </button>
           {steps.map((s) => (
             <span key={s.to} className="inline-flex flex-col">
@@ -399,11 +408,11 @@ export function ConsultationForm({
                 aria-describedby={s.blocked ? `need-${s.to}` : undefined}
                 className={s.primary && !s.blocked ? buttonClass : secondaryButtonClass}
               >
-                {s.label}
+                {t(s.label)}
               </button>
               {s.blocked && (
                 <a id={`need-${s.to}`} href={s.blocked.anchor} className="mt-1 text-xs text-amber-700 hover:underline dark:text-amber-400">
-                  {s.blocked.hint}
+                  {t(s.blocked.hint)}
                 </a>
               )}
             </span>

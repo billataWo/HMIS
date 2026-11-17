@@ -11,6 +11,8 @@ import { buttonClass, Notice, PageHeader, secondaryButtonClass, Skeleton } from 
 import { Flash } from "@/components/flash";
 import { api, ApiError, type ClinicalDocument, type LabHistoryOrder, type PatientProblem, type VitalsRow, type LabOrder, type LabTest, type Me, type Prescription, type ProcedureCharge, type Service, type VisitDetail } from "@/lib/api";
 import { ageText, etb, formatDualDate, formatDuration, formatTime, fullName } from "@/lib/format";
+import type { T } from "@/lib/i18n";
+import { getT } from "@/lib/lang";
 import { ConsultationForm } from "./consultation-form";
 import { Addenda } from "@/components/addenda";
 import { NotifiablePanel } from "@/components/notifiable-panel";
@@ -31,9 +33,9 @@ const VITAL_LABELS: [keyof VisitDetail, string, string][] = [
   ["heightCm", "Height", "cm"],
 ];
 
-function ReadOnly({ v }: { v: VisitDetail }) {
-  const vitals = VITAL_LABELS.filter(([k]) => v[k] !== null).map(([k, label, unit]) => `${label} ${v[k]}${unit}`);
-  if (v.systolicBp && v.diastolicBp) vitals.splice(1, 0, `BP ${v.systolicBp}/${v.diastolicBp}`);
+function ReadOnly({ v, t }: { v: VisitDetail; t: T }) {
+  const vitals = VITAL_LABELS.filter(([k]) => v[k] !== null).map(([k, label, unit]) => `${t(label)} ${v[k]}${unit}`);
+  if (v.systolicBp && v.diastolicBp) vitals.splice(1, 0, `${t("BP")} ${v.systolicBp}/${v.diastolicBp}`);
   const notes: [string, string | null][] = [
     ["Chief complaint", v.chiefComplaint],
     ["History", v.history],
@@ -44,12 +46,12 @@ function ReadOnly({ v }: { v: VisitDetail }) {
   return (
     <div className="space-y-4 text-sm">
       <p>
-        <span className="font-medium">Vitals: </span>
-        {vitals.length ? vitals.join(" · ") : <span className="text-slate-500">not recorded</span>}
+        <span className="font-medium">{t("Vitals")}: </span>
+        {vitals.length ? vitals.join(" · ") : <span className="text-slate-500">{t("not recorded")}</span>}
       </p>
       {notes.map(([label, text]) => (
         <div key={label}>
-          <h3 className="font-medium">{label}</h3>
+          <h3 className="font-medium">{t(label)}</h3>
           <p className="whitespace-pre-wrap text-slate-700 dark:text-slate-300">{text || <span className="text-slate-500">—</span>}</p>
         </div>
       ))}
@@ -58,7 +60,7 @@ function ReadOnly({ v }: { v: VisitDetail }) {
 }
 
 async function Visit({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string }> }) {
-  const [{ id }, flash] = await Promise.all([params, searchParams]);
+  const [{ id }, flash, t] = await Promise.all([params, searchParams, getT()]);
   const me = await api<Me>("/auth/me");
   let v: VisitDetail;
   let prescriptions: Prescription[];
@@ -80,7 +82,7 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) notFound();
     if (e instanceof ApiError && e.status === 403) {
-      return <p className="text-sm text-slate-500">Only doctors, nurses and admins can open consultation records.</p>;
+      return <p className="text-sm text-slate-500">{t("Only doctors, nurses and admins can open consultation records.")}</p>;
     }
     throw e;
   }
@@ -92,7 +94,7 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
   const mode = v.kind !== "OPD" ? null : me.role === "DOCTOR" ? "doctor" : me.role === "NURSE" ? "nurse" : null;
   // An emergency (triaged red) is seen before paying; the fee stays owed.
   const feeUnpaid = v.prepayment && !v.consultationPaid && v.triageLevel !== "RED";
-  const age = ageText(v.patient.dateOfBirth);
+  const age = ageText(v.patient.dateOfBirth, false, t);
   const returnTo = `/visits/${v.id}`;
   // The record beyond this visit: long-term conditions and how the vitals have moved.
   const clinical = ["ADMIN", "DOCTOR", "NURSE"].includes(me.role);
@@ -104,29 +106,29 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
     <>
       <PageHeader
         title={fullName(v.patient)}
-        subtitle={`${v.patient.mrn} · ${v.patient.sex === "MALE" ? "Male" : "Female"}${age !== null ? ` · ${age}` : ""} · queue number ${v.queueNumber}`}
+        subtitle={`${v.patient.mrn} · ${t(v.patient.sex === "MALE" ? "Male" : "Female")}${age !== null ? ` · ${age}` : ""} · ${t("queue number {n}", { n: v.queueNumber })}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge status={v.status} />
+            <StatusBadge status={v.status} lang={t.lang} />
             <Link href={`/patients/${v.patient.id}`} className={secondaryButtonClass}>
               <UserRound aria-hidden />
-              Patient record
+              {t("Patient record")}
             </Link>
             {clinical && v.kind === "OPD" && v.status !== "WAITING" && v.status !== "CANCELLED" && (
               <Link href={`/visit-summary/${v.id}`} target="_blank" className={secondaryButtonClass}>
                 <FileText aria-hidden />
-                Visit summary
+                {t("Visit summary")}
               </Link>
             )}
             {mode === "doctor" && (
               <Link href={`/appointments/new?patientId=${v.patient.id}`} className={secondaryButtonClass}>
                 <CalendarPlus aria-hidden />
-                Book follow-up
+                {t("Book follow-up")}
               </Link>
             )}
             <Link href="/queue" className={secondaryButtonClass}>
               <ListOrdered aria-hidden />
-              Queue
+              {t("Queue")}
             </Link>
           </div>
         }
@@ -142,10 +144,10 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
 
       <p className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500">
         <Clock aria-hidden className="size-4" />
-        {formatDualDate(v.checkedInAt)} · arrived {formatTime(v.checkedInAt)}
-        {v.calledAt && ` · seen after ${formatDuration(v.checkedInAt, v.calledAt)}`}
-        {v.doctor && ` · Dr. ${v.doctor.fullName}`}
-        {v.referredFrom && ` · referred from ${v.referredFrom}`}
+        {formatDualDate(v.checkedInAt)} · {t("arrived {time}", { time: formatTime(v.checkedInAt) })}
+        {v.calledAt && ` · ${t("seen after {time}", { time: formatDuration(v.checkedInAt, v.calledAt, t) })}`}
+        {v.doctor && ` · ${t("Dr. {name}", { name: v.doctor.fullName })}`}
+        {v.referredFrom && ` · ${t("referred from {place}", { place: v.referredFrom })}`}
       </p>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] xl:gap-8">
@@ -154,20 +156,20 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
           {v.notifiable && v.notifiable.length > 0 && (
             <NotifiablePanel visitId={v.id} items={v.notifiable} canReport={["ADMIN", "DOCTOR", "NURSE"].includes(me.role) && v.status !== "CANCELLED"} />
           )}
-          {v.kind === "WALK_IN" && <Notice tone="info">This is a pharmacy counter sale, not a consultation.</Notice>}
-          {v.kind === "LAB" && <Notice tone="info">This is a lab-only visit (tests without a consultation here).</Notice>}
+          {v.kind === "WALK_IN" && <Notice tone="info">{t("This is a pharmacy counter sale, not a consultation.")}</Notice>}
+          {v.kind === "LAB" && <Notice tone="info">{t("This is a lab-only visit (tests without a consultation here).")}</Notice>}
           {v.status === "WAITING" && mode === "doctor" && feeUnpaid && (
-            <Notice tone="warning">The consultation fee has not been paid yet. The patient can be called in once the cashier has taken it.</Notice>
+            <Notice tone="warning">{t("The consultation fee has not been paid yet. The patient can be called in once the cashier has taken it.")}</Notice>
           )}
           {Number(v.owed) > 0 && !feeUnpaid && v.status !== "WAITING" && (
-            <Notice tone="warning">The patient still has {etb(v.owed)} to pay at the cashier before leaving.</Notice>
+            <Notice tone="warning">{t("The patient still has {amount} to pay at the cashier before leaving.", { amount: etb(v.owed, t) })}</Notice>
           )}
           {v.status === "WAITING" && mode === "doctor" && !feeUnpaid && (
             <form action={moveVisit.bind(null, v.id, "IN_CONSULTATION", returnTo)}>
               <Notice tone="warning">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <span>This patient is still waiting. Call them in to start the consultation.</span>
-                  <button className={`${buttonClass} px-3 py-1.5 text-xs`}>Call in</button>
+                  <span>{t("This patient is still waiting. Call them in to start the consultation.")}</span>
+                  <button className={`${buttonClass} px-3 py-1.5 text-xs`}>{t("Call in")}</button>
                 </div>
               </Notice>
             </form>
@@ -176,8 +178,8 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
             <form action={moveVisit.bind(null, v.id, "IN_CONSULTATION", returnTo)}>
               <Notice tone="info">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <span>Sent to the pharmacy. The visit closes by itself once the drugs are dispensed.</span>
-                  <button className={`${secondaryButtonClass} px-3 py-1.5 text-xs`}>Resume consultation</button>
+                  <span>{t("Sent to the pharmacy. The visit closes by itself once the drugs are dispensed.")}</span>
+                  <button className={`${secondaryButtonClass} px-3 py-1.5 text-xs`}>{t("Resume consultation")}</button>
                 </div>
               </Notice>
             </form>
@@ -186,15 +188,15 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
             <form action={moveVisit.bind(null, v.id, "IN_CONSULTATION", returnTo)}>
               <Notice tone="info">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <span>Waiting for lab results.</span>
-                  <button className={`${secondaryButtonClass} px-3 py-1.5 text-xs`}>Results back: resume consultation</button>
+                  <span>{t("Waiting for lab results.")}</span>
+                  <button className={`${secondaryButtonClass} px-3 py-1.5 text-xs`}>{t("Results back: resume consultation")}</button>
                 </div>
               </Notice>
             </form>
           )}
 
           {closed || !mode ? (
-            <ReadOnly v={v} />
+            <ReadOnly v={v} t={t} />
           ) : (
             <ConsultationForm
               visit={v}
@@ -226,10 +228,10 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
           {clinical && <VitalsTrend rows={vitals} />}
           <h2 className="mb-3 flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
             <History aria-hidden className="size-4 text-slate-400" />
-            Previous visits
+            {t("Previous visits")}
           </h2>
           {v.previous.length === 0 ? (
-            <p className="text-sm text-slate-500">First visit at this clinic.</p>
+            <p className="text-sm text-slate-500">{t("First visit at this clinic.")}</p>
           ) : (
             <ul className="relative space-y-3 before:absolute before:top-2 before:bottom-2 before:left-1.75 before:w-px before:bg-slate-200 dark:before:bg-slate-800">
               {v.previous.map((p) => (
@@ -239,7 +241,7 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
                   <Link href={`/visits/${p.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-400">
                     {formatDualDate(p.checkedInAt)}
                   </Link>
-                  {p.doctor && <span className="text-slate-500"> · Dr. {p.doctor.fullName}</span>}
+                  {p.doctor && <span className="text-slate-500"> · {t("Dr. {name}", { name: p.doctor.fullName })}</span>}
                   {p.diagnoses.length > 0 && (
                     <p className="mt-1">{p.diagnoses.map((d) => `${d.label} (${d.icd11Code})`).join(", ")}</p>
                   )}
@@ -250,19 +252,19 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
                       <span>
                         {p.prescriptions
                           .flatMap((rx) => rx.items)
-                          .map((i) => `${[i.drug.genericName, i.drug.strength].filter(Boolean).join(" ")} · ${shortDirections(i)}`)
+                          .map((i) => `${[i.drug.genericName, i.drug.strength].filter(Boolean).join(" ")} · ${shortDirections(i, t)}`)
                           .join("; ")}
                       </span>
                     </p>
                   )}
                   {(p.systolicBp || p.weightKg) && (
                     <p className="mt-1 text-xs text-slate-500">
-                      {p.systolicBp && p.diastolicBp && `BP ${p.systolicBp}/${p.diastolicBp}`}
+                      {p.systolicBp && p.diastolicBp && `${t("BP")} ${p.systolicBp}/${p.diastolicBp}`}
                       {p.systolicBp && p.weightKg && " · "}
                       {p.weightKg && `${p.weightKg} kg`}
                     </p>
                   )}
-                  {p.plan && <p className="mt-1 text-xs text-slate-500">Plan: {p.plan}</p>}
+                  {p.plan && <p className="mt-1 text-xs text-slate-500">{t("Plan")}: {p.plan}</p>}
                   </div>
                 </li>
               ))}

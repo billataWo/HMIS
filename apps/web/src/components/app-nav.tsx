@@ -30,6 +30,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { logout, setLanguage } from "@/app/actions";
 import { type Lang, tr } from "@/lib/i18n";
+import { useT } from "./lang-provider";
 import type { Me, Role } from "@/lib/api";
 import { ROLE_LABELS } from "@/lib/format";
 import { DURATION, EASE } from "./motion";
@@ -102,6 +103,7 @@ function initials(name: string) {
 }
 
 function Brand({ me }: { me: Me }) {
+  const t = useT();
   return (
     <div className="flex items-center gap-3 px-2">
       <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand-700 text-white shadow-sm shadow-brand-900/20">
@@ -109,7 +111,7 @@ function Brand({ me }: { me: Me }) {
       </span>
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{me.tenant.name}</p>
-        <p className="truncate text-xs text-slate-500">{me.tenant.nameAm ?? "Clinic management"}</p>
+        <p className="truncate text-xs text-slate-500">{me.tenant.nameAm ?? t("Clinic management")}</p>
       </div>
     </div>
   );
@@ -119,7 +121,7 @@ function Brand({ me }: { me: Me }) {
 function NavLinks({ me, lang, layoutGroup, onNavigate }: { me: Me; lang: Lang; layoutGroup: string; onNavigate?: () => void }) {
   const current = activeHref(usePathname());
   return (
-    <nav aria-label="Main" className="space-y-5">
+    <nav aria-label={tr(lang, "Main menu")} className="space-y-5">
       {GROUPS.map((g, gi) => {
         const items = g.items.filter((i) => (!i.roles || i.roles.includes(me.role)) && (!i.feature || !me.features || me.features.includes(i.feature)));
         if (items.length === 0) return null;
@@ -179,7 +181,7 @@ function LanguageSwitch({ lang }: { lang: Lang }) {
     </form>
   );
   return (
-    <div className="mb-2 flex items-center justify-between px-1" aria-label="Language">
+    <div className="mb-2 flex items-center justify-between px-1" aria-label={tr(lang, "Language")}>
       <span className="text-xs text-slate-500">{tr(lang, "Language")}</span>
       <div className="flex gap-1">
         {option("en", "English")}
@@ -201,7 +203,7 @@ function UserCard({ me, lang }: { me: Me; lang: Lang }) {
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-slate-900 dark:text-white">{me.fullName}</p>
         <p className="truncate text-xs text-slate-500">
-          {ROLE_LABELS[me.role]} ·{" "}
+          {tr(lang, ROLE_LABELS[me.role] ?? me.role)} ·{" "}
           <Link href="/account/password" className="hover:text-brand-700 hover:underline">
             {tr(lang, "Password")}
           </Link>{" "}
@@ -228,6 +230,7 @@ function UserCard({ me, lang }: { me: Me; lang: Lang }) {
 
 export function AppNav({ me, lang }: { me: Me; lang: Lang }) {
   const [open, setOpen] = useState(false);
+  const t = useT();
 
   // Links close the menu themselves; Escape and the backdrop close it too.
   useEffect(() => {
@@ -252,7 +255,7 @@ export function AppNav({ me, lang }: { me: Me; lang: Lang }) {
         <QuickFindButton variant="icon" />
         <button
           onClick={() => setOpen(true)}
-          aria-label="Open menu"
+          aria-label={t("Open menu")}
           aria-expanded={open}
           className="grid size-11 place-items-center rounded-lg text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
         >
@@ -262,7 +265,7 @@ export function AppNav({ me, lang }: { me: Me; lang: Lang }) {
 
       <AnimatePresence>
         {open && (
-          <div className="fixed inset-0 z-50 md:hidden print:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+          <div className="fixed inset-0 z-50 md:hidden print:hidden" role="dialog" aria-modal="true" aria-label={t("Menu")}>
             <motion.div
               className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]"
               initial={{ opacity: 0 }}
@@ -280,7 +283,7 @@ export function AppNav({ me, lang }: { me: Me; lang: Lang }) {
                 <Brand me={me} />
                 <button
                   onClick={() => setOpen(false)}
-                  aria-label="Close menu"
+                  aria-label={t("Close menu")}
                   className="grid size-11 place-items-center rounded-lg text-slate-500 hover:bg-slate-200/70 dark:hover:bg-slate-800"
                 >
                   <X aria-hidden className="size-5" />

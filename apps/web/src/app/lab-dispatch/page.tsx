@@ -2,7 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+// i18n: english-only — the printed sheet goes with the courier to the reference lab; the controls
+// above it (print:hidden) follow the screen's language.
+import { LangBoundary } from "@/components/lang-boundary";
 import { PrintButton } from "@/components/print-button";
+import { getT } from "@/lib/lang";
 import { api, ApiError, type LabSendOuts, type LabWorkOrder } from "@/lib/api";
 import { ageText, formatDualDate, formatTime, fullName, shiftDay } from "@/lib/format";
 import { specimenShort } from "@/lib/specimens";
@@ -14,7 +18,7 @@ export const metadata: Metadata = { title: "Dispatch list" };
  * left, for whom, and who handed it over and received it. `?day=YYYY-MM-DD` (default today).
  */
 async function Dispatch({ searchParams }: { searchParams: Promise<{ day?: string }> }) {
-  const { day } = await searchParams;
+  const [{ day }, t] = await Promise.all([searchParams, getT()]);
   let d: LabSendOuts;
   try {
     d = await api<LabSendOuts>(`/lab/send-outs${day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? `?day=${day}` : ""}`);
@@ -28,17 +32,19 @@ async function Dispatch({ searchParams }: { searchParams: Promise<{ day?: string
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 text-sm text-black">
       <div className="space-y-2 font-sans print:hidden">
-        <PrintButton />
+        <LangBoundary>
+          <PrintButton />
+        </LangBoundary>
         <p className="flex justify-center gap-4 text-xs text-slate-500">
           <Link href={`/lab-dispatch?day=${shiftDay(d.day, -1)}`} className="underline">
-            ← day before
+            ← {t("day before")}
           </Link>
           <span>{formatDualDate(`${d.day}T12:00:00+03:00`)}</span>
           <Link href={`/lab-dispatch?day=${shiftDay(d.day, 1)}`} className="underline">
-            day after →
+            {t("day after")} →
           </Link>
         </p>
-        {byLab.size === 0 && <p className="text-center text-slate-500">No samples were sent out on this day.</p>}
+        {byLab.size === 0 && <p className="text-center text-slate-500">{t("No samples were sent out on this day.")}</p>}
       </div>
 
       {[...byLab.entries()].map(([lab, orders]) => (
@@ -103,7 +109,7 @@ async function Dispatch({ searchParams }: { searchParams: Promise<{ day?: string
 export default function DispatchPage({ searchParams }: { searchParams: Promise<{ day?: string }> }) {
   return (
     <main className="flex-1 bg-white px-4 py-6 print:p-0">
-      <Suspense fallback={<p className="text-center text-sm">Loading…</p>}>
+      <Suspense fallback={<p className="text-center text-sm">…</p>}>
         <Dispatch searchParams={searchParams} />
       </Suspense>
     </main>

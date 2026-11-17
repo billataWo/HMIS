@@ -9,6 +9,7 @@ import type { NewDrug } from "@/lib/api";
 import { csvCell, money, parseCsv } from "@/lib/csv";
 import { FORMS } from "../../inventory-forms";
 import { ControlledBadge } from "@/components/controlled-badge";
+import { useT } from "@/components/lang-provider";
 
 /** Column headings people actually use, in any case or spacing, mapped to the drug's fields. */
 const HEADINGS: Record<string, keyof NewDrug> = {
@@ -65,7 +66,7 @@ function readRows(text: string): { rows: Row[]; unknown: string[]; missing: stri
     const name = get("genericName");
     if (name.length < 2) problems.push("no generic name");
     const form = get("form").toLowerCase();
-    if (!FORMS.includes(form)) problems.push(form ? `form "${get("form")}" is not one of: ${FORMS.join(", ")}` : "no form");
+    if (!FORMS.includes(form)) problems.push(form ? `form "${get("form")}": ${FORMS.join(", ")}` : "no form");
     const unit = get("unit");
     if (!unit) problems.push("no unit");
     const priceText = money(get("sellPrice"));
@@ -77,7 +78,7 @@ function readRows(text: string): { rows: Row[]; unknown: string[]; missing: stri
     const ctl = get("controlled").toLowerCase();
     const controlled: NewDrug["controlled"] | undefined =
       !ctl || ["no", "n/a", "-"].includes(ctl) ? null : /^narc/.test(ctl) ? "NARCOTIC" : /^psych/.test(ctl) ? "PSYCHOTROPIC" : undefined;
-    if (controlled === undefined) problems.push(`controlled "${get("controlled")}" should be narcotic, psychotropic or empty`);
+    if (controlled === undefined) problems.push(`controlled "${get("controlled")}": narcotic, psychotropic, —`);
     const packText = get("packSize");
     const packSize = packText ? Number(packText) : null;
     if (packSize !== null && (!Number.isInteger(packSize) || packSize < 2)) problems.push("units per pack must be a whole number of 2 or more");
@@ -112,13 +113,14 @@ export function DrugImport() {
   const [pending, start] = useTransition();
   const good = data?.rows.filter((r) => r.drug) ?? [];
   const bad = data?.rows.filter((r) => !r.drug) ?? [];
+  const t = useT();
 
   const load = async (f: File | undefined) => {
     setError(undefined);
     setDone(undefined);
     if (!f) return;
     if (!/\.csv$/i.test(f.name) && f.type !== "text/csv") {
-      setError("Save the spreadsheet as CSV first (Excel: File → Save As → CSV UTF-8), then choose that file.");
+      setError(t("Save the spreadsheet as CSV first (Excel: File → Save As → CSV UTF-8), then choose that file."));
       setData(undefined);
       return;
     }
@@ -135,8 +137,8 @@ export function DrugImport() {
         const res = await importDrugs(chunk.map((r) => r.drug!));
         if ("error" in res) {
           // Map the server's row numbers (in what was sent) back to the file's lines.
-          const lines = Object.entries(res.rows ?? {}).map(([i, msg]) => `line ${chunk[Number(i)]?.line}: ${msg}`);
-          setError([res.error, ...lines, total.created.length ? `(${total.created.length} drugs before it were added.)` : ""].join(" "));
+          const lines = Object.entries(res.rows ?? {}).map(([i, msg]) => t("line {n}: {problem}", { n: chunk[Number(i)]?.line ?? "", problem: t(msg) }));
+          setError([t(res.error), ...lines, total.created.length ? t("({n} drugs before it were added.)", { n: total.created.length }) : ""].join(" "));
           return;
         }
         total.created.push(...res.created);
@@ -152,30 +154,31 @@ export function DrugImport() {
       <section className="surface space-y-3 p-5 text-sm">
         <ol className="list-decimal space-y-1.5 pl-5 text-slate-700 dark:text-slate-300">
           <li>
-            Put one drug per row with these columns: <strong>Generic name, Form, Unit, Price per unit</strong>, and if you have them Brand name,
-            Class, Strength, Reorder level, Pack, Units per pack, Controlled (narcotic or psychotropic).{" "}
+            {t.rich("Put one drug per row with these columns: {required}, and if you have them Brand name, Class, Strength, Reorder level, Pack, Units per pack, Controlled (narcotic or psychotropic).", {
+              required: <strong>Generic name, Form, Unit, Price per unit</strong>,
+            })}{" "}
             <a href={templateHref} download="hmis-drug-list.csv" className={`${linkClass} inline-flex items-center gap-1`}>
               <Download aria-hidden className="size-3.5" />
-              Download a template
+              {t("Download a template")}
             </a>
           </li>
-          <li>Form is one of: {FORMS.join(", ")}. Prices are in ETB per unit (per tablet, per bottle).</li>
-          <li>In Excel choose File → Save As → CSV UTF-8; in Google Sheets File → Download → CSV. Then choose the file below.</li>
+          <li>{t("Form is one of: {list}. Prices are in ETB per unit (per tablet, per bottle).", { list: FORMS.join(", ") })}</li>
+          <li>{t("In Excel choose File → Save As → CSV UTF-8; in Google Sheets File → Download → CSV. Then choose the file below.")}</li>
         </ol>
         <label className={`${secondaryButtonClass} cursor-pointer`}>
           <FileUp aria-hidden />
-          {file ? `Choose another file (${file})` : "Choose CSV file"}
-          <input type="file" accept=".csv,text/csv" className="sr-only" onChange={(e) => load(e.target.files?.[0])} aria-label="CSV file" />
+          {file ? t("Choose another file ({file})", { file }) : t("Choose CSV file")}
+          <input type="file" accept=".csv,text/csv" className="sr-only" onChange={(e) => load(e.target.files?.[0])} aria-label={t("CSV file")} />
         </label>
       </section>
 
       {error && <Alert>{error}</Alert>}
       {done && (
         <Notice tone="success">
-          Added {done.created.length} {done.created.length === 1 ? "drug" : "drugs"}
-          {done.skipped.length > 0 && `; ${done.skipped.length} were already in your list and were left as they are`}.{" "}
+          {t(done.created.length === 1 ? "Added {n} drug." : "Added {n} drugs.", { n: done.created.length })}
+          {done.skipped.length > 0 && ` ${t("{n} were already in your list and were left as they are.", { n: done.skipped.length })}`}{" "}
           <Link href="/inventory" className="font-medium underline">
-            See the inventory
+            {t("See the inventory")}
           </Link>
         </Notice>
       )}
@@ -184,26 +187,27 @@ export function DrugImport() {
         <section className="space-y-3">
           {data.missing.length > 0 && (
             <Alert>
-              The file has no column for: {data.missing.map((m) => ({ genericName: "Generic name", form: "Form", unit: "Unit", sellPrice: "Price per unit" })[m as string]).join(", ")}.
-              Check the first row holds the column headings.
+              {t("The file has no column for: {list}. Check the first row holds the column headings.", {
+                list: data.missing.map((m) => ({ genericName: "Generic name", form: "Form", unit: "Unit", sellPrice: "Price per unit" })[m as string]).join(", "),
+              })}
             </Alert>
           )}
-          {data.unknown.length > 0 && <p className="text-xs text-slate-500">Columns not used: {data.unknown.join(", ")}</p>}
+          {data.unknown.length > 0 && <p className="text-xs text-slate-500">{t("Columns not used: {list}", { list: data.unknown.join(", ") })}</p>}
           <p className="flex flex-wrap items-center gap-2 text-sm">
-            <Badge tone="success">{good.length} ready</Badge>
-            {bad.length > 0 && <Badge tone="danger">{bad.length} need fixing in the file</Badge>}
-            <span className="text-slate-500">Drugs already in your list are skipped.</span>
+            <Badge tone="success">{t("{n} ready", { n: good.length })}</Badge>
+            {bad.length > 0 && <Badge tone="danger">{t("{n} need fixing in the file", { n: bad.length })}</Badge>}
+            <span className="text-slate-500">{t("Drugs already in your list are skipped.")}</span>
           </p>
           <div className="surface max-h-112 overflow-auto">
             <table className="w-full text-left text-sm">
               <thead className="sticky top-0 bg-slate-50 text-xs text-slate-500 dark:bg-slate-900">
                 <tr>
-                  <th className="px-3 py-2 font-medium">Line</th>
-                  <th className="px-3 py-2 font-medium">Drug</th>
-                  <th className="px-3 py-2 font-medium">Unit</th>
-                  <th className="px-3 py-2 text-right font-medium">Price</th>
-                  <th className="px-3 py-2 font-medium">Pack</th>
-                  <th className="px-3 py-2 font-medium">Check</th>
+                  <th className="px-3 py-2 font-medium">{t("Line")}</th>
+                  <th className="px-3 py-2 font-medium">{t("Drug")}</th>
+                  <th className="px-3 py-2 font-medium">{t("Unit")}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t("Price")}</th>
+                  <th className="px-3 py-2 font-medium">{t("Pack")}</th>
+                  <th className="px-3 py-2 font-medium">{t("Check")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -222,9 +226,9 @@ export function DrugImport() {
                     </td>
                     <td className="px-3 py-1.5">{r.drug?.unit}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{r.drug ? r.drug.sellPrice.toFixed(2) : ""}</td>
-                    <td className="px-3 py-1.5 whitespace-nowrap text-slate-500">{r.drug?.packSize ? `${r.drug.packName} of ${r.drug.packSize}` : ""}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap text-slate-500">{r.drug?.packSize ? t("{pack} of {n}", { pack: r.drug.packName ?? "", n: r.drug.packSize }) : ""}</td>
                     <td className="px-3 py-1.5">
-                      {r.drug ? <span className="text-emerald-700 dark:text-emerald-400">OK</span> : <span className="text-red-700 dark:text-red-400">{r.problems.join("; ")}</span>}
+                      {r.drug ? <span className="text-emerald-700 dark:text-emerald-400">OK</span> : <span className="text-red-700 dark:text-red-400">{r.problems.map((p) => t(p)).join("; ")}</span>}
                     </td>
                   </tr>
                 ))}
@@ -232,7 +236,7 @@ export function DrugImport() {
             </table>
           </div>
           <button type="button" disabled={pending || good.length === 0 || data.missing.length > 0} onClick={submit} className={buttonClass}>
-            {pending ? "Importing…" : `Import ${good.length} ${good.length === 1 ? "drug" : "drugs"}`}
+            {pending ? t("Importing…") : t(good.length === 1 ? "Import {n} drug" : "Import {n} drugs", { n: good.length })}
           </button>
         </section>
       )}

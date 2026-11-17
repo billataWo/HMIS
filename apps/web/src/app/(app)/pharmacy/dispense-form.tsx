@@ -3,7 +3,9 @@
 import { ControlledBadge } from "@/components/controlled-badge";
 import { useActionState, useState } from "react";
 import { closePrescription, dispensePrescription, type FormState } from "@/app/actions";
+import { useT } from "@/components/lang-provider";
 import { Alert, buttonClass, Input, inputClass, secondaryButtonClass } from "@/components/ui";
+import { etb } from "@/lib/format";
 import type { PrescriptionItem } from "@/lib/api";
 import { Substitute } from "./substitute";
 
@@ -24,26 +26,27 @@ export function DispenseForm({ prescriptionId, items, prepayment }: { prescripti
   const canBill = prepayment && items.some((i) => priced(i) && i.billedQty < i.quantity);
   const canGive = rows.some((r) => r.toGive > 0);
   const awaitingPayment = prepayment && items.some((i) => i.billedQty > (i.paidQty ?? 0));
+  const t = useT();
 
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="prescriptionId" value={prescriptionId} />
-      {state.error && <Alert>{state.error}</Alert>}
+      {state.error && <Alert>{t(state.error)}</Alert>}
       {state.ok && !pending && state.values?.step === "bill" && (
-        <p className="text-sm text-emerald-700 dark:text-emerald-400">Sent to the cashier. Dispense once the patient has paid.</p>
+        <p className="text-sm text-emerald-700 dark:text-emerald-400">{t("Sent to the cashier. Dispense once the patient has paid.")}</p>
       )}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead className="text-xs text-slate-500">
             <tr>
-              <th className="py-1 pr-3 font-medium">Drug</th>
-              <th className="py-1 pr-3 font-medium">Directions</th>
-              <th className="py-1 pr-3 text-right font-medium">Prescribed</th>
-              {prepayment && <th className="py-1 pr-3 text-right font-medium">To cashier / paid</th>}
-              <th className="py-1 pr-3 text-right font-medium">Given</th>
-              <th className="py-1 pr-3 text-right font-medium">In stock</th>
-              {canBill && <th className="py-1 pr-3 font-medium">Send to cashier</th>}
-              <th className="py-1 font-medium">Give now</th>
+              <th className="py-1 pr-3 font-medium">{t("Drug")}</th>
+              <th className="py-1 pr-3 font-medium">{t("Directions")}</th>
+              <th className="py-1 pr-3 text-right font-medium">{t("Prescribed")}</th>
+              {prepayment && <th className="py-1 pr-3 text-right font-medium">{t("To cashier / paid")}</th>}
+              <th className="py-1 pr-3 text-right font-medium">{t("Given")}</th>
+              <th className="py-1 pr-3 text-right font-medium">{t("In stock")}</th>
+              {canBill && <th className="py-1 pr-3 font-medium">{t("Send to cashier")}</th>}
+              <th className="py-1 font-medium">{t("Give now")}</th>
             </tr>
           </thead>
           <tbody>
@@ -53,11 +56,11 @@ export function DispenseForm({ prescriptionId, items, prepayment }: { prescripti
                   <span className="font-medium">{i.drug.genericName}</span> {i.drug.strength} {i.drug.form}
                   {i.drug.brandName && <span className="text-slate-500"> ({i.drug.brandName})</span>} <ControlledBadge c={i.drug.controlled} />
                   <span className="block text-xs text-slate-500">
-                    {Number(i.drug.sellPrice).toFixed(2)} ETB / {i.drug.unit}
+                    {etb(i.drug.sellPrice, t)} / {i.drug.unit}
                   </span>
                   {i.substitutedFrom && (
                     <span className="block text-xs text-amber-800 dark:text-amber-300">
-                      Instead of {i.substitutedFrom}
+                      {t("Instead of {drug}", { drug: i.substitutedFrom })}
                       {i.substitutionReason && `: ${i.substitutionReason}`}
                     </span>
                   )}
@@ -66,7 +69,7 @@ export function DispenseForm({ prescriptionId, items, prepayment }: { prescripti
                 </td>
                 <td className="py-2 pr-3">
                   {i.dose} {i.frequency}
-                  {i.durationDays && ` × ${i.durationDays} d`}
+                  {i.durationDays && ` × ${t("{n} d", { n: i.durationDays })}`}
                   {i.instructions && <span className="block text-xs text-slate-500">{i.instructions}</span>}
                 </td>
                 <td className="py-2 pr-3 text-right tabular-nums">{i.quantity}</td>
@@ -81,14 +84,14 @@ export function DispenseForm({ prescriptionId, items, prepayment }: { prescripti
                   {/* Several stores: the shortfall may be sitting in the main store. */}
                   {stock < i.quantity - i.dispensedQty && (i.elsewhere ?? 0) > 0 && (
                     <a href="/inventory/transfers" className="block text-xs font-normal whitespace-nowrap text-brand-700 hover:underline dark:text-brand-400">
-                      +{i.elsewhere} in other stores
+                      {t("+{n} in other stores", { n: i.elsewhere ?? 0 })}
                     </a>
                   )}
                 </td>
                 {canBill && (
                   <td className="py-2 pr-3">
                     {!priced(i) ? (
-                      <span className="text-xs text-slate-500">free</span>
+                      <span className="text-xs text-slate-500">{t("free")}</span>
                     ) : i.billedQty < i.quantity ? (
                       <input
                         name={`bill_${i.id}`}
@@ -96,11 +99,11 @@ export function DispenseForm({ prescriptionId, items, prepayment }: { prescripti
                         min={0}
                         max={i.quantity - i.billedQty}
                         defaultValue={toBill}
-                        aria-label={`Units of ${i.drug.genericName} to send to the cashier`}
+                        aria-label={t("Units of {drug} to send to the cashier", { drug: i.drug.genericName })}
                         className={`${inputClass} w-20`}
                       />
                     ) : (
-                      <span className="text-xs text-slate-500">sent</span>
+                      <span className="text-xs text-slate-500">{t("sent")}</span>
                     )}
                   </td>
                 )}
@@ -112,11 +115,11 @@ export function DispenseForm({ prescriptionId, items, prepayment }: { prescripti
                       min={0}
                       max={i.quantity - i.dispensedQty}
                       defaultValue={toGive}
-                      aria-label={`Units of ${i.drug.genericName} to give`}
+                      aria-label={t("Units of {drug} to give", { drug: i.drug.genericName })}
                       className={`${inputClass} w-20`}
                     />
                   ) : (
-                    <span className="text-xs text-slate-500">done</span>
+                    <span className="text-xs text-slate-500">{t("done")}</span>
                   )}
                 </td>
               </tr>
@@ -124,15 +127,15 @@ export function DispenseForm({ prescriptionId, items, prepayment }: { prescripti
           </tbody>
         </table>
       </div>
-      {awaitingPayment && <p className="text-sm text-amber-700 dark:text-amber-400">Waiting for the patient to pay at the cashier.</p>}
+      {awaitingPayment && <p className="text-sm text-amber-700 dark:text-amber-400">{t("Waiting for the patient to pay at the cashier.")}</p>}
       <div className="flex flex-wrap gap-2">
         {canBill && (
           <button type="submit" name="step" value="bill" disabled={pending} className={canGive ? secondaryButtonClass : buttonClass}>
-            {pending ? "Saving…" : "Send to cashier"}
+            {pending ? t("Saving…") : t("Send to cashier")}
           </button>
         )}
         <button type="submit" name="step" value="dispense" disabled={pending || (prepayment && !canGive)} className={canGive || !prepayment ? buttonClass : secondaryButtonClass}>
-          {pending ? "Saving…" : prepayment ? "Dispense paid" : "Dispense"}
+          {pending ? t("Saving…") : t(prepayment ? "Dispense paid" : "Dispense")}
         </button>
       </div>
     </form>
@@ -146,24 +149,25 @@ export function DispenseForm({ prescriptionId, items, prepayment }: { prescripti
 export function ClosePrescriptionForm({ prescriptionId }: { prescriptionId: string }) {
   const [state, action, pending] = useActionState<FormState, FormData>(closePrescription, {});
   const [open, setOpen] = useState(false);
+  const t = useT();
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)} className="text-xs text-slate-500 hover:text-red-700 hover:underline">
-        Patient won&apos;t collect the rest? Close it
+        {t("Patient won't collect the rest? Close it")}
       </button>
     );
   }
   return (
     <form action={action} className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
       <input type="hidden" name="prescriptionId" value={prescriptionId} />
-      {state.error && <Alert>{state.error}</Alert>}
-      <Input name="reason" required minLength={3} placeholder="Why? e.g. bought outside, out of stock, patient left" aria-label="Reason" defaultValue={state.values?.reason} />
+      {state.error && <Alert>{t(state.error)}</Alert>}
+      <Input name="reason" required minLength={3} placeholder={t("Why? e.g. bought outside, out of stock, patient left")} aria-label={t("Reason")} defaultValue={state.values?.reason} />
       <div className="flex gap-2">
         <button type="submit" disabled={pending} className={`${buttonClass} px-3 py-1.5 text-xs`}>
-          {pending ? "Closing…" : "Close prescription"}
+          {pending ? t("Closing…") : t("Close prescription")}
         </button>
         <button type="button" onClick={() => setOpen(false)} className={`${secondaryButtonClass} px-3 py-1.5 text-xs`}>
-          Keep it open
+          {t("Keep it open")}
         </button>
       </div>
     </form>

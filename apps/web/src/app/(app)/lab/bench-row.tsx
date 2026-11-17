@@ -4,6 +4,7 @@ import { TriangleAlert } from "lucide-react";
 import { useActionState, useState, useTransition } from "react";
 import { labStep, markLabUrgent, type FormState } from "@/app/actions";
 import { isCritical, LAB_STATUS, LabValue, rangeText } from "@/components/lab-result";
+import { useT } from "@/components/lang-provider";
 import { Alert, Badge, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
 import Link from "next/link";
 import type { LabOrder, LabWorkOrder, QcState } from "@/lib/api";
@@ -30,16 +31,17 @@ const REJECT_REASONS: [string, string][] = [
  * amend results.
  */
 function ResultFields({ o, defaults, restore }: { o: LabOrder; defaults?: boolean; restore?: Record<string, string> }) {
-  const t = o.labTest;
-  const range = rangeText(t);
-  const numeric = !t.resultOptions.length && range !== null;
+  const lt = o.labTest;
+  const t = useT();
+  const range = rangeText(lt);
+  const numeric = !lt.resultOptions.length && range !== null;
   // What was typed (after a refused save), else the current result when correcting it.
   const keep = (v: string | null | undefined, name: string) => restore?.[name] ?? (defaults ? (v ?? "") : "");
   return (
     <>
-      {t.components?.length ? (
+      {lt.components?.length ? (
         <div className="grid w-full gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {t.components.map((c) => {
+          {lt.components.map((c) => {
             const current = keep(o.values?.find((v) => v.componentId === c.id)?.value, `c_${c.id}`);
             const ref = rangeText(c);
             return (
@@ -62,26 +64,26 @@ function ResultFields({ o, defaults, restore }: { o: LabOrder; defaults?: boolea
             );
           })}
         </div>
-      ) : t.resultOptions.length ? (
-        <select name="value" required defaultValue={keep(o.resultValue, "value")} aria-label="Result" className={`${inputClass} w-48`}>
+      ) : lt.resultOptions.length ? (
+        <select name="value" required defaultValue={keep(o.resultValue, "value")} aria-label={t("Result")} className={`${inputClass} w-48`}>
           <option value="" disabled>
-            Choose result
+            {t("Choose result")}
           </option>
-          {t.resultOptions.map((opt) => (
+          {lt.resultOptions.map((opt) => (
             <option key={opt}>{opt}</option>
           ))}
         </select>
       ) : numeric ? (
         <label className="flex items-center gap-1 text-sm">
-          <input name="value" required inputMode="decimal" defaultValue={keep(o.resultValue, "value")} aria-label="Result" className={`${inputClass} w-28`} />
+          <input name="value" required inputMode="decimal" defaultValue={keep(o.resultValue, "value")} aria-label={t("Result")} className={`${inputClass} w-28`} />
           <span className="text-xs text-slate-500">
-            {t.unit} (ref {range}; by sex and age where set)
+            {lt.unit} ({t("ref {range}; by sex and age where set", { range: range ?? "" })})
           </span>
         </label>
       ) : (
-        <textarea name="value" required rows={2} defaultValue={keep(o.resultValue, "value")} aria-label="Result" className={`${inputClass} min-w-64 flex-1`} />
+        <textarea name="value" required rows={2} defaultValue={keep(o.resultValue, "value")} aria-label={t("Result")} className={`${inputClass} min-w-64 flex-1`} />
       )}
-      <input name="note" placeholder="Comment (optional)" defaultValue={keep(o.resultNote, "note")} aria-label="Comment" className={`${inputClass} w-56`} />
+      <input name="note" placeholder={t("Comment (optional)")} defaultValue={keep(o.resultNote, "note")} aria-label={t("Comment")} className={`${inputClass} w-56`} />
     </>
   );
 }
@@ -91,10 +93,11 @@ function RejectSample({ o }: { o: LabOrder }) {
   const [state, action, pending] = useActionState<FormState, FormData>(labStep, {});
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("HAEMOLYSED");
+  const t = useT();
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)} className="text-xs text-slate-500 hover:text-red-700 hover:underline">
-        Sample not usable? Reject it
+        {t("Sample not usable? Reject it")}
       </button>
     );
   }
@@ -104,42 +107,43 @@ function RejectSample({ o }: { o: LabOrder }) {
       <input type="hidden" name="step" value="reject" />
       {state.error && (
         <div className="w-full">
-          <Alert>{state.error}</Alert>
+          <Alert>{t(state.error)}</Alert>
         </div>
       )}
-      <select name="reason" value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Why the sample can't be used" className={`${inputClass} w-auto`}>
+      <select name="reason" value={reason} onChange={(e) => setReason(e.target.value)} aria-label={t("Why the sample can't be used")} className={`${inputClass} w-auto`}>
         {REJECT_REASONS.map(([v, l]) => (
           <option key={v} value={v}>
-            {l}
+            {t(l)}
           </option>
         ))}
       </select>
-      <input name="note" required={reason === "OTHER"} placeholder={reason === "OTHER" ? "What was wrong (required)" : "Note (optional)"} aria-label="Note" className={`${inputClass} w-56`} />
+      <input name="note" required={reason === "OTHER"} placeholder={t(reason === "OTHER" ? "What was wrong (required)" : "Note (optional)")} aria-label={t("Note")} className={`${inputClass} w-56`} />
       <button disabled={pending} className={`${buttonClass} bg-red-700 hover:bg-red-800 ${small}`}>
-        {pending ? "Saving…" : "Reject sample"}
+        {pending ? t("Saving…") : t("Reject sample")}
       </button>
       <button type="button" onClick={() => setOpen(false)} className={`${secondaryButtonClass} ${small}`}>
-        Keep it
+        {t("Keep it")}
       </button>
-      <p className="w-full text-xs text-slate-500">The test goes back to &ldquo;sample needed&rdquo;; the patient gives a new sample without paying again.</p>
+      <p className="w-full text-xs text-slate-500">{t("The test goes back to “sample needed”; the patient gives a new sample without paying again.")}</p>
     </form>
   );
 }
 
 /** "Critical result: phone the doctor" with where to write who was told. */
 function CriticalCall({ required }: { required: boolean }) {
+  const t = useT();
   return (
     <div role="alert" className="w-full space-y-2 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-100">
       <p className="flex items-center gap-2 font-semibold">
         <TriangleAlert aria-hidden className="size-4" />
-        Critical result: phone the doctor now, before releasing it.
+        {t("Critical result: phone the doctor now, before releasing it.")}
       </p>
       <input
         name="notified"
         required={required}
         minLength={3}
-        placeholder="Who was told, and how (e.g. Dr. Dawit, by phone)"
-        aria-label="Who was told of the critical result"
+        placeholder={t("Who was told, and how (e.g. Dr. Dawit, by phone)")}
+        aria-label={t("Who was told of the critical result")}
         className={`${inputClass} w-full`}
       />
     </div>
@@ -148,10 +152,11 @@ function CriticalCall({ required }: { required: boolean }) {
 
 /** A tube-cap dot and the specimen's short name: "● EDTA · purple". */
 export function SpecimenTag({ code }: { code: string }) {
+  const t = useT();
   return (
-    <span className="ml-2 inline-flex items-center gap-1 text-xs text-slate-500" title={specimenLabel(code) ?? undefined}>
+    <span className="ml-2 inline-flex items-center gap-1 text-xs text-slate-500" title={specimenLabel(code, t) ?? undefined}>
       <span aria-hidden className={`inline-block size-2.5 rounded-full ${SPECIMENS[code]?.cap ?? "bg-slate-300"}`} />
-      {specimenShort(code)}
+      {specimenShort(code, t)}
     </span>
   );
 }
@@ -160,6 +165,7 @@ export function SpecimenTag({ code }: { code: string }) {
 function Tube({ orders }: { orders: LabWorkOrder[] }) {
   const [state, action, pending] = useActionState<FormState, FormData>(labStep, {});
   const code = orders[0].labTest.specimen;
+  const t = useT();
   return (
     <form action={action} className="flex flex-wrap items-center gap-2 text-sm">
       <input type="hidden" name="step" value="collect" />
@@ -169,16 +175,16 @@ function Tube({ orders }: { orders: LabWorkOrder[] }) {
       ))}
       <span>
         <span aria-hidden className={`mr-1.5 inline-block size-3 rounded-full align-[-1px] ${code ? (SPECIMENS[code]?.cap ?? "bg-slate-300") : "bg-slate-300"}`} />
-        <span className="font-medium">{specimenLabel(code) ?? "Sample"}</span>
-        <span className="text-slate-500"> for {orders.map((o) => o.labTest.name).join(", ")}</span>
+        <span className="font-medium">{specimenLabel(code, t) ?? t("Sample")}</span>
+        <span className="text-slate-500"> {t("for {tests}", { tests: orders.map((o) => o.labTest.name).join(", ") })}</span>
       </span>
-      <input name="sampleId" placeholder="Sample ID (optional)" aria-label="Sample ID" className={`${inputClass} w-44`} />
+      <input name="sampleId" placeholder={t("Sample ID (optional)")} aria-label={t("Sample ID")} className={`${inputClass} w-44`} />
       <button disabled={pending} className={`${buttonClass} ${small}`}>
-        Sample collected
+        {t("Sample collected")}
       </button>
       {state.error && (
         <div className="w-full">
-          <Alert>{state.error}</Alert>
+          <Alert>{t(state.error)}</Alert>
         </div>
       )}
     </form>
@@ -191,6 +197,7 @@ function Tube({ orders }: { orders: LabWorkOrder[] }) {
  */
 export function CollectTubes({ orders, prepayment }: { orders: LabWorkOrder[]; prepayment: boolean }) {
   const ready = orders.filter((o) => o.status === "ORDERED" && !(prepayment && !o.paid && !o.emergency));
+  const t = useT();
   if (!ready.length) return null;
   const tubes = new Map<string, LabWorkOrder[]>();
   for (const o of ready) {
@@ -200,10 +207,10 @@ export function CollectTubes({ orders, prepayment }: { orders: LabWorkOrder[]; p
   return (
     <div className="mt-3 space-y-2 rounded-md border border-dashed border-slate-300 p-3 dark:border-slate-700">
       <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">
-        {tubes.size === 1 ? "Sample to take" : `${tubes.size} samples to take`}
+        {tubes.size === 1 ? t("Sample to take") : t("{n} samples to take", { n: tubes.size })}
       </p>
-      {[...tubes.values()].map((t) => (
-        <Tube key={t[0].id} orders={t} />
+      {[...tubes.values()].map((tube) => (
+        <Tube key={tube[0].id} orders={tube} />
       ))}
     </div>
   );
@@ -214,10 +221,11 @@ export function CollectTubes({ orders, prepayment }: { orders: LabWorkOrder[]; p
  * Before the sample there is no clock (the patient may still be at the cashier).
  */
 function Clock({ minutes, target }: { minutes: number; target: number }) {
-  if (minutes > target) return <Badge tone="danger">Overdue {formatMinutes(minutes - target)}</Badge>;
+  const t = useT();
+  if (minutes > target) return <Badge tone="danger">{t("Overdue {time}", { time: formatMinutes(minutes - target, t) })}</Badge>;
   return (
-    <span className={minutes >= target * 0.75 ? "font-medium text-amber-700 dark:text-amber-400" : ""} title="Time since the sample, of the target">
-      {target < 120 ? `${minutes} of ${target} min` : `${formatMinutes(minutes)} of ${formatMinutes(target)}`}
+    <span className={minutes >= target * 0.75 ? "font-medium text-amber-700 dark:text-amber-400" : ""} title={t("Time since the sample, of the target")}>
+      {t("{done} of {target}", { done: formatMinutes(minutes, t), target: formatMinutes(target, t) })}
     </span>
   );
 }
@@ -229,10 +237,11 @@ function Clock({ minutes, target }: { minutes: number; target: number }) {
 function SendOut({ o, labs, open: startOpen }: { o: LabWorkOrder; labs: string[]; open: boolean }) {
   const [state, action, pending] = useActionState<FormState, FormData>(labStep, {});
   const [open, setOpen] = useState(startOpen);
+  const t = useT();
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)} className="text-xs text-slate-500 hover:text-brand-700 hover:underline">
-        Can&apos;t do it here? Send it out
+        {t("Can't do it here? Send it out")}
       </button>
     );
   }
@@ -241,15 +250,15 @@ function SendOut({ o, labs, open: startOpen }: { o: LabWorkOrder; labs: string[]
     <form action={action} className="flex flex-wrap items-center gap-2 rounded-md bg-sky-50 px-3 py-2 text-sm dark:bg-sky-950/40">
       <input type="hidden" name="orderId" value={o.id} />
       <input type="hidden" name="step" value="send" />
-      <span className="font-medium">Send to</span>
+      <span className="font-medium">{t("Send to")}</span>
       <input
         name="to"
         required
         minLength={2}
         list={list}
         defaultValue={state.values?.to ?? o.labTest.referenceLab ?? ""}
-        placeholder="Reference lab"
-        aria-label="Reference lab"
+        placeholder={t("Reference lab")}
+        aria-label={t("Reference lab")}
         className={`${inputClass} w-56`}
       />
       <datalist id={list}>
@@ -257,18 +266,18 @@ function SendOut({ o, labs, open: startOpen }: { o: LabWorkOrder; labs: string[]
           <option key={l} value={l} />
         ))}
       </datalist>
-      <input name="ref" defaultValue={state.values?.ref} placeholder="Their number (optional)" aria-label="The reference lab's number" className={`${inputClass} w-44`} />
+      <input name="ref" defaultValue={state.values?.ref} placeholder={t("Their number (optional)")} aria-label={t("The reference lab's number")} className={`${inputClass} w-44`} />
       <button disabled={pending} className={`${buttonClass} ${small}`}>
-        {pending ? "Saving…" : "Sample sent"}
+        {pending ? t("Saving…") : t("Sample sent")}
       </button>
       {!o.labTest.sendOut && (
         <button type="button" onClick={() => setOpen(false)} className={`${secondaryButtonClass} ${small}`}>
-          Cancel
+          {t("Cancel")}
         </button>
       )}
       {state.error && (
         <div className="w-full">
-          <Alert>{state.error}</Alert>
+          <Alert>{t(state.error)}</Alert>
         </div>
       )}
     </form>
@@ -278,18 +287,19 @@ function SendOut({ o, labs, open: startOpen }: { o: LabWorkOrder; labs: string[]
 /** "At Ethio Lab since 12 Nov (2 d) · their no. EL-5531 · Back in the lab" */
 function AtReferenceLab({ o, days }: { o: LabWorkOrder; days: string }) {
   const [state, action, pending] = useActionState<FormState, FormData>(labStep, {});
+  const t = useT();
   return (
     <form action={action} className="flex flex-wrap items-center gap-2 rounded-md bg-sky-50 px-3 py-2 text-sm dark:bg-sky-950/40">
       <input type="hidden" name="orderId" value={o.id} />
       <input type="hidden" name="step" value="unsend" />
       <span>
-        At <span className="font-medium">{o.sentTo}</span> since {days}
-        {o.sentRef && <span className="text-slate-500"> · their no. {o.sentRef}</span>}
+        {t.rich("At {lab} since {days}", { lab: <span className="font-medium">{o.sentTo}</span>, days })}
+        {o.sentRef && <span className="text-slate-500"> · {t("their no. {ref}", { ref: o.sentRef })}</span>}
       </span>
       <button disabled={pending} className="text-xs text-slate-500 hover:text-red-700 hover:underline">
-        Not sent after all
+        {t("Not sent after all")}
       </button>
-      {state.error && <span className="text-xs text-red-700">{state.error}</span>}
+      {state.error && <span className="text-xs text-red-700">{t(state.error)}</span>}
     </form>
   );
 }
@@ -298,15 +308,16 @@ function AtReferenceLab({ o, days }: { o: LabWorkOrder; days: string }) {
 function MakeUrgent({ id }: { id: string }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string>();
+  const t = useT();
   return (
     <button
       type="button"
       disabled={pending}
       onClick={() => start(async () => setError((await markLabUrgent(id)).error))}
-      title={error}
+      title={error && t(error)}
       className="text-xs text-slate-500 hover:text-red-700 hover:underline"
     >
-      {error ? "Couldn't mark urgent" : "Mark urgent"}
+      {t(error ? "Couldn't mark urgent" : "Mark urgent")}
     </button>
   );
 }
@@ -334,7 +345,8 @@ export function BenchRow({
   reagentShort?: string[];
 }) {
   const [state, action, pending] = useActionState<FormState, FormData>(labStep, {});
-  const t = o.labTest;
+  const lt = o.labTest;
+  const t = useT();
   const unpaid = prepayment && o.status === "ORDERED" && !o.paid && !o.emergency;
 
   return (
@@ -342,54 +354,54 @@ export function BenchRow({
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <span>
           {o.urgent && (
-            <span className="mr-1.5 rounded bg-red-700 px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-white uppercase dark:bg-red-600">Urgent</span>
+            <span className="mr-1.5 rounded bg-red-700 px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-white uppercase dark:bg-red-600">{t("Urgent")}</span>
           )}
-          <span className="font-medium">{t.name}</span>
-          {t.loincCode && <span className="ml-1 font-mono text-xs text-slate-500">LOINC {t.loincCode}</span>}
-          {t.specimen && <SpecimenTag code={t.specimen} />}
+          <span className="font-medium">{lt.name}</span>
+          {lt.loincCode && <span className="ml-1 font-mono text-xs text-slate-500">LOINC {lt.loincCode}</span>}
+          {lt.specimen && <SpecimenTag code={lt.specimen} />}
           {o.sampleId && <span className="ml-2 font-mono text-xs">· {o.sampleId}</span>}
         </span>
         <span className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
           {!o.urgent && <MakeUrgent id={o.id} />}
           {/* Results done here wait for passing QC; a reference lab's don't. */}
           {qc && qc.status !== "OK" && !o.sentAt && (
-            <Link href={`/lab/qc#qc-${t.id}`} title={qc.detail ?? undefined}>
-              <Badge tone={qc.status === "FAIL" ? "danger" : "warning"}>{qc.status === "FAIL" ? "QC failed: results held" : qc.status === "DUE" ? "QC due" : "QC warning"}</Badge>
+            <Link href={`/lab/qc#qc-${lt.id}`} title={qc.detail ? t(qc.detail) : undefined}>
+              <Badge tone={qc.status === "FAIL" ? "danger" : "warning"}>{t(qc.status === "FAIL" ? "QC failed: results held" : qc.status === "DUE" ? "QC due" : "QC warning")}</Badge>
             </Link>
           )}
           {reagentShort?.length && !o.sentAt ? (
-            <Link href="/lab/reagents" title="No stock on record">
-              <Badge tone="warning">Out of {reagentShort.join(", ")}</Badge>
+            <Link href="/lab/reagents" title={t("No stock on record")}>
+              <Badge tone="warning">{t("Out of {list}", { list: reagentShort.join(", ") })}</Badge>
             </Link>
           ) : null}
           {sampleMinutes != null && o.targetMinutes != null && <Clock minutes={sampleMinutes} target={o.targetMinutes} />}
-          {unpaid && <Badge tone="danger">Not paid</Badge>}
-          {o.status === "ORDERED" && o.rejectReason && <Badge tone="warning">New sample needed</Badge>}
-          {o.critical && o.status === "RESULTED" && <Badge tone="danger">Critical</Badge>}
+          {unpaid && <Badge tone="danger">{t("Not paid")}</Badge>}
+          {o.status === "ORDERED" && o.rejectReason && <Badge tone="warning">{t("New sample needed")}</Badge>}
+          {o.critical && o.status === "RESULTED" && <Badge tone="danger">{t("Critical")}</Badge>}
           <Badge tone={o.status === "VERIFIED" ? "success" : o.status === "RESULTED" ? "info" : o.status === "SAMPLE_COLLECTED" ? "brand" : "neutral"} dot>
-            {LAB_STATUS[o.status]}
+            {t(LAB_STATUS[o.status])}
           </Badge>
         </span>
       </div>
-      {state.error && <Alert>{state.error}</Alert>}
+      {state.error && <Alert>{t(state.error)}</Alert>}
 
       {o.status === "ORDERED" && o.rejectReason && (
         <p className="text-sm text-amber-800 dark:text-amber-300">
-          The last sample was rejected ({o.rejectReason}). Take a new sample.
+          {t("The last sample was rejected ({reason}). Take a new sample.", { reason: t(o.rejectReason) })}
         </p>
       )}
-      {o.status === "ORDERED" && unpaid && <p className="text-sm text-slate-500">Send the patient to the cashier before taking the sample.</p>}
+      {o.status === "ORDERED" && unpaid && <p className="text-sm text-slate-500">{t("Send the patient to the cashier before taking the sample.")}</p>}
 
       {o.status === "SAMPLE_COLLECTED" && o.sentAt && <AtReferenceLab o={o} days={sentSince ?? ""} />}
-      {o.status === "SAMPLE_COLLECTED" && !o.sentAt && <SendOut o={o} labs={labs} open={!!t.sendOut} />}
-      {(o.status === "RESULTED" || (o.status === "SAMPLE_COLLECTED" && (o.sentAt || !t.sendOut))) && (
+      {o.status === "SAMPLE_COLLECTED" && !o.sentAt && <SendOut o={o} labs={labs} open={!!lt.sendOut} />}
+      {(o.status === "RESULTED" || (o.status === "SAMPLE_COLLECTED" && (o.sentAt || !lt.sendOut))) && (
         <form action={action} className="flex flex-wrap items-start gap-2">
           <input type="hidden" name="orderId" value={o.id} />
           <input type="hidden" name="step" value="result" />
-          {o.sentAt && o.status === "SAMPLE_COLLECTED" && <span className="w-full text-xs text-slate-500">Result from {o.sentTo}, when it comes back:</span>}
+          {o.sentAt && o.status === "SAMPLE_COLLECTED" && <span className="w-full text-xs text-slate-500">{t("Result from {lab}, when it comes back:", { lab: o.sentTo ?? "" })}</span>}
           <ResultFields o={o} defaults />
           <button disabled={pending} className={`${o.status === "RESULTED" ? secondaryButtonClass : buttonClass} ${small}`}>
-            {o.status === "RESULTED" ? "Correct result" : "Save result"}
+            {t(o.status === "RESULTED" ? "Correct result" : "Save result")}
           </button>
         </form>
       )}
@@ -399,13 +411,13 @@ export function BenchRow({
           <input type="hidden" name="orderId" value={o.id} />
           <input type="hidden" name="step" value="verify" />
           <span>
-            Entered: <LabValue o={o} />
-            {o.rangeText && <span className="text-xs text-slate-500"> (ref {o.rangeText})</span>}{" "}
-            {o.resultedBy && <span className="text-xs text-slate-500">by {o.resultedBy.fullName}</span>}
+            {t("Entered:")} <LabValue o={o} />
+            {o.rangeText && <span className="text-xs text-slate-500"> ({t("ref {range}", { range: o.rangeText })})</span>}{" "}
+            {o.resultedBy && <span className="text-xs text-slate-500">{t("by {name}", { name: o.resultedBy.fullName })}</span>}
           </span>
           {o.critical && <CriticalCall required />}
           <button disabled={pending} className={`${buttonClass} ${small}`}>
-            Verify and release
+            {t("Verify and release")}
           </button>
         </form>
       )}
@@ -422,10 +434,11 @@ export function BenchRow({
 export function AmendResult({ o }: { o: LabOrder }) {
   const [state, action, pending] = useActionState<FormState, FormData>(labStep, {});
   const [open, setOpen] = useState(false);
+  const t = useT();
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)} className="text-xs text-slate-500 hover:text-red-700 hover:underline">
-        Amend
+        {t("Amend")}
       </button>
     );
   }
@@ -435,25 +448,24 @@ export function AmendResult({ o }: { o: LabOrder }) {
       <input type="hidden" name="step" value="amend" />
       {state.error && (
         <div className="w-full">
-          <Alert>{state.error}</Alert>
+          <Alert>{t(state.error)}</Alert>
         </div>
       )}
       {state.ok && !pending ? (
-        <p className="text-sm text-emerald-700 dark:text-emerald-400">Amended; the doctor is alerted.</p>
+        <p className="text-sm text-emerald-700 dark:text-emerald-400">{t("Amended; the doctor is alerted.")}</p>
       ) : (
         <>
           <p className="w-full text-xs text-slate-600 dark:text-slate-300">
-            Corrected result for {o.labTest.name}. The released result is kept with your reason, the report shows &ldquo;Amended&rdquo;, and the doctor is
-            alerted.
+            {t("Corrected result for {test}. The released result is kept with your reason, the report shows “Amended”, and the doctor is alerted.", { test: o.labTest.name })}
           </p>
           <ResultFields o={o} restore={state.values} />
-          <input name="reason" required minLength={5} defaultValue={state.values?.reason} placeholder="What was wrong with the released result" aria-label="Reason for the amendment" className={`${inputClass} w-full`} />
+          <input name="reason" required minLength={5} defaultValue={state.values?.reason} placeholder={t("What was wrong with the released result")} aria-label={t("Reason for the amendment")} className={`${inputClass} w-full`} />
           {(state.error?.includes("critical") || isCritical(o.resultFlag)) && <CriticalCall required={false} />}
           <button disabled={pending} className={`${buttonClass} ${small}`}>
-            {pending ? "Saving…" : "Release corrected result"}
+            {pending ? t("Saving…") : t("Release corrected result")}
           </button>
           <button type="button" onClick={() => setOpen(false)} className={`${secondaryButtonClass} ${small}`}>
-            Cancel
+            {t("Cancel")}
           </button>
         </>
       )}

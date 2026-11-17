@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { receiveStock, searchDrugs } from "@/app/actions";
+import { useT } from "@/components/lang-provider";
 import { Alert, buttonClass, Field, inputClass, secondaryButtonClass } from "@/components/ui";
+import { etb } from "@/lib/format";
 import type { DrugOption, Store, Supplier } from "@/lib/api";
 import { packLabel } from "@/lib/packs";
 
@@ -57,17 +59,18 @@ export function ReceiveForm({
   const [error, setError] = useState<string>();
   const [done, setDone] = useState<{ received: number; warnings: string[] }>();
   const [pending, start] = useTransition();
+  const t = useT();
 
   useEffect(() => {
     if (q.trim().length < 2) return;
     let cancelled = false;
-    const t = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       const r = await searchDrugs(q);
       if (!cancelled) setFound(r);
     }, 250);
     return () => {
       cancelled = true;
-      clearTimeout(t);
+      clearTimeout(timer);
     };
   }, [q]);
 
@@ -96,24 +99,24 @@ export function ReceiveForm({
     return (
       <div className="space-y-3">
         <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100">
-          Received {done.received} {done.received === 1 ? "line" : "lines"} into stock.
+          {t(done.received === 1 ? "Received {n} line into stock." : "Received {n} lines into stock.", { n: done.received })}
         </p>
         {done.warnings.length > 0 && (
           <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100">
-            <p className="font-medium">Check these prices:</p>
+            <p className="font-medium">{t("Check these prices:")}</p>
             <ul className="list-disc pl-5">
               {done.warnings.map((w) => (
-                <li key={w}>{w}</li>
+                <li key={w}>{t(w)}</li>
               ))}
             </ul>
           </div>
         )}
         <div className="flex gap-2">
           <button type="button" onClick={() => setDone(undefined)} className={buttonClass}>
-            Receive another delivery
+            {t("Receive another delivery")}
           </button>
           <Link href="/inventory" className={secondaryButtonClass}>
-            Back to inventory
+            {t("Back to inventory")}
           </Link>
         </div>
       </div>
@@ -124,13 +127,13 @@ export function ReceiveForm({
     <div className="space-y-5">
       {order && (
         <p className="rounded-md bg-brand-50 px-3 py-2 text-sm text-brand-900 dark:bg-brand-950 dark:text-brand-100">
-          Receiving against purchase order <strong>{order.number}</strong>. Quantities still outstanding are filled in; change them to what actually arrived.
+          {t.rich("Receiving against purchase order {number}. Quantities still outstanding are filled in; change them to what actually arrived.", { number: <strong>{order.number}</strong> })}
         </p>
       )}
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Supplier">
+        <Field label={t("Supplier")}>
           <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className={inputClass}>
-            <option value="">Not specified</option>
+            <option value="">{t("Not specified")}</option>
             {suppliers
               .filter((s) => s.active)
               .map((s) => (
@@ -140,16 +143,16 @@ export function ReceiveForm({
               ))}
           </select>
         </Field>
-        <Field label="Supplier invoice / delivery note no.">
+        <Field label={t("Supplier invoice / delivery note no.")}>
           <input value={receiptRef} onChange={(e) => setReceiptRef(e.target.value)} className={inputClass} />
         </Field>
         {stores.length > 0 && (
-          <Field label="Into store" hint="The pharmacy dispenses only from stores marked (dispensary)">
+          <Field label={t("Into store")} hint={t("The pharmacy dispenses only from stores marked (dispensary)")}>
             <select value={storeId} onChange={(e) => setStoreId(e.target.value)} className={inputClass}>
               {stores.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
-                  {s.dispensary ? " (dispensary)" : ""}
+                  {s.dispensary ? ` (${t("dispensary")})` : ""}
                 </option>
               ))}
             </select>
@@ -162,11 +165,11 @@ export function ReceiveForm({
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-500 dark:bg-slate-900">
               <tr>
-                <th className="px-4 py-3 font-medium">Drug</th>
-                <th className="px-4 py-3 font-medium">Batch no.</th>
-                <th className="px-4 py-3 font-medium">Expiry</th>
-                <th className="px-4 py-3 font-medium">Quantity</th>
-                <th className="px-4 py-3 font-medium">Cost</th>
+                <th className="px-4 py-3 font-medium">{t("Drug")}</th>
+                <th className="px-4 py-3 font-medium">{t("Batch no.")}</th>
+                <th className="px-4 py-3 font-medium">{t("Expiry")}</th>
+                <th className="px-4 py-3 font-medium">{t("Quantity")}</th>
+                <th className="px-4 py-3 font-medium">{t("Cost")}</th>
                 <th />
               </tr>
             </thead>
@@ -176,23 +179,23 @@ export function ReceiveForm({
                   <td className="px-4 py-3">
                     <span className="font-medium">{l.drug.genericName}</span> {l.drug.strength}
                     <span className="block text-xs text-slate-500">
-                      sells at {Number(l.drug.sellPrice).toFixed(2)} / {l.drug.unit}
+                      {t("sells at {price} / {unit}", { price: Number(l.drug.sellPrice).toFixed(2), unit: l.drug.unit })}
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <input value={l.batchNo} onChange={(e) => update(i, { batchNo: e.target.value })} aria-label="Batch number" className={`${inputClass} w-28`} />
+                    <input value={l.batchNo} onChange={(e) => update(i, { batchNo: e.target.value })} aria-label={t("Batch number")} className={`${inputClass} w-28`} />
                   </td>
                   <td className="px-4 py-3">
-                    <input type="date" min={minExpiry} value={l.expiryDate} onChange={(e) => update(i, { expiryDate: e.target.value })} aria-label="Expiry date" className={`${inputClass} w-40`} />
+                    <input type="date" min={minExpiry} value={l.expiryDate} onChange={(e) => update(i, { expiryDate: e.target.value })} aria-label={t("Expiry date")} className={`${inputClass} w-40`} />
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5">
-                      <input type="number" min={1} value={l.quantity} onChange={(e) => update(i, { quantity: e.target.value })} aria-label="Quantity" className={`${inputClass} w-24`} />
+                      <input type="number" min={1} value={l.quantity} onChange={(e) => update(i, { quantity: e.target.value })} aria-label={t("Quantity")} className={`${inputClass} w-24`} />
                       {l.drug.packSize ? (
                         <select
                           value={l.byPack ? "pack" : "unit"}
                           onChange={(e) => update(i, { byPack: e.target.value === "pack" })}
-                          aria-label={`Count ${l.drug.genericName} in`}
+                          aria-label={t("Count {drug} in", { drug: l.drug.genericName })}
                           className={`${inputClass} w-auto py-1.5 text-xs`}
                         >
                           <option value="pack">{packLabel(l.drug)}</option>
@@ -213,17 +216,17 @@ export function ReceiveForm({
                       step="0.01"
                       value={l.costPrice}
                       onChange={(e) => update(i, { costPrice: e.target.value })}
-                      aria-label={l.byPack ? "Cost per pack" : "Cost per unit"}
+                      aria-label={t(l.byPack ? "Cost per pack" : "Cost per unit")}
                       className={`${inputClass} w-24 ${l.costPrice && toUnits(l).costPrice > Number(l.drug.sellPrice) ? "border-amber-500" : ""}`}
                     />
                     <span className="mt-1 block text-xs text-slate-500">
-                      per {l.byPack ? l.drug.packName || "pack" : l.drug.unit}
-                      {l.byPack && l.costPrice && ` · ${toUnits(l).costPrice.toFixed(2)} each`}
+                      {t("per {unit}", { unit: l.byPack ? l.drug.packName || t("pack") : l.drug.unit })}
+                      {l.byPack && l.costPrice && ` · ${t("{price} each", { price: toUnits(l).costPrice.toFixed(2) })}`}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     <button type="button" onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))} className="text-xs text-red-700 hover:underline dark:text-red-400">
-                      Remove
+                      {t("Remove")}
                     </button>
                   </td>
                 </tr>
@@ -234,7 +237,7 @@ export function ReceiveForm({
       )}
 
       <div className="space-y-2">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Add a drug to this delivery…" aria-label="Search drugs" className={inputClass} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("Add a drug to this delivery…")} aria-label={t("Search drugs")} className={inputClass} />
         {results.length > 0 && (
           <ul className="max-h-60 overflow-y-auto rounded-md border border-slate-200 text-sm dark:border-slate-800">
             {results.map((r) => (
@@ -251,7 +254,7 @@ export function ReceiveForm({
                   <span>
                     {r.genericName} {r.strength} {r.form}
                   </span>
-                  <span className="text-xs text-slate-500">{r.inStock} in stock</span>
+                  <span className="text-xs text-slate-500">{t("{n} in stock", { n: r.inStock })}</span>
                 </button>
               </li>
             ))}
@@ -259,21 +262,21 @@ export function ReceiveForm({
         )}
         {q.trim().length >= 2 && results.length === 0 && (
           <p className="text-xs text-slate-500">
-            Not in the drug list.{" "}
+            {t("Not in the drug list.")}{" "}
             <Link href="/inventory/drugs/new" className="text-brand-700 underline dark:text-brand-400">
-              Add it first
+              {t("Add it first")}
             </Link>
           </p>
         )}
       </div>
 
-      {error && <Alert>{error}</Alert>}
+      {error && <Alert>{t(error)}</Alert>}
       {lines.length > 0 && (
         <div className="flex items-center gap-4">
           <button type="button" disabled={pending} onClick={submit} className={buttonClass}>
-            {pending ? "Saving…" : `Receive ${lines.length} ${lines.length === 1 ? "line" : "lines"}`}
+            {pending ? t("Saving…") : t(lines.length === 1 ? "Receive {n} line" : "Receive {n} lines", { n: lines.length })}
           </button>
-          <span className="text-sm text-slate-500">Delivery value {total.toFixed(2)} ETB</span>
+          <span className="text-sm text-slate-500">{t("Delivery value {amount}", { amount: etb(total, t) })}</span>
         </div>
       )}
     </div>

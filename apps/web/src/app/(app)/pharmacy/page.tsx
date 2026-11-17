@@ -4,14 +4,17 @@ import { Suspense } from "react";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { Flash } from "@/components/flash";
 import { ReturnForm } from "@/components/return-form";
-import { Badge, buttonClass, EmptyState, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
+import { PageTitle } from "@/components/page-title";
+import { Badge, buttonClass, EmptyState, secondaryButtonClass, Skeleton } from "@/components/ui";
+import type { T } from "@/lib/i18n";
+import { getT } from "@/lib/lang";
 import { api, ApiError, type DrugReturnRow, type Me, type PharmacyPrescription } from "@/lib/api";
 import { ageText, formatDuration, formatTime, fullName } from "@/lib/format";
 import { ClosePrescriptionForm, DispenseForm } from "./dispense-form";
 
-function PatientLine({ p }: { p: PharmacyPrescription }) {
+function PatientLine({ p, t }: { p: PharmacyPrescription; t: T }) {
   const pt = p.visit.patient;
-  const age = ageText(pt.dateOfBirth, true);
+  const age = ageText(pt.dateOfBirth, true, t);
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-2">
       <div>
@@ -19,18 +22,19 @@ function PatientLine({ p }: { p: PharmacyPrescription }) {
           {fullName(pt)}
         </Link>
         <span className="text-sm text-slate-500">
-          {" "}· {pt.mrn} · {pt.sex === "MALE" ? "M" : "F"}
+          {" "}· {pt.mrn} · {t(pt.sex === "MALE" ? "M" : "F")}
           {age !== null && ` · ${age}`}
-          {p.visit.kind === "WALK_IN" ? "" : ` · queue #${p.visit.queueNumber}`}
+          {p.visit.kind === "WALK_IN" ? "" : ` · ${t("queue #{n}", { n: p.visit.queueNumber })}`}
         </span>
         {p.visit.kind === "WALK_IN" && (
           <span className="ml-2">
-            <Badge tone="violet">Walk-in sale</Badge>
+            <Badge tone="violet">{t("Walk-in sale")}</Badge>
           </span>
         )}
       </div>
       <span className="text-xs text-slate-500">
-        {p.visit.kind === "WALK_IN" ? `Sold by ${p.prescriber.fullName}` : `Dr. ${p.prescriber.fullName}`} · {formatTime(p.createdAt)} · waiting {formatDuration(p.createdAt)}
+        {p.visit.kind === "WALK_IN" ? t("Sold by {name}", { name: p.prescriber.fullName }) : t("Dr. {name}", { name: p.prescriber.fullName })} · {formatTime(p.createdAt)} ·{" "}
+        {t("waiting {time}", { time: formatDuration(p.createdAt, undefined, t) })}
       </span>
     </div>
   );
@@ -38,6 +42,7 @@ function PatientLine({ p }: { p: PharmacyPrescription }) {
 
 async function Worklist() {
   let data: { prepayment: boolean; open: PharmacyPrescription[]; dispensedToday: PharmacyPrescription[]; returnsToday: DrugReturnRow[]; admin: boolean };
+  const t = await getT();
   try {
     const [queue, me] = await Promise.all([
       api<Omit<typeof data, "admin">>("/pharmacy/queue"),
@@ -45,38 +50,38 @@ async function Worklist() {
     ]);
     data = { ...queue, admin: me.role === "ADMIN" };
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">Only pharmacists and admins can dispense.</p>;
+    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only pharmacists and admins can dispense.")}</p>;
     throw e;
   }
 
   return (
     <div className="space-y-6">
       {data.open.length === 0 ? (
-        <EmptyState icon={Pill} title="No prescriptions waiting" />
+        <EmptyState icon={Pill} title={t("No prescriptions waiting")} />
       ) : (
         data.open.map((p) => (
           <section key={p.id} className="space-y-3 surface p-4 dark:border-slate-800">
-            <PatientLine p={p} />
+            <PatientLine p={p} t={t} />
             {p.visit.patient.allergies.length > 0 && (
               <p className="rounded-md bg-red-50 px-3 py-1.5 text-sm font-medium text-red-900 dark:bg-red-950 dark:text-red-100">
-                Allergies: {p.visit.patient.allergies.join(", ")}
+                {t("Allergies: {list}", { list: p.visit.patient.allergies.join(", ") })}
               </p>
             )}
             {p.alerts && p.alerts.length > 0 && (
               <div className="rounded-md bg-amber-50 px-3 py-1.5 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100">
-                <p className="font-medium">Prescriber accepted these alerts:</p>
+                <p className="font-medium">{t("Prescriber accepted these alerts:")}</p>
                 <ul className="list-disc pl-5">
                   {p.alerts.map((a, i) => (
-                    <li key={i}>{a.message}</li>
+                    <li key={i}>{t(a.message)}</li>
                   ))}
                 </ul>
-                {p.overrideReason && <p className="mt-1">Reason given: {p.overrideReason}</p>}
+                {p.overrideReason && <p className="mt-1">{t("Reason given: {reason}", { reason: p.overrideReason })}</p>}
               </div>
             )}
             <DispenseForm prescriptionId={p.id} items={p.items} prepayment={data.prepayment} />
             <div className="flex flex-wrap items-center justify-between gap-2">
               <ClosePrescriptionForm prescriptionId={p.id} />
-              <LabelsLink id={p.id} />
+              <LabelsLink id={p.id} t={t} />
             </div>
           </section>
         ))
@@ -85,18 +90,18 @@ async function Worklist() {
       {data.dispensedToday.length > 0 && (
         <details className="surface p-4 dark:border-slate-800">
           <summary className="cursor-pointer font-medium">
-            Dispensed today <span className="text-slate-500">({data.dispensedToday.length})</span>
+            {t("Dispensed today")} <span className="text-slate-500">({data.dispensedToday.length})</span>
           </summary>
           <ul className="mt-2 divide-y divide-slate-100 text-sm dark:divide-slate-800">
             {data.dispensedToday.map((p) => (
               <li key={p.id} className="space-y-1 py-3">
-                <PatientLine p={p} />
+                <PatientLine p={p} t={t} />
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="text-slate-600 dark:text-slate-400">
-                    {p.items.map((i) => `${i.drug.genericName} × ${i.dispensedQty}${i.returnedQty ? ` (${i.returnedQty} returned)` : ""}`).join(", ")}
+                    {p.items.map((i) => `${i.drug.genericName} × ${i.dispensedQty}${i.returnedQty ? ` (${t("{n} returned", { n: i.returnedQty })})` : ""}`).join(", ")}
                     {p.dispensedAt && <span className="text-slate-500"> · {formatTime(p.dispensedAt)}</span>}
                   </p>
-                  <LabelsLink id={p.id} />
+                  <LabelsLink id={p.id} t={t} />
                 </div>
                 {p.items
                   .filter((i) => i.dispensedQty - i.returnedQty > 0)
@@ -108,7 +113,7 @@ async function Worklist() {
                       unit={i.drug.unit}
                       withPatient={i.dispensedQty - i.returnedQty}
                       canOpenInvoices={data.admin}
-                      label={`Return ${i.drug.genericName}`}
+                      label={t("Return {drug}", { drug: i.drug.genericName })}
                     />
                   ))}
               </li>
@@ -120,7 +125,7 @@ async function Worklist() {
       {data.returnsToday.length > 0 && (
         <section className="surface p-4 dark:border-slate-800">
           <h2 className="mb-2 font-medium">
-            Returns today <span className="text-slate-500">({data.returnsToday.length})</span>
+            {t("Returns today")} <span className="text-slate-500">({data.returnsToday.length})</span>
           </h2>
           <ul className="divide-y divide-slate-100 text-sm dark:divide-slate-800">
             {data.returnsToday.map((r) => {
@@ -132,8 +137,8 @@ async function Worklist() {
                     <span className="font-medium">
                       {d.genericName} {d.strength} × {r.quantity}
                     </span>{" "}
-                    <Badge tone={r.restocked ? "success" : "warning"}>{r.restocked ? "Back on the shelf" : "For destruction"}</Badge>
-                    <span className="block text-xs text-slate-500">{r.reason}</span>
+                    <Badge tone={r.restocked ? "success" : "warning"}>{t(r.restocked ? "Back on the shelf" : "For destruction")}</Badge>
+                    <span className="block text-xs text-slate-500">{t(r.reason)}</span>
                   </span>
                   <span className="text-xs text-slate-500">
                     <Link href={`/patients/${pt.id}#medications`} className="hover:underline">
@@ -149,17 +154,17 @@ async function Worklist() {
       )}
 
       <p className="text-xs text-slate-500">
-        A patient bringing back drugs from an earlier day? Open their record (Patients) and use &ldquo;Record a return&rdquo; under Medications.
+        {t("A patient bringing back drugs from an earlier day? Open their record (Patients) and use “Record a return” under Medications.")}
       </p>
     </div>
   );
 }
 
-function LabelsLink({ id }: { id: string }) {
+function LabelsLink({ id, t }: { id: string; t: T }) {
   return (
     <Link href={`/rx-label/${id}`} target="_blank" className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline dark:text-brand-400">
       <Printer aria-hidden className="size-3.5" />
-      Print labels
+      {t("Print labels")}
     </Link>
   );
 }
@@ -168,25 +173,26 @@ async function Message({ searchParams }: { searchParams: Promise<{ done?: string
   return <Flash params={await searchParams} />;
 }
 
+async function Actions() {
+  const t = await getT();
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Link href="/inventory/controlled" className={secondaryButtonClass}>
+        <ShieldAlert aria-hidden />
+        {t("Controlled register")}
+      </Link>
+      <Link href="/pharmacy/walk-in" className={buttonClass}>
+        <ShoppingBag aria-hidden />
+        {t("Walk-in sale")}
+      </Link>
+    </div>
+  );
+}
+
 export default function PharmacyPage({ searchParams }: PageProps<"/pharmacy">) {
   return (
     <>
-      <PageHeader
-        title="Pharmacy"
-        subtitle="ፋርማሲ · prescriptions to dispense"
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Link href="/inventory/controlled" className={secondaryButtonClass}>
-              <ShieldAlert aria-hidden />
-              Controlled register
-            </Link>
-            <Link href="/pharmacy/walk-in" className={buttonClass}>
-              <ShoppingBag aria-hidden />
-              Walk-in sale
-            </Link>
-          </div>
-        }
-      />
+      <PageTitle title="Pharmacy" subtitle="prescriptions to dispense" actions={<Actions />} />
       <AutoRefresh seconds={20} />
       <Suspense fallback={null}>
         <Message searchParams={searchParams as Promise<{ done?: string; error?: string }>} />

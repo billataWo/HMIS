@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState, useTransition } from "react";
 import { findPatients, type FoundPatient } from "@/app/actions";
+import { useT } from "./lang-provider";
 
 /** Ctrl+K / Cmd+K anywhere, or "/" when not typing in a field. */
 const isShortcut = (e: KeyboardEvent) => {
@@ -19,6 +20,7 @@ const OPEN_EVENT = "hmis:quick-find";
 /** A button that opens quick find (there can be several: sidebar, phone top bar). */
 export function QuickFindButton({ variant }: { variant: "sidebar" | "icon" }) {
   const open = () => window.dispatchEvent(new Event(OPEN_EVENT));
+  const t = useT();
   return variant === "sidebar" ? (
     <button
       type="button"
@@ -26,14 +28,14 @@ export function QuickFindButton({ variant }: { variant: "sidebar" | "icon" }) {
       className="flex w-full items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500 shadow-xs transition-colors hover:border-slate-300 hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
     >
       <Search aria-hidden className="size-4" />
-      Find a patient
+      {t("Find a patient")}
       <kbd className="ml-auto rounded border border-slate-200 px-1.5 font-sans text-[11px] text-slate-500 dark:border-slate-700">Ctrl K</kbd>
     </button>
   ) : (
     <button
       type="button"
       onClick={open}
-      aria-label="Find a patient"
+      aria-label={t("Find a patient")}
       className="grid size-11 place-items-center rounded-lg text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
     >
       <Search aria-hidden className="size-5" />
@@ -58,6 +60,7 @@ export function QuickFind({ frontDesk, canRegister }: { frontDesk: boolean; canR
   const [active, setActive] = useState(0);
   const [searched, setSearched] = useState("");
   const [pending, start] = useTransition();
+  const t = useT();
 
   const open = useCallback(() => {
     if (dialog.current?.open) return;
@@ -84,7 +87,7 @@ export function QuickFind({ frontDesk, canRegister }: { frontDesk: boolean; canR
   useEffect(() => {
     const term = q.trim();
     if (term.length < 2) return;
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       start(async () => {
         const r = await findPatients(term);
         setFailed(!r.ok);
@@ -93,7 +96,7 @@ export function QuickFind({ frontDesk, canRegister }: { frontDesk: boolean; canR
         setSearched(term);
       });
     }, 220);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [q]);
 
   const shown = q.trim().length < 2 ? [] : results;
@@ -120,7 +123,7 @@ export function QuickFind({ frontDesk, canRegister }: { frontDesk: boolean; canR
     <>
       <dialog
         ref={dialog}
-        aria-label="Find a patient"
+        aria-label={t("Find a patient")}
         onClose={() => setQ("")}
         onClick={(e) => e.target === dialog.current && close()}
         className="m-0 mx-auto mt-[10vh] w-[min(40rem,calc(100vw-2rem))] max-w-none overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-overlay backdrop:bg-slate-950/40 backdrop:backdrop-blur-[2px] open:animate-[enter_160ms_ease-out] dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
@@ -132,8 +135,8 @@ export function QuickFind({ frontDesk, canRegister }: { frontDesk: boolean; canR
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={onInputKey}
-            placeholder="Name, phone or MRN"
-            aria-label="Name, phone or MRN"
+            placeholder={t("Name, phone or MRN")}
+            aria-label={t("Name, phone or MRN")}
             role="combobox"
             aria-expanded={shown.length > 0}
             aria-controls={listId}
@@ -147,7 +150,7 @@ export function QuickFind({ frontDesk, canRegister }: { frontDesk: boolean; canR
 
         <div className="max-h-[60vh] overflow-y-auto">
           {shown.length > 0 ? (
-            <ul id={listId} role="listbox" aria-label="Patients" className="p-2">
+            <ul id={listId} role="listbox" aria-label={t("Patients")} className="p-2">
               {shown.map((p, i) => (
                 <li
                   key={p.id}
@@ -160,14 +163,14 @@ export function QuickFind({ frontDesk, canRegister }: { frontDesk: boolean; canR
                   <button type="button" onClick={() => go(`/patients/${p.id}`)} className="min-w-0 flex-1 text-left">
                     <span className="block truncate font-medium">{p.name}</span>
                     <span className="block truncate text-xs text-slate-500">
-                      {p.mrn} · {p.sex === "MALE" ? "M" : "F"}
-                      {p.age !== null && ` · ${p.age}y`}
+                      {p.mrn} · {t(p.sex === "MALE" ? "M" : "F")}
+                      {p.age !== null && ` · ${t("{n}y", { n: p.age })}`}
                       {p.phone && ` · ${p.phone}`}
                     </span>
                     {p.allergies.length > 0 && (
                       <span className="mt-0.5 flex items-center gap-1 text-xs font-medium text-red-700 dark:text-red-300">
                         <TriangleAlert aria-hidden className="size-3" />
-                        Allergies: {p.allergies.join(", ")}
+                        {t("Allergies: {list}", { list: p.allergies.join(", ") })}
                       </span>
                     )}
                   </button>
@@ -177,7 +180,7 @@ export function QuickFind({ frontDesk, canRegister }: { frontDesk: boolean; canR
                       onClick={() => go(`/queue?find=${encodeURIComponent(p.mrn)}`)}
                       className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium text-brand-700 ring-1 ring-brand-600/25 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-950"
                     >
-                      Check in
+                      {t("Check in")}
                     </button>
                   )}
                   {i === active && <CornerDownLeft aria-hidden className="hidden size-4 shrink-0 text-slate-400 sm:block" />}
@@ -187,18 +190,18 @@ export function QuickFind({ frontDesk, canRegister }: { frontDesk: boolean; canR
           ) : (
             <div className="px-5 py-8 text-center text-sm text-slate-500" aria-live="polite">
               {failed ? (
-                "Can't search right now. Check the connection and try again."
+                t("Can't search right now. Check the connection and try again.")
               ) : q.trim().length < 2 ? (
-                "Type at least two letters or digits of a name, phone number or MRN."
+                t("Type at least two letters or digits of a name, phone number or MRN.")
               ) : pending || searched !== q.trim() ? (
-                "Searching…"
+                t("Searching…")
               ) : (
                 <>
-                  No patient matches &ldquo;{q.trim()}&rdquo;.
+                  {t("No patient matches “{q}”.", { q: q.trim() })}
                   {canRegister && (
                     <Link href="/patients/new" onClick={close} className="mt-3 flex items-center justify-center gap-1.5 font-medium text-brand-700 hover:underline dark:text-brand-300">
                       <UserPlus aria-hidden className="size-4" />
-                      Register a new patient
+                      {t("Register a new patient")}
                     </Link>
                   )}
                 </>
@@ -209,14 +212,14 @@ export function QuickFind({ frontDesk, canRegister }: { frontDesk: boolean; canR
 
         <p className="hidden gap-4 border-t border-slate-200 bg-slate-50 px-4 py-2 text-[11px] text-slate-500 sm:flex dark:border-slate-800 dark:bg-slate-950/60">
           <span>
-            <kbd className="font-sans">↑ ↓</kbd> move
+            <kbd className="font-sans">↑ ↓</kbd> {t("move")}
           </span>
           <span>
-            <kbd className="font-sans">Enter</kbd> open the record
+            <kbd className="font-sans">Enter</kbd> {t("open the record")}
           </span>
           {frontDesk && (
             <span>
-              <kbd className="font-sans">Alt Enter</kbd> check in
+              <kbd className="font-sans">Alt Enter</kbd> {t("check in")}
             </span>
           )}
         </p>

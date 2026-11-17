@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+// i18n: english-only — the printed summary is in English and Amharic side by side, whatever the
+// screen's language; only the Print button follows the language.
+import { LangBoundary } from "@/components/lang-boundary";
 import { PrintButton } from "@/components/print-button";
 import { api, ApiError, type VisitSummary } from "@/lib/api";
 import { directions } from "@/lib/directions";
@@ -55,21 +58,21 @@ async function Summary({ params }: { params: Promise<{ id: string }> }) {
 
       <div className="grid grid-cols-2 gap-x-6 gap-y-0.5">
         <p>
-          <span className="text-slate-600">Patient:</span> {fullName(s.patient)}
+          <span className="text-slate-600">Patient · <span lang="am">ታካሚ</span>:</span> {fullName(s.patient)}
         </p>
         <p>
           <span className="text-slate-600">MRN:</span> {s.patient.mrn}
         </p>
         <p>
-          <span className="text-slate-600">Sex / age:</span> {s.patient.sex === "MALE" ? "Male" : "Female"}
+          <span className="text-slate-600">Sex / age · <span lang="am">ጾታ / ዕድሜ</span>:</span> {s.patient.sex === "MALE" ? "Male · ወንድ" : "Female · ሴት"}
           {age !== null && ` · ${age}`}
         </p>
         <p>
-          <span className="text-slate-600">Date:</span> {formatDualDate(s.checkedInAt)}
+          <span className="text-slate-600">Date · <span lang="am">ቀን</span>:</span> {formatDualDate(s.checkedInAt)}
         </p>
         {s.doctor && (
           <p>
-            <span className="text-slate-600">Doctor:</span> Dr. {s.doctor.fullName}
+            <span className="text-slate-600">Doctor · <span lang="am">ሐኪም</span>:</span> Dr. {s.doctor.fullName}
           </p>
         )}
       </div>
@@ -120,10 +123,10 @@ async function Summary({ params }: { params: Promise<{ id: string }> }) {
                   <>
                     {o.resultValue}
                     {o.labTest.unit && ` ${o.labTest.unit}`}
-                    {o.resultFlag && o.resultFlag !== "N" && <span className="font-bold"> ({o.resultFlag === "H" || o.resultFlag === "HH" ? "high" : "low"})</span>}
+                    {o.resultFlag && o.resultFlag !== "N" && <span className="font-bold"> ({o.resultFlag === "H" || o.resultFlag === "HH" ? "high · ከፍተኛ" : "low · ዝቅተኛ"})</span>}
                   </>
                 ) : (
-                  <span className="text-slate-600">result not ready yet</span>
+                  <span className="text-slate-600">result not ready yet · <span lang="am">ውጤቱ ገና አልደረሰም</span></span>
                 )}
               </li>
             ))}
@@ -147,7 +150,9 @@ async function Summary({ params }: { params: Promise<{ id: string }> }) {
             {s.nextAppointment.reason && <span className="font-normal"> · {s.nextAppointment.reason}</span>}
           </p>
         ) : (
-          <p>None booked. Come back if you are not better.</p>
+          <p>
+            None booked. Come back if you are not better. · <span lang="am">ቀጠሮ አልተያዘም። ካልተሻለዎት ይመለሱ።</span>
+          </p>
         )}
       </section>
 
@@ -164,7 +169,9 @@ async function Summary({ params }: { params: Promise<{ id: string }> }) {
         </ul>
       </section>
 
-      <PrintButton />
+      <LangBoundary>
+        <PrintButton />
+      </LangBoundary>
     </div>
   );
 }
@@ -172,7 +179,7 @@ async function Summary({ params }: { params: Promise<{ id: string }> }) {
 export default function VisitSummaryPage({ params }: { params: Promise<{ id: string }> }) {
   return (
     <main className="flex-1 bg-white px-4 py-6 print:p-0">
-      <Suspense fallback={<p className="text-center text-sm">Loading…</p>}>
+      <Suspense fallback={<p className="text-center text-sm">…</p>}>
         <Summary params={params} />
       </Suspense>
     </main>

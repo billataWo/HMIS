@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { addAddendum, type FormState } from "@/app/actions";
 import type { VisitAddendum } from "@/lib/api";
 import { formatDualDate, formatTime } from "@/lib/format";
+import { useT } from "./lang-provider";
 import { Alert, buttonClass, inputClass } from "./ui";
 
 /**
@@ -13,19 +14,20 @@ import { Alert, buttonClass, inputClass } from "./ui";
  */
 export function Addenda({ visitId, addenda, canAdd }: { visitId: string; addenda: VisitAddendum[]; canAdd: boolean }) {
   const [state, action, pending] = useActionState<FormState, FormData>(addAddendum, {});
+  const t = useT();
   if (!addenda.length && !canAdd) return null;
   return (
     <section id="addenda" className="surface scroll-mt-6 space-y-3 p-5 dark:border-slate-800">
-      <h2 className="font-semibold text-slate-900 dark:text-white">Addenda</h2>
+      <h2 className="font-semibold text-slate-900 dark:text-white">{t("Addenda")}</h2>
       {addenda.length === 0 ? (
-        <p className="text-sm text-slate-500">Nothing added after the consultation.</p>
+        <p className="text-sm text-slate-500">{t("Nothing added after the consultation.")}</p>
       ) : (
         <ul className="space-y-2 text-sm">
           {addenda.map((a) => (
             <li key={a.id} className="rounded-md border-l-2 border-brand-500 bg-slate-50 px-3 py-2 dark:bg-slate-900">
               <p className="whitespace-pre-wrap">{a.text}</p>
               <p className="mt-1 text-xs text-slate-500">
-                {a.author?.fullName ?? "Unknown"} · {formatDualDate(a.createdAt)} {formatTime(a.createdAt)}
+                {a.author?.fullName ?? t("Unknown")} · {formatDualDate(a.createdAt)} {formatTime(a.createdAt)}
               </p>
             </li>
           ))}
@@ -34,18 +36,18 @@ export function Addenda({ visitId, addenda, canAdd }: { visitId: string; addenda
       {canAdd && (
         <form key={addenda.length} action={action} className="space-y-2">
           <input type="hidden" name="visitId" value={visitId} />
-          {state.error && <Alert>{state.error}</Alert>}
+          {state.error && <Alert>{t(state.error)}</Alert>}
           <textarea
             name="text"
             required
             minLength={3}
             rows={2}
-            placeholder="Add a note to this visit (it is signed and timed, and can't be changed later)"
-            aria-label="Addendum"
+            placeholder={t("Add a note to this visit (it is signed and timed, and can't be changed later)")}
+            aria-label={t("Addendum")}
             className={inputClass}
           />
           <button disabled={pending} className={`${buttonClass} px-3 py-1.5 text-xs`}>
-            {pending ? "Adding…" : "Add addendum"}
+            {pending ? t("Adding…") : t("Add addendum")}
           </button>
         </form>
       )}

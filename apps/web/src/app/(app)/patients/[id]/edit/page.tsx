@@ -1,7 +1,9 @@
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { AllergyEditor } from "@/components/allergy-editor";
-import { Notice, PageHeader, Skeleton } from "@/components/ui";
+import { PageTitle } from "@/components/page-title";
+import { Notice, Skeleton } from "@/components/ui";
+import { getT } from "@/lib/lang";
 import { api, ApiError, type Me, type PatientDetail } from "@/lib/api";
 import { ageParts } from "@/lib/format";
 import { canRegister } from "@/lib/roles";
@@ -18,15 +20,16 @@ async function EditForm({ params }: { params: Promise<{ id: string }> }) {
     throw e;
   }
 
+  const t = await getT();
   if (!canRegister(me)) {
     // Doctors without registration rights may still keep allergies up to date.
     return me.role === "DOCTOR" ? (
       <div className="max-w-xl space-y-4">
-        <Notice tone="info">Details are corrected at reception. You can update the allergy list here.</Notice>
+        <Notice tone="info">{t("Details are corrected at reception. You can update the allergy list here.")}</Notice>
         <AllergyEditor patientId={p.id} allergies={p.allergies} />
       </div>
     ) : (
-      <Notice tone="info">Patient details are corrected at reception.</Notice>
+      <Notice tone="info">{t("Patient details are corrected at reception.")}</Notice>
     );
   }
 
@@ -64,7 +67,7 @@ async function EditForm({ params }: { params: Promise<{ id: string }> }) {
 export default function EditPatientPage({ params }: PageProps<"/patients/[id]/edit">) {
   return (
     <>
-      <PageHeader title="Edit patient" subtitle="የታካሚ መረጃ ማስተካከያ" />
+      <PageTitle title="Edit patient" />
       <Suspense fallback={<Skeleton className="h-96" />}>
         <EditForm params={params} />
       </Suspense>

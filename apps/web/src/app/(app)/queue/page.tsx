@@ -15,7 +15,7 @@ import { Badge, buttonClass, inputClass, linkClass, PageHeader, pillClass, secon
 import { api, type Doctor, type Me, type Patient, type QueueResponse, type QueueVisit, type Role, type Service, type VisitStatus } from "@/lib/api";
 import { ageText, etb, formatDualDate, formatDuration, formatTime, fullName } from "@/lib/format";
 import { TRIAGE } from "../visits/[id]/vital-flags";
-import { type Lang, tr } from "@/lib/i18n";
+import { type Lang, makeT, tr } from "@/lib/i18n";
 import { getLang } from "@/lib/lang";
 
 type Search = { find?: string; doctor?: string; error?: string; checkedIn?: string };
@@ -73,11 +73,12 @@ function VisitRow({ v, role, returnTo, prepayment, lang, doctors }: { v: QueueVi
   const canCancel = v.status === "WAITING" && role !== "CASHIER" && role !== "PHARMACIST" && role !== "LAB_TECH";
   const small = "px-3 py-1.5 text-xs";
   const finished = v.status === "COMPLETED" || v.status === "CANCELLED";
+  const t = makeT(lang);
 
   return (
     <StaggerItem className="flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3.5 transition-colors hover:bg-slate-50/70 sm:px-5 dark:hover:bg-slate-800/30">
       <span
-        aria-label={`Queue number ${v.queueNumber}`}
+        aria-label={t("Queue number {n}", { n: v.queueNumber })}
         className={`grid size-12 shrink-0 place-items-center rounded-xl text-lg font-semibold tabular-nums ring-1 ring-inset ${
           finished
             ? "bg-slate-50 text-slate-400 ring-slate-200 dark:bg-slate-800/50 dark:ring-slate-700"
@@ -92,8 +93,8 @@ function VisitRow({ v, role, returnTo, prepayment, lang, doctors }: { v: QueueVi
             {fullName(v.patient)}
           </Link>
           <span className="text-xs text-slate-500">
-            {v.patient.mrn} · {v.patient.sex === "MALE" ? "M" : "F"}
-            {age !== null && ` · ${age}`}
+            {v.patient.mrn} · {t(v.patient.sex === "MALE" ? "M" : "F")}
+            {age !== null && ` · ${ageText(v.patient.dateOfBirth, true, t)}`}
           </span>
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-500">
@@ -102,7 +103,7 @@ function VisitRow({ v, role, returnTo, prepayment, lang, doctors }: { v: QueueVi
             <span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${TRIAGE[v.triageLevel].tone}`}>{tr(lang, TRIAGE[v.triageLevel].label)}</span>
           )}
           {v.status !== "WAITING" && <StatusBadge status={v.status} lang={lang} />}
-          {v.carriedOver && <Badge tone="warning">Open since {formatDualDate(v.checkedInAt)}</Badge>}
+          {v.carriedOver && <Badge tone="warning">{t("Open since {date}", { date: formatDualDate(v.checkedInAt) })}</Badge>}
           {unpaid && <Badge tone="danger">{tr(lang, "Awaiting payment")}</Badge>}
           {feeOwed && emergency && <Badge tone="warning">{tr(lang, "Emergency: pays after")}</Badge>}
           {(v.status === "AWAITING_LAB" || v.status === "AWAITING_PHARMACY") && v.labReady && (
@@ -115,25 +116,25 @@ function VisitRow({ v, role, returnTo, prepayment, lang, doctors }: { v: QueueVi
           {v.labAlert === "CRITICAL" && <Badge tone="danger">{tr(lang, "Critical lab result")}</Badge>}
           {v.labAlert === "AMENDED" && <Badge tone="warning">{tr(lang, "Lab result corrected")}</Badge>}
           {v.labRecollect && <Badge tone="warning">{tr(lang, "New lab sample needed")}</Badge>}
-          {Number(v.owed ?? 0) > 0 && <Badge tone="danger">{tr(lang, "Owes")} {etb(v.owed!)}</Badge>}
+          {Number(v.owed ?? 0) > 0 && <Badge tone="danger">{t("Owes {amount}", { amount: etb(v.owed!, t) })}</Badge>}
           {v.status === "IN_CONSULTATION" && !v.diagnosed && CLINICAL.includes(role) && <Badge>{tr(lang, "No diagnosis yet")}</Badge>}
-          <span>Arrived {formatTime(v.checkedInAt)}</span>
+          <span>{t("Arrived {time}", { time: formatTime(v.checkedInAt) })}</span>
           {v.status === "WAITING" && (
             <span className="inline-flex items-center gap-1 font-medium text-amber-700 dark:text-amber-400">
               <Clock aria-hidden className="size-3" />
-              waiting {formatDuration(v.checkedInAt)}
+              {t("waiting {time}", { time: formatDuration(v.checkedInAt, undefined, t) })}
             </span>
           )}
           {v.doctor && (
             <span>
-              Dr. {v.doctor.fullName}
+              {t("Dr. {name}", { name: v.doctor.fullName })}
               {v.doctor.room && <span className="font-medium text-slate-700 dark:text-slate-200"> · {v.doctor.room}</span>}
             </span>
           )}
           {v.patient.allergies.length > 0 && (
             <span className="inline-flex items-center gap-1 font-medium text-red-700 dark:text-red-400">
               <TriangleAlert aria-hidden className="size-3" />
-              Allergies: {v.patient.allergies.join(", ")}
+              {t("Allergies: {list}", { list: v.patient.allergies.join(", ") })}
             </span>
           )}
         </div>
@@ -221,7 +222,7 @@ async function CheckInPanel({ find, doctors, services, lang }: { find: string; d
       <Form action="/queue" className="flex gap-2">
         <div className="relative flex-1">
           <Search aria-hidden className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
-          <input name="find" defaultValue={find} placeholder="Name, phone or MRN" aria-label="Find patient" className={`${inputClass} pl-9`} />
+          <input name="find" defaultValue={find} placeholder={tr(lang, "Name, phone or MRN")} aria-label={tr(lang, "Find patient")} className={`${inputClass} pl-9`} />
         </div>
         <button className={secondaryButtonClass}>{tr(lang, "Find")}</button>
       </Form>
@@ -229,9 +230,9 @@ async function CheckInPanel({ find, doctors, services, lang }: { find: string; d
         <ul className="mt-3 divide-y divide-slate-100 dark:divide-slate-800">
           {matches.length === 0 && (
             <li className="py-3 text-sm text-slate-500">
-              No match.{" "}
+              {tr(lang, "No match.")}{" "}
               <Link href="/patients/new" className={linkClass}>
-                Register a new patient
+                {tr(lang, "Register a new patient")}
               </Link>
             </li>
           )}
@@ -246,7 +247,7 @@ async function CheckInPanel({ find, doctors, services, lang }: { find: string; d
                 {p.balance && Number(p.balance.earlier) > 0 && (
                   <span className="ml-2">
                     <Badge tone="warning">
-                      {tr(lang, "Owes")} {etb(p.balance.earlier)} {tr(lang, "from earlier visits")}
+                      {tr(lang, "Owes {amount} from earlier visits", { amount: etb(p.balance.earlier, makeT(lang)) })}
                     </Badge>
                   </span>
                 )}
@@ -263,6 +264,7 @@ async function CheckInPanel({ find, doctors, services, lang }: { find: string; d
 async function Queue({ searchParams }: { searchParams: Promise<Search> }) {
   const params = await searchParams;
   const lang = await getLang();
+  const t = makeT(lang);
   const [me, doctors, services] = await Promise.all([
     api<Me>("/auth/me"),
     api<Doctor[]>("/lookups/doctors"),
@@ -311,7 +313,7 @@ async function Queue({ searchParams }: { searchParams: Promise<Search> }) {
       <p className="mb-5 flex flex-wrap gap-x-3 gap-y-1 text-sm text-slate-600 sm:hidden dark:text-slate-300">
         <span>
           <strong className="text-slate-900 tabular-nums dark:text-white">{waiting.length}</strong> {tr(lang, "Waiting").toLowerCase()}
-          {longest && ` · longest ${formatDuration(longest)}`}
+          {longest && ` · ${t("longest {time}", { time: formatDuration(longest, undefined, t) })}`}
         </span>
         <span>
           <strong className="text-slate-900 tabular-nums dark:text-white">{active.length}</strong> {tr(lang, "In progress").toLowerCase()}
@@ -324,27 +326,27 @@ async function Queue({ searchParams }: { searchParams: Promise<Search> }) {
         <StatCard
           label={tr(lang, "Patients today")}
           value={visits.filter((v) => !v.carriedOver).length}
-          hint={visits.some((v) => v.carriedOver) ? `+ ${visits.filter((v) => v.carriedOver).length} open from earlier days` : undefined}
+          hint={visits.some((v) => v.carriedOver) ? t("+ {n} open from earlier days", { n: visits.filter((v) => v.carriedOver).length }) : undefined}
           icon={Users}
         />
-        <StatCard label={tr(lang, "Waiting")} value={waiting.length} hint={longest ? `Longest: ${formatDuration(longest)}` : "Nobody waiting"} icon={Clock} />
-        <StatCard label={tr(lang, "In progress")} value={active.length} hint="Doctor, lab or pharmacy" />
+        <StatCard label={tr(lang, "Waiting")} value={waiting.length} hint={longest ? t("Longest: {time}", { time: formatDuration(longest, undefined, t) }) : t("Nobody waiting")} icon={Clock} />
+        <StatCard label={tr(lang, "In progress")} value={active.length} hint={t("Doctor, lab or pharmacy")} />
         <StatCard label={tr(lang, "Finished")} value={done.filter((v) => v.status === "COMPLETED").length} icon={CircleCheck} />
       </div>
 
       {FRONT_DESK.includes(me.role) && <CheckInPanel find={params.find?.trim() ?? ""} doctors={doctors} services={services} lang={lang} />}
 
       {doctors.length > 0 && (
-        <nav aria-label="Filter by doctor" className="mb-4 flex flex-wrap gap-2">
+        <nav aria-label={t("Filter by doctor")} className="mb-4 flex flex-wrap gap-2">
           {filterLink(undefined, tr(lang, "All doctors"))}
           {me.role === "DOCTOR" && filterLink("me", tr(lang, "My patients"))}
-          {doctors.filter((d) => d.id !== me.id).map((d) => filterLink(d.id, `Dr. ${d.fullName}`))}
+          {doctors.filter((d) => d.id !== me.id).map((d) => filterLink(d.id, t("Dr. {name}", { name: d.fullName })))}
         </nav>
       )}
 
       <div className="space-y-6">
-        <Column title="Waiting" visits={waiting} empty="Nobody is waiting." role={me.role} returnTo={returnTo} prepayment={prepayment} lang={lang} doctors={doctors} />
-        <Column title="In progress" visits={active} empty="No patient is with a doctor, at the lab or at the pharmacy." role={me.role} returnTo={returnTo} prepayment={prepayment} lang={lang} doctors={doctors} />
+        <Column title={t("Waiting")} visits={waiting} empty={t("Nobody is waiting.")} role={me.role} returnTo={returnTo} prepayment={prepayment} lang={lang} doctors={doctors} />
+        <Column title={t("In progress")} visits={active} empty={t("No patient is with a doctor, at the lab or at the pharmacy.")} role={me.role} returnTo={returnTo} prepayment={prepayment} lang={lang} doctors={doctors} />
         {done.length > 0 && (
           <details className="group surface overflow-hidden">
             <summary className="flex items-center justify-between px-4 py-3 font-semibold text-slate-900 sm:px-5 dark:text-white">

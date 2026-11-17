@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Doctor } from "@/lib/api";
+import { useT } from "./lang-provider";
 
 const quiet = "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2";
 
@@ -22,11 +23,12 @@ export function TransferDoctor({
   keep?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const t = useT();
   const others = doctors.filter((d) => d.id !== currentId);
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)} className={`${quiet} text-slate-700 hover:bg-slate-100 focus-visible:outline-brand-600 dark:text-slate-200 dark:hover:bg-slate-800`}>
-        {label}
+        {t(label)}
       </button>
     );
   }
@@ -35,23 +37,23 @@ export function TransferDoctor({
       action={action}
       onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
       role="group"
-      aria-label={label}
+      aria-label={t(label)}
       className="inline-flex flex-wrap items-center gap-2 rounded-lg bg-slate-100 py-1 pr-1 pl-2 text-xs dark:bg-slate-800"
     >
-      <select name="doctorId" defaultValue={others[0]?.id ?? ""} aria-label="Doctor" className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-900">
+      <select name="doctorId" defaultValue={others[0]?.id ?? ""} aria-label={t("Doctor")} className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-900">
         {others.map((d) => (
           <option key={d.id} value={d.id}>
-            Dr. {d.fullName}
+            {t("Dr. {name}", { name: d.fullName })}
             {d.room ? ` · ${d.room}` : ""}
           </option>
         ))}
-        {currentId && <option value="">Any free doctor</option>}
+        {currentId && <option value="">{t("Any free doctor")}</option>}
       </select>
       <button type="submit" className={`${quiet} bg-brand-700 text-white hover:bg-brand-800 focus-visible:outline-brand-600`}>
-        {move}
+        {t(move)}
       </button>
       <button type="button" onClick={() => setOpen(false)} className={`${quiet} text-slate-700 hover:bg-white dark:text-slate-200 dark:hover:bg-slate-900`}>
-        {keep}
+        {t(keep)}
       </button>
     </form>
   );

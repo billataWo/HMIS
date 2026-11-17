@@ -1,4 +1,11 @@
 import type { BadgeTone } from "@/components/ui";
+import type { T } from "./i18n";
+
+/** English words for the formatters below when no translator is passed. */
+export const EN: T = Object.assign((s: string, v?: Record<string, unknown>) => (v ? s.replace(/{(w+)}/g, (a, k: string) => (k in v ? String(v[k]) : a)) : s), {
+  rich: () => null,
+  lang: "en" as const,
+});
 
 export const ET_MONTHS = [
   "መስከረም", "ጥቅምት", "ኅዳር", "ታኅሣሥ", "ጥር", "የካቲት", "መጋቢት", "ሚያዝያ", "ግንቦት", "ሰኔ", "ሐምሌ", "ነሐሴ", "ጳጉሜ",
@@ -56,13 +63,14 @@ export function formatTime(iso: string) {
  * Time between two instants, in the unit people would say: "5 min", "1 h 20 min", and from a day
  * on "1 day 3 h" or "5 days" (a visit left open overnight, not "136 h 45 min").
  */
-export function formatDuration(fromIso: string, to: Date | string = new Date()) {
+export function formatDuration(fromIso: string, to: Date | string = new Date(), t: T = EN) {
   const mins = Math.max(0, Math.round((new Date(to).getTime() - new Date(fromIso).getTime()) / 60000));
-  if (mins < 60) return `${mins} min`;
-  if (mins < 24 * 60) return `${Math.floor(mins / 60)} h ${mins % 60} min`;
+  if (mins < 60) return t("{n} min", { n: mins });
+  if (mins < 24 * 60) return t("{h} h {m} min", { h: Math.floor(mins / 60), m: mins % 60 });
   const days = Math.floor(mins / (24 * 60));
   const hours = Math.floor((mins % (24 * 60)) / 60);
-  return days >= 3 || hours === 0 ? `${days} day${days === 1 ? "" : "s"}` : `${days} day${days === 1 ? "" : "s"} ${hours} h`;
+  const d = t(days === 1 ? "{n} day" : "{n} days", { n: days });
+  return days >= 3 || hours === 0 ? d : `${d} ${t("{n} h", { n: hours })}`;
 }
 
 /** "3 cuvettes", "1 test", "5 ml": a count with its unit, plural where English wants one. */
@@ -93,12 +101,12 @@ export function minutesBetween(fromIso: string, to: Date | string = new Date()) 
 }
 
 /** A number of minutes: "42 min", "2 h 5 min", "3 h", "2 d 4 h". */
-export function formatMinutes(m: number) {
+export function formatMinutes(m: number, t: T = EN) {
   if (m >= 24 * 60) {
     const h = Math.floor((m % (24 * 60)) / 60);
-    return `${Math.floor(m / (24 * 60))} d${h ? ` ${h} h` : ""}`;
+    return [t("{n} d", { n: Math.floor(m / (24 * 60)) }), h ? t("{n} h", { n: h }) : ""].filter(Boolean).join(" ");
   }
-  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`;
+  return m < 60 ? t("{n} min", { n: m }) : [t("{n} h", { n: Math.floor(m / 60) }), m % 60 ? t("{n} min", { n: m % 60 }) : ""].filter(Boolean).join(" ");
 }
 
 /** Moves a YYYY-MM-DD string by a number of days. */
@@ -145,21 +153,21 @@ export function ageParts(iso: string) {
  * Age for display: months under two years (where they matter for doses and growth), then years.
  * Short: "7m", "30y"; long: "7 months", "30 years".
  */
-export function ageText(iso: string | null, short = false) {
+export function ageText(iso: string | null, short = false, t: T = EN) {
   if (!iso) return null;
   const months = monthsSince(iso);
-  if (months < 24) return short ? `${months}m` : `${months} month${months === 1 ? "" : "s"}`;
+  if (months < 24) return short ? t("{n}m", { n: months }) : t(months === 1 ? "{n} month" : "{n} months", { n: months });
   const years = Math.floor(months / 12);
-  return short ? `${years}y` : `${years} years`;
+  return short ? t("{n}y", { n: years }) : t("{n} years", { n: years });
 }
 
 export function fullName(p: { firstName: string; fatherName: string; grandfather?: string | null }) {
   return [p.firstName, p.fatherName, p.grandfather].filter(Boolean).join(" ");
 }
 
-/** "1,234.50 ETB" */
-export function etb(amount: string | number) {
-  return `${Number(amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ETB`;
+/** "1,234.50 ETB" ("1,234.50 ብር" in Amharic). */
+export function etb(amount: string | number, t: T = EN) {
+  return t("{amount} ETB", { amount: Number(amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) });
 }
 
 export const PAYMENT_METHODS: Record<string, string> = {
@@ -187,14 +195,14 @@ export const ROLE_LABELS: Record<string, string> = {
 };
 
 /** "just now", "12 min ago", "3 h ago", "2 days ago". */
-export function formatAgo(iso: string | null) {
-  if (!iso) return "never";
+export function formatAgo(iso: string | null, t: T = EN) {
+  if (!iso) return t("never");
   const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 90) return `${mins} min ago`;
+  if (mins < 1) return t("just now");
+  if (mins < 90) return t("{n} min ago", { n: mins });
   const hours = Math.round(mins / 60);
-  if (hours < 36) return `${hours} h ago`;
-  return `${Math.round(hours / 24)} days ago`;
+  if (hours < 36) return t("{n} h ago", { n: hours });
+  return t("{n} days ago", { n: Math.round(hours / 24) });
 }
 
 /** Minutes since an instant (Infinity for none). */

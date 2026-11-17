@@ -3,6 +3,7 @@
 import { Syringe, X } from "lucide-react";
 import { useActionState, useTransition } from "react";
 import { addProcedure, removeProcedure, type FormState } from "@/app/actions";
+import { useT } from "@/components/lang-provider";
 import { Alert, Badge, buttonClass, Input, inputClass } from "@/components/ui";
 import type { ProcedureCharge, Service } from "@/lib/api";
 import { etb, formatTime } from "@/lib/format";
@@ -14,15 +15,16 @@ import { etb, formatTime } from "@/lib/format";
 export function ProceduresPanel({ visitId, items, procedures, editable }: { visitId: string; items: ProcedureCharge[]; procedures: Service[]; editable: boolean }) {
   const [state, action, pending] = useActionState<FormState, FormData>(addProcedure, {});
   const [removing, start] = useTransition();
+  const t = useT();
 
   return (
     <section id="procedures" className="surface scroll-mt-6 space-y-4 p-5">
       <h2 className="flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
         <Syringe aria-hidden className="size-4 text-slate-400" />
-        Procedures
+        {t("Procedures")}
       </h2>
       {items.length === 0 ? (
-        <p className="text-sm text-slate-500">No procedures recorded.</p>
+        <p className="text-sm text-slate-500">{t("No procedures recorded.")}</p>
       ) : (
         <ul className="divide-y divide-slate-100 text-sm dark:divide-slate-800">
           {items.map((c) => (
@@ -33,16 +35,16 @@ export function ProceduresPanel({ visitId, items, procedures, editable }: { visi
                 <span className="text-xs text-slate-500"> · {formatTime(c.createdAt)}</span>
               </span>
               <span className="flex items-center gap-3">
-                <span className="tabular-nums">{etb(Number(c.unitPrice) * c.quantity)}</span>
+                <span className="tabular-nums">{etb(Number(c.unitPrice) * c.quantity, t)}</span>
                 {c.invoiceId ? (
-                  <Badge tone="success">Billed</Badge>
+                  <Badge tone="success">{t("Billed")}</Badge>
                 ) : (
                   editable && (
                     <button
                       type="button"
                       disabled={removing}
                       onClick={() => start(() => removeProcedure(visitId, c.id))}
-                      aria-label={`Remove ${c.description}`}
+                      aria-label={t("Remove {name}", { name: c.description })}
                       className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-red-700 dark:hover:bg-slate-800"
                     >
                       <X aria-hidden className="size-4" />
@@ -57,27 +59,27 @@ export function ProceduresPanel({ visitId, items, procedures, editable }: { visi
 
       {editable &&
         (procedures.length === 0 ? (
-          <p className="text-xs text-slate-500">No procedures in the price list yet. An admin adds them under Settings → Prices.</p>
+          <p className="text-xs text-slate-500">{t("No procedures in the price list yet. An admin adds them under Settings → Prices.")}</p>
         ) : (
           <form action={action} className="flex flex-wrap items-start gap-2">
             <input type="hidden" name="visitId" value={visitId} />
-            <select name="serviceId" required aria-label="Procedure" className={`${inputClass} min-w-56 flex-1`} defaultValue="">
+            <select name="serviceId" required aria-label={t("Procedure")} className={`${inputClass} min-w-56 flex-1`} defaultValue="">
               <option value="" disabled>
-                Choose a procedure…
+                {t("Choose a procedure…")}
               </option>
               {procedures.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name} · {Number(s.price).toFixed(2)} ETB
+                  {s.name} · {etb(s.price, t)}
                 </option>
               ))}
             </select>
-            <Input name="quantity" type="number" min={1} max={50} defaultValue={1} aria-label="How many" className="w-20" />
+            <Input name="quantity" type="number" min={1} max={50} defaultValue={1} aria-label={t("How many")} className="w-20" />
             <button type="submit" disabled={pending} className={buttonClass}>
-              {pending ? "Adding…" : "Record"}
+              {pending ? t("Adding…") : t("Record")}
             </button>
             {state.error && (
               <div className="w-full">
-                <Alert>{state.error}</Alert>
+                <Alert>{t(state.error)}</Alert>
               </div>
             )}
           </form>

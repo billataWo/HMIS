@@ -1,4 +1,6 @@
 import type { LabQcRun } from "@/lib/api";
+import { EN } from "@/lib/format";
+import type { T } from "@/lib/i18n";
 
 // Drawn small and scaled to at most 28rem wide, so the labels read the same on a phone and a desk.
 const W = 340;
@@ -14,9 +16,9 @@ const when = (iso: string) =>
  * the ±2 SD (warning) and ±3 SD (failure) lines. Each point names its run on hover; failed and
  * warning runs are marked by colour and shape.
  */
-export function LeveyJennings({ runs, unit }: { runs: LabQcRun[]; unit?: string | null }) {
+export function LeveyJennings({ runs, unit, t = EN }: { runs: LabQcRun[]; unit?: string | null; t?: T }) {
   const points = runs.filter((r) => r.z !== null).reverse();
-  if (points.length < 2) return <p className="text-xs text-slate-500">The chart appears after two runs.</p>;
+  if (points.length < 2) return <p className="text-xs text-slate-500">{t("The chart appears after two runs.")}</p>;
   const x = (i: number) => PAD.l + (i * (W - PAD.l - PAD.r)) / Math.max(points.length - 1, 1);
   const y = (z: number) => PAD.t + ((LIMIT - Math.max(-LIMIT, Math.min(LIMIT, z))) * (H - PAD.t - PAD.b)) / (2 * LIMIT);
   const lines: [number, string, string][] = [
@@ -29,7 +31,7 @@ export function LeveyJennings({ runs, unit }: { runs: LabQcRun[]; unit?: string 
     [-3, "stroke-red-400 dark:stroke-red-500", "−3SD"],
   ];
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full max-w-md" role="img" aria-label={`Levey-Jennings chart of the last ${points.length} runs`}>
+    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full max-w-md" role="img" aria-label={t("Levey-Jennings chart of the last {n} runs", { n: points.length })}>
       {lines.map(([z, cls, label]) => (
         <g key={z}>
           <line x1={PAD.l} x2={W - PAD.r} y1={y(z)} y2={y(z)} className={cls} strokeWidth={1} strokeDasharray={Math.abs(z) >= 2 ? "4 3" : undefined} />

@@ -6,6 +6,7 @@ import { cancelPrescription, createPrescription, searchDrugs, type RxDraftItem }
 import { Alert, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
 import type { DrugOption, Frequency, Prescription, RxAlert } from "@/lib/api";
 import { ConfirmCancel } from "@/components/confirm-cancel";
+import { useT } from "@/components/lang-provider";
 import { unitsPerDose } from "@/lib/dose";
 
 const FREQUENCIES: { value: Frequency; label: string; perDay: number | null }[] = [
@@ -46,17 +47,18 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string>();
   const [pending, start] = useTransition();
+  const t = useT();
 
   useEffect(() => {
     if (q.trim().length < 2) return;
     let cancelled = false;
-    const t = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       const r = await searchDrugs(q);
       if (!cancelled) setFound(r);
     }, 250);
     return () => {
       cancelled = true;
-      clearTimeout(t);
+      clearTimeout(timer);
     };
   }, [q]);
 
@@ -109,29 +111,29 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
 
   return (
     <section id="prescriptions" className="surface scroll-mt-6 space-y-4 p-5">
-      <h2 className="font-semibold text-slate-900 dark:text-white">Prescriptions</h2>
+      <h2 className="font-semibold text-slate-900 dark:text-white">{t("Prescriptions")}</h2>
 
-      {prescriptions.length === 0 && drafts.length === 0 && <p className="text-sm text-slate-500">Nothing prescribed yet.</p>}
+      {prescriptions.length === 0 && drafts.length === 0 && <p className="text-sm text-slate-500">{t("Nothing prescribed yet.")}</p>}
       {prescriptions.map((p) => (
         <div key={p.id} className={`rounded-md border border-slate-200 p-3 text-sm dark:border-slate-800 ${p.status === "CANCELLED" ? "opacity-60" : ""}`}>
           <div className="mb-1 flex items-center justify-between gap-2">
             <span className="text-xs font-medium text-slate-500">
-              {RX_STATUS[p.status]} · Dr. {p.prescriber.fullName}
+              {t(RX_STATUS[p.status])} · {t("Dr. {name}", { name: p.prescriber.fullName })}
             </span>
             {editable && p.status === "PENDING" && (
-              <ConfirmCancel disabled={pending} onConfirm={() => start(() => cancelPrescription(p.id))} question="Cancel this prescription?" />
+              <ConfirmCancel disabled={pending} onConfirm={() => start(() => cancelPrescription(p.id))} question={t("Cancel this prescription?")} />
             )}
           </div>
           <ul className="space-y-0.5">
             {p.items.map((i) => (
               <li key={i.id} className={p.status === "CANCELLED" ? "line-through" : ""}>
                 <span className="font-medium">{drugLabel(i.drug)}</span> · {i.dose} {i.frequency}
-                {i.durationDays && ` × ${i.durationDays} days`} · qty {i.quantity}
-                {i.dispensedQty > 0 && i.dispensedQty < i.quantity && <span className="text-slate-500"> ({i.dispensedQty} given)</span>}
+                {i.durationDays && ` × ${t("{n} days", { n: i.durationDays })}`} · {t("qty {n}", { n: i.quantity })}
+                {i.dispensedQty > 0 && i.dispensedQty < i.quantity && <span className="text-slate-500"> ({t("{n} given", { n: i.dispensedQty })})</span>}
                 {i.instructions && <span className="block text-xs text-slate-500">{i.instructions}</span>}
                 {i.substitutedFrom && (
                   <span className="block text-xs text-amber-800 dark:text-amber-300">
-                    Pharmacy gave this instead of {i.substitutedFrom}
+                    {t("Pharmacy gave this instead of {drug}", { drug: i.substitutedFrom })}
                     {i.substitutionReason && `: ${i.substitutionReason}`}
                   </span>
                 )}
@@ -140,8 +142,8 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
           </ul>
           {p.alerts && p.alerts.length > 0 && (
             <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
-              Accepted alerts: {p.alerts.map((a) => a.message).join("; ")}
-              {p.overrideReason && ` · Reason: ${p.overrideReason}`}
+              {t("Accepted alerts: {list}", { list: p.alerts.map((a) => t(a.message)).join("; ") })}
+              {p.overrideReason && ` · ${t("Reason")}: ${p.overrideReason}`}
             </p>
           )}
         </div>
@@ -155,7 +157,7 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
                 <span>
                   <span className="font-medium">{drugLabel(d.drug)}</span> <ControlledBadge c={d.drug.controlled} />
                   <span className={`ml-2 text-xs ${d.drug.inStock >= d.quantity ? "text-slate-500" : "text-red-700 dark:text-red-400"}`}>
-                    {d.drug.inStock} in stock
+                    {t("{n} in stock", { n: d.drug.inStock })}
                   </span>
                 </span>
                 <button
@@ -163,16 +165,16 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
                   onClick={() => {
                     setAlerts(undefined);
                     setDrafts((ds) => ds.filter((_, j) => j !== i));
-                  }} className="text-xs text-red-700 hover:underline dark:text-red-400" aria-label={`Remove ${d.drug.genericName}`}>
-                  Remove
+                  }} className="text-xs text-red-700 hover:underline dark:text-red-400" aria-label={t("Remove {drug}", { drug: d.drug.genericName })}>
+                  {t("Remove")}
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <input value={d.dose} onChange={(e) => update(i, { dose: e.target.value })} aria-label="Dose" placeholder="Dose" className={inputClass} />
-                <select value={d.frequency} onChange={(e) => update(i, { frequency: e.target.value as Frequency })} aria-label="Frequency" className={inputClass}>
+                <input value={d.dose} onChange={(e) => update(i, { dose: e.target.value })} aria-label={t("Dose")} placeholder={t("Dose")} className={inputClass} />
+                <select value={d.frequency} onChange={(e) => update(i, { frequency: e.target.value as Frequency })} aria-label={t("Frequency")} className={inputClass}>
                   {FREQUENCIES.map((f) => (
                     <option key={f.value} value={f.value}>
-                      {f.label}
+                      {t(f.label)}
                     </option>
                   ))}
                 </select>
@@ -183,19 +185,19 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
                     max={365}
                     value={d.durationDays ?? ""}
                     onChange={(e) => update(i, { durationDays: e.target.value ? Number(e.target.value) : undefined })}
-                    aria-label="Days"
+                    aria-label={t("Days")}
                     className={inputClass}
                   />
-                  days
+                  {t("days")}
                 </label>
                 <label className="flex items-center gap-1 text-xs text-slate-500">
-                  qty
+                  {t("qty")}
                   <input
                     type="number"
                     min={1}
                     value={d.quantity}
                     onChange={(e) => update(i, { quantity: Number(e.target.value), quantityEdited: true })}
-                    aria-label="Quantity"
+                    aria-label={t("Quantity")}
                     className={inputClass}
                   />
                 </label>
@@ -203,14 +205,14 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
               <input
                 value={d.instructions ?? ""}
                 onChange={(e) => update(i, { instructions: e.target.value })}
-                placeholder="Instructions, e.g. after meals"
-                aria-label="Instructions"
+                placeholder={t("Instructions, e.g. after meals")}
+                aria-label={t("Instructions")}
                 className={inputClass}
               />
             </div>
           ))}
 
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Add a drug: amoxicillin, nsaid…" aria-label="Search drugs" className={inputClass} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("Add a drug: amoxicillin, nsaid…")} aria-label={t("Search drugs")} className={inputClass} />
           {results.length > 0 && (
             <ul className="max-h-60 overflow-y-auto rounded-md border border-slate-200 text-sm dark:border-slate-800">
               {results.map((r) => (
@@ -221,26 +223,26 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
                       {r.drugClass && <span className="text-xs text-slate-500"> · {r.drugClass}</span>}
                     </span>
                     <span className={`text-xs ${r.inStock > 0 ? "text-slate-500" : "text-red-700 dark:text-red-400"}`}>
-                      {r.inStock > 0 ? `${r.inStock} in stock` : "out of stock"}
+                      {r.inStock > 0 ? t("{n} in stock", { n: r.inStock }) : t("out of stock")}
                     </span>
                   </button>
                 </li>
               ))}
             </ul>
           )}
-          {q.trim().length >= 2 && results.length === 0 && <p className="text-xs text-slate-500">No matching drug in this clinic&apos;s list.</p>}
+          {q.trim().length >= 2 && results.length === 0 && <p className="text-xs text-slate-500">{t("No matching drug in this clinic's list.")}</p>}
 
           {alerts && alerts.length > 0 && (
             <div role="alert" className={`space-y-2 rounded-md border p-3 text-sm ${blocking ? "border-red-300 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-100" : "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100"}`}>
-              <p className="font-medium">{blocking ? (alerts.some((a) => a.severity === "BLOCK" && a.type === "ALLERGY") ? "Allergy alert" : "Not given in pregnancy or breastfeeding") : "Check before prescribing"}</p>
+              <p className="font-medium">{t(blocking ? (alerts.some((a) => a.severity === "BLOCK" && a.type === "ALLERGY") ? "Allergy alert" : "Not given in pregnancy or breastfeeding") : "Check before prescribing")}</p>
               <ul className="list-disc pl-5">
                 {alerts.map((a, i) => (
                   <li key={i}>
                     <span className="font-medium">
-                      {a.type === "PREGNANCY" ? "Pregnancy" : a.type === "BREASTFEEDING" ? "Breastfeeding" : a.severity === "BLOCK" ? "Allergy" : a.severity === "MAJOR" ? "Major" : "Moderate"}
-                      {(a.type === "PREGNANCY" || a.type === "BREASTFEEDING") && a.severity === "BLOCK" ? " (not given)" : ""}:
+                      {t(a.type === "PREGNANCY" ? "Pregnancy" : a.type === "BREASTFEEDING" ? "Breastfeeding" : a.severity === "BLOCK" ? "Allergy" : a.severity === "MAJOR" ? "Major" : "Moderate")}
+                      {(a.type === "PREGNANCY" || a.type === "BREASTFEEDING") && a.severity === "BLOCK" ? ` (${t("not given")})` : ""}:
                     </span>{" "}
-                    {a.message}
+                    {t(a.message)}
                   </li>
                 ))}
               </ul>
@@ -249,25 +251,25 @@ export function PrescriptionPanel({ visitId, prescriptions, editable }: { visitI
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   rows={2}
-                  placeholder="Reason for prescribing despite the alert (required)"
+                  placeholder={t("Reason for prescribing despite the alert (required)")}
                   className={inputClass}
                 />
               )}
               <div className="flex gap-2">
                 <button type="button" disabled={pending || (blocking && reason.trim().length < 5)} onClick={() => submit(true)} className={buttonClass}>
-                  {blocking ? "Override and prescribe" : "Prescribe anyway"}
+                  {t(blocking ? "Override and prescribe" : "Prescribe anyway")}
                 </button>
                 <button type="button" onClick={() => setAlerts(undefined)} className={secondaryButtonClass}>
-                  Change prescription
+                  {t("Change prescription")}
                 </button>
               </div>
             </div>
           )}
-          {error && <Alert>{error}</Alert>}
+          {error && <Alert>{t(error)}</Alert>}
 
           {drafts.length > 0 && !alerts && (
             <button type="button" disabled={pending} onClick={() => submit()} className={buttonClass}>
-              {pending ? "Checking…" : `Prescribe ${drafts.length} ${drafts.length === 1 ? "drug" : "drugs"}`}
+              {pending ? t("Checking…") : t(drafts.length === 1 ? "Prescribe {n} drug" : "Prescribe {n} drugs", { n: drafts.length })}
             </button>
           )}
         </div>
