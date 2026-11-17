@@ -16,7 +16,7 @@
  * `pnpm --filter web i18n:check` lists keys with no Amharic and English text not yet passed to `t`.
  */
 import { Fragment, createElement, type ReactNode } from "react";
-import { AM } from "./i18n/am";
+import { AM, MESSAGES } from "./i18n/am";
 
 export type Lang = "en" | "am";
 
@@ -24,9 +24,35 @@ export const LANG_COOKIE = "hmis_lang";
 
 export type Vars = Record<string, string | number | null | undefined>;
 
+/**
+ * The server's messages with values in them ("Only {n} {unit} of {drug} are left to bill"), as
+ * patterns: a message arrives already filled in, so it is matched rather than looked up. A `{_x}`
+ * placeholder matches text the Amharic leaves out (an English plural "s").
+ */
+let patterns: { re: RegExp; names: string[]; am: string }[] | null = null;
+function fromPattern(english: string): string | undefined {
+  patterns ??= Object.entries(MESSAGES)
+    .filter(([k]) => k.includes("{"))
+    .map(([k, am]) => ({
+      re: new RegExp(`^${k.split(/\{\w+\}/).map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("(.*?)")}$`, "s"),
+      names: [...k.matchAll(/\{(\w+)\}/g)].map((m) => m[1]),
+      am,
+    }))
+    // The most literal text first, so "This prescription is {status}" loses to a longer, closer key.
+    .sort((a, b) => b.re.source.length - a.re.source.length);
+  for (const p of patterns) {
+    const m = p.re.exec(english);
+    if (!m) continue;
+    const values = Object.fromEntries(p.names.map((n, i) => [n, m[i + 1]]));
+    // A value that is itself a dictionary word ("cancelled") is translated too; names stay as they are.
+    return p.am.replace(/\{(\w+)\}/g, (all, k: string) => (k in values ? (AM[values[k]] ?? values[k]) : all));
+  }
+  return undefined;
+}
+
 /** The text in the chosen language (English when there is no translation yet), values filled in. */
 export function tr(lang: Lang, english: string, vars?: Vars) {
-  const text = lang === "am" ? (AM[english] ?? english) : english;
+  const text = lang === "am" ? (AM[english] ?? (vars ? undefined : fromPattern(english)) ?? english) : english;
   return vars ? text.replace(/\{(\w+)\}/g, (all, k: string) => (k in vars ? String(vars[k] ?? "") : all)) : text;
 }
 

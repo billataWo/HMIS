@@ -1,5 +1,8 @@
 "use client";
 
+// i18n: english-only — the waiting-room TV has no language setting: it shows English and Amharic
+// side by side, written out here.
+
 import { Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { callKeys, canSay, decodePack, playClips, type VoiceLang, type VoicePack } from "@/lib/voice";
@@ -289,11 +292,11 @@ export function Announcer({ calls, voice }: { calls: Call[]; voice: string | nul
           className="flex items-center gap-2 rounded-full px-3 py-1.5 hover:bg-white/10"
         >
           {on ? <Volume2 aria-hidden className="size-4" /> : <VolumeX aria-hidden className="size-4" />}
-          {on ? "Voice calls on" : "Voice calls off"}
+          {on ? "Voice calls on · ድምፅ በርቷል" : "Voice calls off · ድምፅ ጠፍቷል"}
         </button>
         {on && (
           <button type="button" onClick={test} className="rounded-full px-3 py-1.5 hover:bg-white/10">
-            Test
+            Test · ሞክር
           </button>
         )}
       </div>

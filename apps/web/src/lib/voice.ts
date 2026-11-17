@@ -1,3 +1,4 @@
+// i18n: english-only — the clip names are for the HMIS team's voice studio (platform console).
 /**
  * The recorded waiting-room voice: the words HMIS records once, how the TV joins them into a call,
  * and how a recording is cleaned up before it is kept. Used by the TV and the platform console.

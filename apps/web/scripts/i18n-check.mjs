@@ -35,7 +35,8 @@ const letters = (s) => /[A-Za-z]{2,}/.test(s);
 /** Shown text that is a word: codes and key names (HMIS, MRN, Ctrl K, 09XX…) are the same in Amharic. */
 const UNITS = /\b(kg|cm|mm|mg|ml|mL|mmHg|min|kg\/m²|g\/dL|mmol\/L|mg\/dL|IU|µL|°C)\b/g;
 const wordy = (s) => /[a-z]{2,}/.test(s.replace(UNITS, "")) && !/^(Ctrl|Alt|Esc|Enter|Shift|Tab)\b/.test(s);
-const holes = (s) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(",");
+// `{_s}`: matched in a server message but left out of the Amharic (an English plural ending).
+const holes = (s) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).filter((n) => !n.startsWith("_")).sort().join(",");
 
 // ── the dictionary ──────────────────────────────────────────────────────────────────────────────
 const dict = new Map();
@@ -57,7 +58,7 @@ for (const f of walk(join(root, "lib/i18n/am")).filter((f) => f.endsWith(".ts") 
 const used = new Map(); // key → first place
 const english = new Map(); // file → [line: text]
 const isT = (e) =>
-  (ts.isIdentifier(e) && (e.text === "t" || e.text === "tr")) ||
+  (ts.isIdentifier(e) && (e.text === "t" || e.text === "tr" || e.text === "opLabel")) ||
   (ts.isPropertyAccessExpression(e) && e.name.text === "rich" && ts.isIdentifier(e.expression) && e.expression.text === "t");
 const lit = (e) => (e && (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e)) ? e.text : null);
 

@@ -3,17 +3,20 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { InvoiceBadge } from "@/components/invoice-badge";
-import { EmptyState, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
+import { PageTitle } from "@/components/page-title";
+import { EmptyState, secondaryButtonClass, Skeleton } from "@/components/ui";
+import { getT } from "@/lib/lang";
 import { api, ApiError, type Invoice, type Me, type Payer, type PendingBill } from "@/lib/api";
 import { etb, formatDualDate, formatTime, fullName } from "@/lib/format";
 import { InvoiceForm, VisitPayerForm } from "./billing-forms";
 
 async function Billing() {
   let me: Me, pending: PendingBill[], invoices: Invoice[], payers: Payer[];
+  const t = await getT();
   try {
     [me, pending, invoices, payers] = await Promise.all([api<Me>("/auth/me"), api<PendingBill[]>("/billing/pending"), api<Invoice[]>("/invoices"), api<Payer[]>("/payers")]);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">Only cashiers and admins can use billing.</p>;
+    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only cashiers and admins can use billing.")}</p>;
     throw e;
   }
 
@@ -21,10 +24,10 @@ async function Billing() {
     <div className="space-y-8">
       <section>
         <h2 className="mb-3 font-medium">
-          To bill <span className="text-slate-500">({pending.length})</span>
+          {t("To bill")} <span className="text-slate-500">({pending.length})</span>
         </h2>
         {pending.length === 0 ? (
-          <EmptyState icon={Receipt} title="Nothing waiting to be billed" />
+          <EmptyState icon={Receipt} title={t("Nothing waiting to be billed")} />
         ) : (
           <div className="space-y-4">
             {pending.map((v) => (
@@ -35,18 +38,21 @@ async function Billing() {
                       {fullName(v.patient)}
                     </Link>
                     <span className="text-sm text-slate-500">
-                      {" "}· {v.patient.mrn} · queue #{v.queueNumber}
+                      {" "}· {v.patient.mrn} · {t("queue #{n}", { n: v.queueNumber })}
                     </span>
                   </div>
                   <span className="text-xs text-slate-500">
                     {formatDualDate(v.checkedInAt)} · {formatTime(v.checkedInAt)}
-                    {v.doctor && ` · Dr. ${v.doctor.fullName}`}
+                    {v.doctor && ` · ${t("Dr. {name}", { name: v.doctor.fullName })}`}
                   </span>
                 </div>
                 {v.payer && (
                   <p className="rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:bg-sky-950/40 dark:text-sky-100">
-                    Billed to <span className="font-medium">{v.payer.name}</span>: covers {etb(v.covered ?? "0")}. The patient pays{" "}
-                    <span className="font-medium">{etb(v.patientPart ?? "0")}</span> (their co-payment and anything not covered).
+                    {t.rich("Billed to {payer}: covers {covered}. The patient pays {part} (their co-payment and anything not covered).", {
+                      payer: <span className="font-medium">{v.payer.name}</span>,
+                      covered: etb(v.covered ?? "0", t),
+                      part: <span className="font-medium">{etb(v.patientPart ?? "0", t)}</span>,
+                    })}
                   </p>
                 )}
                 <table className="w-full text-sm">
@@ -55,12 +61,12 @@ async function Billing() {
                       <tr key={c.id} className="border-t border-slate-100 dark:border-slate-800">
                         <td className="py-1.5">
                           {c.description}
-                          {v.payer && <span className="ml-2 text-xs text-slate-500">{c.payerId ? `${v.payer.name}` : "patient (not covered)"}</span>}
+                          {v.payer && <span className="ml-2 text-xs text-slate-500">{c.payerId ? v.payer.name : t("patient (not covered)")}</span>}
                         </td>
                         <td className="py-1.5 text-right text-slate-500 tabular-nums">
                           {c.quantity > 1 && `${c.quantity} × ${Number(c.unitPrice).toFixed(2)}`}
                         </td>
-                        <td className="w-32 py-1.5 text-right tabular-nums">{etb(Number(c.unitPrice) * c.quantity)}</td>
+                        <td className="w-32 py-1.5 text-right tabular-nums">{etb(Number(c.unitPrice) * c.quantity, t)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -81,21 +87,21 @@ async function Billing() {
 
       <section>
         <h2 className="mb-3 font-medium">
-          Invoices today <span className="text-slate-500">({invoices.length})</span>
+          {t("Invoices today")} <span className="text-slate-500">({invoices.length})</span>
         </h2>
         {invoices.length === 0 ? (
-          <p className="text-sm text-slate-500">No invoices yet today.</p>
+          <p className="text-sm text-slate-500">{t("No invoices yet today.")}</p>
         ) : (
           <div className="overflow-x-auto surface">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50/80 text-slate-500 dark:bg-slate-800/40">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Invoice</th>
-                  <th className="px-4 py-3 font-medium">Patient</th>
-                  <th className="px-4 py-3 font-medium">Payer</th>
-                  <th className="px-4 py-3 text-right font-medium">Total</th>
-                  <th className="px-4 py-3 text-right font-medium">Balance</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">{t("Invoice")}</th>
+                  <th className="px-4 py-3 font-medium">{t("Patient")}</th>
+                  <th className="px-4 py-3 font-medium">{t("Payer")}</th>
+                  <th className="px-4 py-3 text-right font-medium">{t("Total")}</th>
+                  <th className="px-4 py-3 text-right font-medium">{t("Balance")}</th>
+                  <th className="px-4 py-3 font-medium">{t("Status")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -108,11 +114,11 @@ async function Billing() {
                       <span className="block text-slate-500">{formatTime(i.createdAt)}</span>
                     </td>
                     <td className="px-4 py-3">{fullName(i.patient)}</td>
-                    <td className="px-4 py-3">{i.payerType === "SELF" ? "Patient" : i.payerName}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{etb(i.total)}</td>
+                    <td className="px-4 py-3">{i.payerType === "SELF" ? t("Patient") : i.payerName}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{etb(i.total, t)}</td>
                     <td className="px-4 py-3 text-right tabular-nums">
-                      {i.status === "VOID" ? "—" : etb(i.balance)}
-                      {i.payerType !== "SELF" && Number(i.patientDue ?? 0) > 0 && <span className="block text-xs text-amber-700 dark:text-amber-400">patient owes {etb(i.patientDue!)}</span>}
+                      {i.status === "VOID" ? "—" : etb(i.balance, t)}
+                      {i.payerType !== "SELF" && Number(i.patientDue ?? 0) > 0 && <span className="block text-xs text-amber-700 dark:text-amber-400">{t("patient owes {amount}", { amount: etb(i.patientDue!, t) })}</span>}
                     </td>
                     <td className="px-4 py-3">
                       <InvoiceBadge status={i.status} />
@@ -128,18 +134,19 @@ async function Billing() {
   );
 }
 
+async function DailyLink() {
+  const t = await getT();
+  return (
+    <Link href="/billing/daily" className={secondaryButtonClass}>
+      {t("Day summary & cash closing")}
+    </Link>
+  );
+}
+
 export default function BillingPage() {
   return (
     <>
-      <PageHeader
-        title="Billing"
-        subtitle="ክፍያ · cashier"
-        actions={
-          <Link href="/billing/daily" className={secondaryButtonClass}>
-            Day summary &amp; cash closing
-          </Link>
-        }
-      />
+      <PageTitle title="Billing" subtitle="cashier" actions={<DailyLink />} />
       <AutoRefresh seconds={20} />
       <Suspense fallback={<Skeleton className="h-64" />}>
         <Billing />

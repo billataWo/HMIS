@@ -1,12 +1,17 @@
+// i18n: english-only — the report itself is the government form, submitted in English; the screen
+// controls around it (title, week/month arrows, alert, CSV and Print buttons) follow the language.
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { PrintButton } from "@/components/print-button";
-import { PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
+import { LangBoundary } from "@/components/lang-boundary";
+import { PageTitle } from "@/components/page-title";
+import { secondaryButtonClass, Skeleton } from "@/components/ui";
 import { formatAddress } from "@/lib/address";
 import { api, ApiError, type IdsrReport } from "@/lib/api";
 import { ageText, formatDualDate, fullName, shiftDay } from "@/lib/format";
+import { getT } from "@/lib/lang";
 
 export const metadata: Metadata = { title: "Weekly IDSR report" };
 
@@ -20,11 +25,12 @@ const noon = (day: string) => `${day}T12:00:00+03:00`;
  */
 async function Report({ searchParams }: { searchParams: Promise<Search> }) {
   const { day } = await searchParams;
+  const t = await getT();
   let r: IdsrReport;
   try {
     r = await api<IdsrReport>(`/reports/idsr-weekly${day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? `?day=${day}` : ""}`);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">Only clinic admins can see reports.</p>;
+    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only clinic admins can see reports.")}</p>;
     throw e;
   }
   const lastDay = shiftDay(r.week.end, -1);
@@ -36,14 +42,12 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-2 print:hidden">
-        <Link href={`/reports/idsr?day=${shiftDay(r.week.start, -7)}`} aria-label="Previous week" className={`${secondaryButtonClass} px-2.5`}>
+        <Link href={`/reports/idsr?day=${shiftDay(r.week.start, -7)}`} aria-label={t("Previous week")} className={`${secondaryButtonClass} px-2.5`}>
           <ChevronLeft aria-hidden />
         </Link>
-        <span className="px-2 font-medium">
-          Epi week {r.week.week}, {r.week.year}
-        </span>
+        <span className="px-2 font-medium">{t("Epi week {week}, {year}", { week: r.week.week, year: r.week.year })}</span>
         {!r.week.inProgress && (
-          <Link href={`/reports/idsr?day=${r.week.end}`} aria-label="Next week" className={`${secondaryButtonClass} px-2.5`}>
+          <Link href={`/reports/idsr?day=${r.week.end}`} aria-label={t("Next week")} className={`${secondaryButtonClass} px-2.5`}>
             <ChevronRight aria-hidden />
           </Link>
         )}
@@ -52,7 +56,12 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
       {r.unreported.length > 0 && (
         <div role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900 print:hidden dark:border-red-900 dark:bg-red-950 dark:text-red-100">
           <p className="font-semibold">
-            {r.unreported.length} immediately reportable case{r.unreported.length === 1 ? "" : "s"} in the last {r.unreportedDays} days not recorded as reported
+            {t(
+              r.unreported.length === 1
+                ? "{n} immediately reportable case in the last {days} days not recorded as reported"
+                : "{n} immediately reportable cases in the last {days} days not recorded as reported",
+              { n: r.unreported.length, days: r.unreportedDays },
+            )}
           </p>
           <ul className="mt-1 space-y-0.5">
             {r.unreported.map((c) => (
@@ -187,9 +196,20 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
         Epidemiological weeks run Monday to Sunday. Check the disease list against EPHI&apos;s current IDSR form before submitting.
       </p>
       <div className="max-w-xs print:hidden">
-        <PrintButton />
+        <LangBoundary>
+          <PrintButton />
+        </LangBoundary>
       </div>
     </div>
+  );
+}
+
+async function BackToDashboard() {
+  const t = await getT();
+  return (
+    <Link href="/reports" className={secondaryButtonClass}>
+      {t("Dashboard")}
+    </Link>
   );
 }
 
@@ -197,15 +217,7 @@ export default function IdsrPage({ searchParams }: PageProps<"/reports/idsr">) {
   return (
     <>
       <div className="print:hidden">
-        <PageHeader
-          title="Weekly IDSR report"
-          subtitle="ሳምንታዊ የበሽታ ቅኝት ሪፖርት · for the woreda health office"
-          actions={
-            <Link href="/reports" className={secondaryButtonClass}>
-              Dashboard
-            </Link>
-          }
-        />
+        <PageTitle title="Weekly IDSR report" subtitle="for the woreda health office" actions={<BackToDashboard />} />
       </div>
       <Suspense fallback={<Skeleton className="h-96" />}>
         <Report searchParams={searchParams as Promise<Search>} />

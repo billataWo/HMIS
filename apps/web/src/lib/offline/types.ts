@@ -80,6 +80,9 @@ export interface Op {
   attempt?: number;
   kind: OpKind;
   label: string; // shown in the list: "Register Abebe Kebede"
+  /** The same label as a dictionary key and its values ("Register {name}"), for the Amharic screen. */
+  labelKey?: string;
+  labelVars?: Record<string, string | number>;
   steps: Step[];
   /** Temporary ids this operation creates: tmp ← the reply of steps[step] at `pick`. */
   creates?: { tmp: string; step: number; pick: string }[];

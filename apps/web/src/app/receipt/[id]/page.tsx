@@ -3,6 +3,9 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { api, ApiError, type InvoiceDetail } from "@/lib/api";
 import { DISCOUNT_CATEGORIES, etb, formatDualDate, formatTime, fullName, PAYMENT_METHODS } from "@/lib/format";
+// i18n: english-only — the printed receipt (with the clinic's TIN) stays in English with its
+// Amharic lines; only the Print button follows the screen's language.
+import { LangBoundary } from "@/components/lang-boundary";
 import { ReceiptPrintButton } from "@/components/receipt-print-button";
 
 export const metadata: Metadata = { title: "Receipt" };
@@ -112,7 +115,9 @@ async function Receipt({ params }: { params: Promise<{ id: string }> }) {
         <p>Cashier: {inv.payments.at(-1)?.cashier.fullName ?? inv.createdBy.fullName}</p>
         <p>Thank you · እናመሰግናለን</p>
       </footer>
-      <ReceiptPrintButton invoiceId={inv.id} />
+      <LangBoundary>
+        <ReceiptPrintButton invoiceId={inv.id} />
+      </LangBoundary>
     </div>
   );
 }
@@ -120,7 +125,7 @@ async function Receipt({ params }: { params: Promise<{ id: string }> }) {
 export default function ReceiptPage({ params }: PageProps<"/receipt/[id]">) {
   return (
     <main className="flex-1 bg-white px-4 py-6">
-      <Suspense fallback={<p className="text-center text-sm">Loading…</p>}>
+      <Suspense fallback={<p className="text-center text-sm">…</p>}>
         <Receipt params={params} />
       </Suspense>
     </main>

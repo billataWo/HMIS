@@ -1,44 +1,43 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
+import { PageTitle } from "@/components/page-title";
+import { secondaryButtonClass, Skeleton } from "@/components/ui";
 import { api, type ClinicSettings, type Me } from "@/lib/api";
+import { getT } from "@/lib/lang";
 import { SettingsForm } from "./settings-form";
 
 async function Settings() {
-  const [me, settings] = await Promise.all([api<Me>("/auth/me"), api<ClinicSettings>("/settings")]);
-  if (me.role !== "ADMIN") return <p className="text-sm text-slate-500">Only clinic admins can change settings.</p>;
+  const [me, settings, t] = await Promise.all([api<Me>("/auth/me"), api<ClinicSettings>("/settings"), getT()]);
+  if (me.role !== "ADMIN") return <p className="text-sm text-slate-500">{t("Only clinic admins can change settings.")}</p>;
   return <SettingsForm settings={settings} />;
+}
+
+const LINKS: [string, string][] = [
+  ["/settings/subscription", "Subscription"],
+  ["/settings/data", "Your data"],
+  ["/settings/backups", "Backups"],
+  ["/settings/sync", "Cloud sync"],
+  ["/settings/screens", "Screens"],
+  ["/settings/prices", "Prices & lab tests"],
+];
+
+async function SettingsLinks() {
+  const t = await getT();
+  return (
+    <>
+      {LINKS.map(([href, label]) => (
+        <Link key={href} href={href} className={secondaryButtonClass}>
+          {t(label)}
+        </Link>
+      ))}
+    </>
+  );
 }
 
 export default function SettingsPage() {
   return (
     <>
-      <PageHeader
-        title="Settings"
-        subtitle="ቅንብሮች"
-        actions={
-          <>
-            <Link href="/settings/subscription" className={secondaryButtonClass}>
-              Subscription
-            </Link>
-            <Link href="/settings/data" className={secondaryButtonClass}>
-              Your data
-            </Link>
-            <Link href="/settings/backups" className={secondaryButtonClass}>
-              Backups
-            </Link>
-            <Link href="/settings/sync" className={secondaryButtonClass}>
-              Cloud sync
-            </Link>
-            <Link href="/settings/screens" className={secondaryButtonClass}>
-              Screens
-            </Link>
-            <Link href="/settings/prices" className={secondaryButtonClass}>
-              Prices &amp; lab tests
-            </Link>
-          </>
-        }
-      />
+      <PageTitle title="Settings" subtitle="the clinic's details and how it works" actions={<SettingsLinks />} />
       <Suspense fallback={<Skeleton className="h-64" />}>
         <Settings />
       </Suspense>

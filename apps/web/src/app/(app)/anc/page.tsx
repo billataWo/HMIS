@@ -2,7 +2,9 @@ import { Baby, Phone } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { Badge, EmptyState, linkClass, Notice, PageHeader, Skeleton } from "@/components/ui";
+import { PageTitle } from "@/components/page-title";
+import { Badge, EmptyState, linkClass, Notice, Skeleton } from "@/components/ui";
+import { getT } from "@/lib/lang";
 import { api, type AncDueRow, type Me } from "@/lib/api";
 import { formatDualDate, fullName } from "@/lib/format";
 
@@ -15,10 +17,10 @@ const day = (d: string) => formatDualDate(`${d}T12:00:00+03:00`);
  * first, then due now or this week, and those whose due date is within two weeks.
  */
 async function Due() {
-  const me = await api<Me>("/auth/me");
-  if (!["ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST"].includes(me.role)) return <Notice tone="info">Antenatal follow-up is kept by the nurses and the front desk.</Notice>;
+  const [me, t] = await Promise.all([api<Me>("/auth/me"), getT()]);
+  if (!["ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST"].includes(me.role)) return <Notice tone="info">{t("Antenatal follow-up is kept by the nurses and the front desk.")}</Notice>;
   const rows = await api<AncDueRow[]>("/anc/due");
-  if (!rows.length) return <EmptyState icon={Baby} title="Nobody due or late">Women registered for antenatal care appear here when a contact is due.</EmptyState>;
+  if (!rows.length) return <EmptyState icon={Baby} title={t("Nobody due or late")}>{t("Women registered for antenatal care appear here when a contact is due.")}</EmptyState>;
   return (
     <ul className="space-y-3">
       {rows.map((r) => (
@@ -29,13 +31,13 @@ async function Due() {
                 {fullName(r.patient)}
               </Link>{" "}
               <span className="text-slate-500">
-                · {r.patient.mrn} · {r.gestation.weeks} weeks · {r.contacts} contact{r.contacts === 1 ? "" : "s"}
+                · {r.patient.mrn} · {t("{n} weeks", { n: r.gestation.weeks })} · {t(r.contacts === 1 ? "{n} contact" : "{n} contacts", { n: r.contacts })}
               </span>
             </p>
             <div className="flex flex-wrap gap-1.5">
-              {r.late && <Badge tone="danger">{r.daysLate} days late</Badge>}
-              {!r.late && <Badge tone="warning">Contact due {day(r.nextContactOn)}</Badge>}
-              {r.deliverySoon && <Badge tone="info">Due to deliver {day(r.edd)}</Badge>}
+              {r.late && <Badge tone="danger">{t("{n} days late", { n: r.daysLate })}</Badge>}
+              {!r.late && <Badge tone="warning">{t("Contact due {date}", { date: day(r.nextContactOn) })}</Badge>}
+              {r.deliverySoon && <Badge tone="info">{t("Due to deliver {date}", { date: day(r.edd) })}</Badge>}
             </div>
           </div>
           <p className="flex flex-wrap items-center gap-x-3 text-xs text-slate-500">
@@ -45,10 +47,10 @@ async function Due() {
                 {r.patient.phone}
               </a>
             ) : (
-              <span>no phone</span>
+              <span>{t("no phone")}</span>
             )}
-            <span>Next contact {day(r.nextContactOn)}</span>
-            <span>Due date {day(r.edd)}</span>
+            <span>{t("Next contact {date}", { date: day(r.nextContactOn) })}</span>
+            <span>{t("Due date {date}", { date: day(r.edd) })}</span>
           </p>
         </li>
       ))}
@@ -59,7 +61,7 @@ async function Due() {
 export default function AncPage() {
   return (
     <>
-      <PageHeader title="Antenatal care" subtitle="የቅድመ ወሊድ ክትትል · women due or late for a contact" />
+      <PageTitle title="Antenatal care" subtitle="women due or late for a contact" />
       <Suspense fallback={<Skeleton className="h-96" />}>
         <Due />
       </Suspense>

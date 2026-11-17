@@ -1,3 +1,5 @@
+// i18n: english-only — the waiting-room TV has no language setting: it shows English and Amharic
+// side by side, written out here.
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { ArrowRight } from "lucide-react";
@@ -33,7 +35,10 @@ async function Screen() {
     return (
       <>
         <AutoRefresh seconds={15} />
-        <p className="py-16 text-center text-3xl text-slate-500">Waiting for the HMIS server…</p>
+        <div className="py-16 text-center text-slate-500">
+          <p className="text-3xl">Waiting for the HMIS server…</p>
+          <p className="mt-2 text-2xl">የHMIS ሰርቨሩን በመጠበቅ ላይ…</p>
+        </div>
       </>
     );
   }
@@ -113,7 +118,7 @@ async function Screen() {
 export default function DisplayPage() {
   return (
     <main className="min-h-screen flex-1 bg-slate-950 px-6 py-6 text-white sm:px-10">
-      <Suspense fallback={<p className="text-2xl text-slate-500">Loading…</p>}>
+      <Suspense fallback={<p className="text-2xl text-slate-500">Loading… · በመጫን ላይ…</p>}>
         <Screen />
       </Suspense>
     </main>

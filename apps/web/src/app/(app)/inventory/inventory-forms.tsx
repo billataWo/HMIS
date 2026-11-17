@@ -51,6 +51,7 @@ export function DrugForm({ drug }: { drug?: DrugStock["drug"] }) {
           <Input name="reorderLevel" type="number" min={0} defaultValue={val("reorderLevel") || "0"} />
         </Field>
         <Field label={t("Bought in")} hint={t("What the supplier sells: box, strip, bottle… Leave empty if bought by the unit")} error={err.packName}>
+          {/* i18n-ignore: an example of what is typed, and pack names print on English labels */}
           <Input name="packName" placeholder="box" defaultValue={val("packName")} />
         </Field>
         <Field label={t("Controlled drug")} hint={t("Narcotics and psychotropics are kept in the controlled-drug register and never sold over the counter")} error={err.controlled}>

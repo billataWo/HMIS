@@ -2,7 +2,7 @@ import type { BadgeTone } from "@/components/ui";
 import type { T } from "./i18n";
 
 /** English words for the formatters below when no translator is passed. */
-export const EN: T = Object.assign((s: string, v?: Record<string, unknown>) => (v ? s.replace(/{(w+)}/g, (a, k: string) => (k in v ? String(v[k]) : a)) : s), {
+export const EN: T = Object.assign((s: string, v?: Record<string, unknown>) => (v ? s.replace(/\{(\w+)\}/g, (a, k: string) => (k in v ? String(v[k] ?? "") : a)) : s), {
   rich: () => null,
   lang: "en" as const,
 });

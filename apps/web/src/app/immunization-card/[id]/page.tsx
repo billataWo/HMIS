@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+// i18n: english-only — the printed card the mother keeps is laid out in English with its Amharic
+// headings; only the Print button follows the screen's language.
+import { LangBoundary } from "@/components/lang-boundary";
 import { PrintButton } from "@/components/print-button";
 import { api, ApiError, type ImmunizationRecord, type Me, type PatientDetail } from "@/lib/api";
 import { formatDualDate, fullName } from "@/lib/format";
@@ -85,7 +88,9 @@ async function Card({ params }: { params: Promise<{ id: string }> }) {
           )}
         </p>
       )}
-      <PrintButton />
+      <LangBoundary>
+        <PrintButton />
+      </LangBoundary>
     </div>
   );
 }
@@ -93,7 +98,7 @@ async function Card({ params }: { params: Promise<{ id: string }> }) {
 export default function ImmunizationCardPage({ params }: { params: Promise<{ id: string }> }) {
   return (
     <main className="flex-1 bg-white px-4 py-6 print:p-0">
-      <Suspense fallback={<p className="text-center text-sm">Loading…</p>}>
+      <Suspense fallback={<p className="text-center text-sm">…</p>}>
         <Card params={params} />
       </Suspense>
     </main>

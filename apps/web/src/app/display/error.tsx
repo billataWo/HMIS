@@ -1,5 +1,8 @@
 "use client";
 
+// i18n: english-only — the waiting-room TV has no language setting: it shows English and Amharic
+// side by side, written out here.
+
 import { useEffect } from "react";
 
 /** The waiting-room TV has no one at the keyboard, so it keeps retrying on its own. */

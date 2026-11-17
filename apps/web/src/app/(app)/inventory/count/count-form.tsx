@@ -50,7 +50,7 @@ export function CountForm({ batches }: { batches: CountBatch[] }) {
               <th className="px-4 py-3">{t("Batch")}</th>
               <th className="px-4 py-3">{t("Expiry")}</th>
               <th className="px-4 py-3 text-right">{t("In the system")}</th>
-              <th className="px-4 py-3">{t("Counted")}</th>
+              <th className="px-4 py-3">{t("Counted quantity")}</th>
             </tr>
           </thead>
           <tbody>

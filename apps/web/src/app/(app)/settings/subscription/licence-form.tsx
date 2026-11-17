@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useRef } from "react";
+import { useT } from "@/components/lang-provider";
 import { Alert, buttonClass, Field, inputClass, Notice } from "@/components/ui";
 import { installLicence, type TransferState } from "./actions";
 
@@ -8,11 +9,12 @@ import { installLicence, type TransferState } from "./actions";
 export function LicenceForm() {
   const [state, action, pending] = useActionState<TransferState, FormData>(installLicence, {});
   const text = useRef<HTMLTextAreaElement>(null);
+  const t = useT();
   return (
     <form action={action} className="space-y-3">
-      {state.error && <Alert>{state.error}</Alert>}
-      {state.done && <Notice tone="success">The licence is installed.</Notice>}
-      <Field label="Licence file from HMIS">
+      {state.error && <Alert>{t(state.error)}</Alert>}
+      {state.done && <Notice tone="success">{t("The licence is installed.")}</Notice>}
+      <Field label={t("Licence file from HMIS")}>
         <input
           type="file"
           accept=".txt,text/plain"
@@ -23,11 +25,11 @@ export function LicenceForm() {
           }}
         />
       </Field>
-      <Field label="Or paste it" hint="It starts with HMIS-LICENCE-1.">
+      <Field label={t("Or paste it")} hint={t("It starts with HMIS-LICENCE-1.")}>
         <textarea ref={text} name="licence" required rows={3} spellCheck={false} className={`${inputClass} font-mono text-xs`} />
       </Field>
       <button disabled={pending} className={buttonClass}>
-        {pending ? "Checking…" : "Install the licence"}
+        {pending ? t("Checking…") : t("Install the licence")}
       </button>
     </form>
   );

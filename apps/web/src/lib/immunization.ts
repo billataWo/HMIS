@@ -1,5 +1,12 @@
 import type { BadgeTone } from "@/components/ui";
 import type { DoseStatus } from "./api";
+import type { T } from "./i18n";
+
+/** The schedule's milestone ("Birth", "6 weeks", "9 months", "Women 15–49") in the screen's language. */
+export function milestoneText(t: T, m: string) {
+  const n = /^(\d+) (weeks|months)$/.exec(m);
+  return n ? t(n[2] === "weeks" ? "{n} weeks" : "{n} months", { n: Number(n[1]) }) : t(m);
+}
 
 /** How each dose's state reads on the card. */
 export const DOSE_STATUS: Record<DoseStatus, { label: string; tone: BadgeTone }> = {

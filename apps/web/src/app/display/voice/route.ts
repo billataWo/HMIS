@@ -1,3 +1,4 @@
+// i18n: english-only — read by the TV's script, never shown.
 import { cookies } from "next/headers";
 import { API_URL } from "@/lib/api";
 

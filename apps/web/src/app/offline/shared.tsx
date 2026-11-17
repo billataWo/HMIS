@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useT } from "@/components/lang-provider";
 import type { QueuePatient } from "@/lib/api";
+import { EN, etb } from "@/lib/format";
+import type { T } from "@/lib/i18n";
 import { type ExpiredMarker, getExpired, getOps, getSnapshot, purgeIfExpired } from "@/lib/offline/idb";
 import type { Op, Snapshot } from "@/lib/offline/types";
 import { buildView, type View } from "@/lib/offline/view";
@@ -41,16 +44,17 @@ export const fullName = (p: Pick<QueuePatient, "firstName" | "fatherName"> & { g
   [p.firstName, p.fatherName, p.grandfather].filter(Boolean).join(" ");
 
 export function PatientLine({ p }: { p: QueuePatient & { mrn: string } }) {
+  const t = useT();
   return (
     <span className="min-w-0">
       <span className="font-medium text-slate-900 dark:text-white">{fullName(p)}</span>
-      <span className="ml-2 font-mono text-xs text-slate-500">{p.mrn === "New" ? "new (number when sent)" : p.mrn}</span>
-      {p.allergies?.length ? <span className="ml-2 text-xs font-medium text-red-700 dark:text-red-300">Allergies: {p.allergies.join(", ")}</span> : null}
+      <span className="ml-2 font-mono text-xs text-slate-500">{p.mrn === "New" ? t("new (number when sent)") : p.mrn}</span>
+      {p.allergies?.length ? <span className="ml-2 text-xs font-medium text-red-700 dark:text-red-300">{t("Allergies: {list}", { list: p.allergies.join(", ") })}</span> : null}
     </span>
   );
 }
 
-export const money = (n: number | string) => `${Number(n).toFixed(2)} ETB`;
+export const money = (n: number | string, t: T = EN) => etb(n, t);
 
 /** Waits for a queued action, keeping the button disabled meanwhile. */
 export function useBusy() {

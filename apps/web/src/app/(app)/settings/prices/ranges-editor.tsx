@@ -3,6 +3,7 @@
 import { Plus, X } from "lucide-react";
 import { useState, useTransition } from "react";
 import { saveLabRanges, applyRecommendedLabRanges } from "@/app/actions";
+import { useT } from "@/components/lang-provider";
 import { Alert, buttonClass, inputClass, Notice, secondaryButtonClass } from "@/components/ui";
 import type { CatalogLabTest, LabRange } from "@/lib/api";
 
@@ -41,30 +42,31 @@ const toRow = (r: LabRange, componentId: string): Row => {
  * A test's critical (panic) limits and its ranges for men, women and age groups. The test's own
  * range (set above) applies to everyone else; a range that leaves a limit empty takes it from there.
  */
-export function RangesEditor({ t }: { t: CatalogLabTest }) {
-  const parts = t.components ?? [];
+export function RangesEditor({ test }: { test: CatalogLabTest }) {
+  const t = useT();
+  const parts = test.components ?? [];
   const numericParts = parts.filter((c) => !c.resultOptions.length);
   const isPanel = parts.length > 0;
   const initialRows = [
-    ...(t.ranges ?? []).map((r) => toRow(r, "")),
+    ...(test.ranges ?? []).map((r) => toRow(r, "")),
     ...parts.flatMap((c) => (c.ranges ?? []).map((r) => toRow(r, c.id))),
   ];
   const [rows, setRows] = useState<Row[]>(initialRows);
-  const [crit, setCrit] = useState({ low: text(t.critLow), high: text(t.critHigh) });
+  const [crit, setCrit] = useState({ low: text(test.critLow), high: text(test.critHigh) });
   const [compCrit, setCompCrit] = useState<Record<string, { low: string; high: string }>>(
     Object.fromEntries(parts.map((c) => [c.id, { low: text(c.critLow), high: text(c.critHigh) }])),
   );
   const [error, setError] = useState<string>();
   const [saved, setSaved] = useState(false);
   const [pending, start] = useTransition();
-  const count = initialRows.length + (t.critLow || t.critHigh ? 1 : 0) + parts.filter((c) => c.critLow || c.critHigh).length;
+  const count = initialRows.length + (test.critLow || test.critHigh ? 1 : 0) + parts.filter((c) => c.critLow || c.critHigh).length;
 
-  if (t.resultOptions.length && !isPanel) return null; // answers (positive/negative…) have no numeric range
+  if (test.resultOptions.length && !isPanel) return null; // answers (positive/negative…) have no numeric range
   const update = (i: number, patch: Partial<Row>) => (setSaved(false), setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r))));
   const save = () =>
     start(async () => {
       setError(undefined);
-      const res = await saveLabRanges(t.id, {
+      const res = await saveLabRanges(test.id, {
         critLow: isPanel ? null : num(crit.low),
         critHigh: isPanel ? null : num(crit.high),
         components: numericParts.map((c) => ({ id: c.id, critLow: num(compCrit[c.id]?.low ?? ""), critHigh: num(compCrit[c.id]?.high ?? "") })),
@@ -86,51 +88,52 @@ export function RangesEditor({ t }: { t: CatalogLabTest }) {
   const age = (value: string, unit: Unit, onValue: (v: string) => void, onUnit: (u: Unit) => void, label: string, placeholder: string) => (
     <span className="flex gap-1">
       <input value={value} onChange={(e) => onValue(e.target.value)} type="number" min={0} placeholder={placeholder} aria-label={label} className={`${small} w-16`} />
-      <select value={unit} onChange={(e) => onUnit(e.target.value as Unit)} aria-label={`${label} unit`} className={`${small} w-auto`}>
-        <option value="d">days</option>
-        <option value="mo">months</option>
-        <option value="y">years</option>
+      <select value={unit} onChange={(e) => onUnit(e.target.value as Unit)} aria-label={t("{label} unit", { label })} className={`${small} w-auto`}>
+        <option value="d">{t("days")}</option>
+        <option value="mo">{t("months")}</option>
+        <option value="y">{t("years")}</option>
       </select>
     </span>
   );
 
   return (
     <details className="mt-1 text-xs">
-      <summary className="cursor-pointer text-brand-700 dark:text-brand-400">Ranges and critical limits{count ? ` (${count})` : ""}</summary>
+      <summary className="cursor-pointer text-brand-700 dark:text-brand-400">{t("Ranges and critical limits")}{count ? ` (${count})` : ""}</summary>
       <div className="mt-2 space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
         <p className="text-slate-500">
-          Critical limits: a result beyond them must be phoned to the doctor before it is released. Ranges for men, women or age groups override the
-          normal range above for those patients; the closest fit wins, and an empty limit is taken from above.
+          {t(
+            "Critical limits: a result beyond them must be phoned to the doctor before it is released. Ranges for men, women or age groups override the normal range above for those patients; the closest fit wins, and an empty limit is taken from above.",
+          )}
         </p>
         {!isPanel ? (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">Critical below</span>
-            <input value={crit.low} onChange={(e) => (setSaved(false), setCrit((c) => ({ ...c, low: e.target.value })))} type="number" step="any" aria-label={`${t.name} critical low`} className={`${small} w-20`} />
-            <span className="font-medium">or above</span>
-            <input value={crit.high} onChange={(e) => (setSaved(false), setCrit((c) => ({ ...c, high: e.target.value })))} type="number" step="any" aria-label={`${t.name} critical high`} className={`${small} w-20`} />
-            <span className="text-slate-500">{t.unit}</span>
+            <span className="font-medium">{t("Critical below")}</span>
+            <input value={crit.low} onChange={(e) => (setSaved(false), setCrit((c) => ({ ...c, low: e.target.value })))} type="number" step="any" aria-label={t("{name} critical low", { name: test.name })} className={`${small} w-20`} />
+            <span className="font-medium">{t("or above")}</span>
+            <input value={crit.high} onChange={(e) => (setSaved(false), setCrit((c) => ({ ...c, high: e.target.value })))} type="number" step="any" aria-label={t("{name} critical high", { name: test.name })} className={`${small} w-20`} />
+            <span className="text-slate-500">{test.unit}</span>
           </div>
         ) : (
           <div className="grid gap-1 sm:grid-cols-2">
             {numericParts.map((c) => (
               <div key={c.id} className="flex flex-wrap items-center gap-2">
                 <span className="w-24 font-medium">{c.name}</span>
-                <span>critical below</span>
+                <span>{t("critical below")}</span>
                 <input
                   value={compCrit[c.id]?.low ?? ""}
                   onChange={(e) => (setSaved(false), setCompCrit((m) => ({ ...m, [c.id]: { ...m[c.id], low: e.target.value } })))}
                   type="number"
                   step="any"
-                  aria-label={`${c.name} critical low`}
+                  aria-label={t("{name} critical low", { name: c.name })}
                   className={`${small} w-16`}
                 />
-                <span>above</span>
+                <span>{t("above")}</span>
                 <input
                   value={compCrit[c.id]?.high ?? ""}
                   onChange={(e) => (setSaved(false), setCompCrit((m) => ({ ...m, [c.id]: { ...m[c.id], high: e.target.value } })))}
                   type="number"
                   step="any"
-                  aria-label={`${c.name} critical high`}
+                  aria-label={t("{name} critical high", { name: c.name })}
                   className={`${small} w-16`}
                 />
               </div>
@@ -143,12 +146,12 @@ export function RangesEditor({ t }: { t: CatalogLabTest }) {
             <table className="w-full text-left">
               <thead className="text-slate-500">
                 <tr>
-                  {isPanel && <th className="py-1 pr-2 font-medium">Component</th>}
-                  <th className="py-1 pr-2 font-medium">For</th>
-                  <th className="py-1 pr-2 font-medium">Age from</th>
-                  <th className="py-1 pr-2 font-medium">to (not incl.)</th>
-                  <th className="py-1 pr-2 font-medium">Normal low–high</th>
-                  <th className="py-1 pr-2 font-medium">Critical below / above</th>
+                  {isPanel && <th className="py-1 pr-2 font-medium">{t("Component")}</th>}
+                  <th className="py-1 pr-2 font-medium">{t("For")}</th>
+                  <th className="py-1 pr-2 font-medium">{t("Age from")}</th>
+                  <th className="py-1 pr-2 font-medium">{t("to (not incl.)")}</th>
+                  <th className="py-1 pr-2 font-medium">{t("Normal low–high")}</th>
+                  <th className="py-1 pr-2 font-medium">{t("Critical below / above")}</th>
                   <th />
                 </tr>
               </thead>
@@ -157,7 +160,7 @@ export function RangesEditor({ t }: { t: CatalogLabTest }) {
                   <tr key={i} className="border-t border-slate-100 dark:border-slate-800">
                     {isPanel && (
                       <td className="py-1 pr-2">
-                        <select value={r.componentId} onChange={(e) => update(i, { componentId: e.target.value })} aria-label="Component" className={`${small} w-auto`}>
+                        <select value={r.componentId} onChange={(e) => update(i, { componentId: e.target.value })} aria-label={t("Component")} className={`${small} w-auto`}>
                           {numericParts.map((c) => (
                             <option key={c.id} value={c.id}>
                               {c.name}
@@ -167,28 +170,28 @@ export function RangesEditor({ t }: { t: CatalogLabTest }) {
                       </td>
                     )}
                     <td className="py-1 pr-2">
-                      <select value={r.sex} onChange={(e) => update(i, { sex: e.target.value as Row["sex"] })} aria-label="For" className={`${small} w-auto`}>
-                        <option value="">Everyone</option>
-                        <option value="MALE">Males</option>
-                        <option value="FEMALE">Females</option>
+                      <select value={r.sex} onChange={(e) => update(i, { sex: e.target.value as Row["sex"] })} aria-label={t("For")} className={`${small} w-auto`}>
+                        <option value="">{t("Everyone")}</option>
+                        <option value="MALE">{t("Males")}</option>
+                        <option value="FEMALE">{t("Females")}</option>
                       </select>
                     </td>
-                    <td className="py-1 pr-2">{age(r.from, r.fromUnit, (v) => update(i, { from: v }), (u) => update(i, { fromUnit: u }), "Age from", "0")}</td>
-                    <td className="py-1 pr-2">{age(r.to, r.toUnit, (v) => update(i, { to: v }), (u) => update(i, { toUnit: u }), "Age to", "any")}</td>
+                    <td className="py-1 pr-2">{age(r.from, r.fromUnit, (v) => update(i, { from: v }), (u) => update(i, { fromUnit: u }), t("Age from"), "0")}</td>
+                    <td className="py-1 pr-2">{age(r.to, r.toUnit, (v) => update(i, { to: v }), (u) => update(i, { toUnit: u }), t("Age to"), t("any"))}</td>
                     <td className="py-1 pr-2">
                       <span className="flex gap-1">
-                        <input value={r.refLow} onChange={(e) => update(i, { refLow: e.target.value })} type="number" step="any" aria-label="Normal low" className={`${small} w-20`} />
-                        <input value={r.refHigh} onChange={(e) => update(i, { refHigh: e.target.value })} type="number" step="any" aria-label="Normal high" className={`${small} w-20`} />
+                        <input value={r.refLow} onChange={(e) => update(i, { refLow: e.target.value })} type="number" step="any" aria-label={t("Normal low")} className={`${small} w-20`} />
+                        <input value={r.refHigh} onChange={(e) => update(i, { refHigh: e.target.value })} type="number" step="any" aria-label={t("Normal high")} className={`${small} w-20`} />
                       </span>
                     </td>
                     <td className="py-1 pr-2">
                       <span className="flex gap-1">
-                        <input value={r.critLow} onChange={(e) => update(i, { critLow: e.target.value })} type="number" step="any" placeholder="—" aria-label="Critical low" className={`${small} w-20`} />
-                        <input value={r.critHigh} onChange={(e) => update(i, { critHigh: e.target.value })} type="number" step="any" placeholder="—" aria-label="Critical high" className={`${small} w-20`} />
+                        <input value={r.critLow} onChange={(e) => update(i, { critLow: e.target.value })} type="number" step="any" placeholder="—" aria-label={t("Critical low")} className={`${small} w-20`} />
+                        <input value={r.critHigh} onChange={(e) => update(i, { critHigh: e.target.value })} type="number" step="any" placeholder="—" aria-label={t("Critical high")} className={`${small} w-20`} />
                       </span>
                     </td>
                     <td className="py-1 text-right">
-                      <button type="button" onClick={() => (setSaved(false), setRows((rs) => rs.filter((_, j) => j !== i)))} aria-label="Remove range" className="rounded p-1 text-slate-500 hover:text-red-700">
+                      <button type="button" onClick={() => (setSaved(false), setRows((rs) => rs.filter((_, j) => j !== i)))} aria-label={t("Remove range")} className="rounded p-1 text-slate-500 hover:text-red-700">
                         <X aria-hidden className="size-3.5" />
                       </button>
                     </td>
@@ -198,8 +201,8 @@ export function RangesEditor({ t }: { t: CatalogLabTest }) {
             </table>
           </div>
         )}
-        {error && <Alert>{error}</Alert>}
-        {saved && !pending && <p className="text-emerald-700 dark:text-emerald-400">Saved. New results use these; earlier ones keep the range they were judged by.</p>}
+        {error && <Alert>{t(error)}</Alert>}
+        {saved && !pending && <p className="text-emerald-700 dark:text-emerald-400">{t("Saved. New results use these; earlier ones keep the range they were judged by.")}</p>}
         <div className="flex flex-wrap gap-2">
           {(!isPanel || numericParts.length > 0) && (
             <button
@@ -210,11 +213,11 @@ export function RangesEditor({ t }: { t: CatalogLabTest }) {
               className={`${secondaryButtonClass} px-2 py-1 text-xs`}
             >
               <Plus aria-hidden className="size-3.5" />
-              Add a range
+              {t("Add a range")}
             </button>
           )}
           <button type="button" disabled={pending} onClick={save} className={`${buttonClass} px-3 py-1 text-xs`}>
-            {pending ? "Saving…" : "Save ranges"}
+            {pending ? t("Saving…") : t("Save ranges")}
           </button>
         </div>
       </div>
@@ -225,24 +228,25 @@ export function RangesEditor({ t }: { t: CatalogLabTest }) {
 /** For clinics set up before ranges existed: fills in the recommended ones where a test has none. */
 export function RecommendedRanges() {
   const [result, setResult] = useState<{ filled?: string[]; targets?: string[]; error?: string }>();
+  const t = useT();
   const [pending, start] = useTransition();
   return (
     <div className="mb-4 space-y-2">
-      {result?.error && <Alert>{result.error}</Alert>}
+      {result?.error && <Alert>{t(result.error)}</Alert>}
       {result?.filled && (
         <Notice tone={result.filled.length || result.targets?.length ? "success" : "info"}>
-          {result.filled.length ? `Added recommended ranges and critical limits to: ${result.filled.join(", ")}. ` : ""}
-          {result.targets?.length ? `Added target times and specimens to: ${result.targets.join(", ")}.` : ""}
-          {!result.filled.length && !result.targets?.length && "Every common test already has its own ranges, target time and specimen; nothing was changed."}
+          {result.filled.length ? `${t("Added recommended ranges and critical limits to: {tests}.", { tests: result.filled.join(", ") })} ` : ""}
+          {result.targets?.length ? t("Added target times and specimens to: {tests}.", { tests: result.targets.join(", ") }) : ""}
+          {!result.filled.length && !result.targets?.length && t("Every common test already has its own ranges, target time and specimen; nothing was changed.")}
         </Notice>
       )}
       <p className="flex flex-wrap items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-        Common tests (haemoglobin, CBC, glucose, creatinine…) have recommended critical limits, ranges for men, women and children, target times and specimens.
+        {t("Common tests (haemoglobin, CBC, glucose, creatinine…) have recommended critical limits, ranges for men, women and children, target times and specimens.")}
         <button type="button" disabled={pending} onClick={() => start(async () => setResult(await applyRecommendedLabRanges()))} className={secondaryButtonClass}>
-          {pending ? "Adding…" : "Use the recommended ranges"}
+          {pending ? t("Adding…") : t("Use the recommended ranges")}
         </button>
       </p>
-      <p className="text-xs text-slate-500">Only what a test doesn&apos;t have yet is filled in. Have your laboratory head check them against your analysers.</p>
+      <p className="text-xs text-slate-500">{t("Only what a test doesn't have yet is filled in. Have your laboratory head check them against your analysers.")}</p>
     </div>
   );
 }

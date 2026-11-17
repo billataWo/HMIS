@@ -90,7 +90,7 @@ export function ReturnForm({
         <span className="text-xs text-slate-500">{unit}</span>
       </label>
       <fieldset className="space-y-1">
-        <legend className="sr-only">{t("Condition")}</legend>
+        <legend className="sr-only">{t("Condition of the drugs")}</legend>
         <label className="flex items-start gap-2">
           <input type="radio" name="condition" value="restock" required defaultChecked={state.values?.condition === "restock"} className="mt-1" />
           <span>{t("Sealed and in date: put back on the shelf")}</span>

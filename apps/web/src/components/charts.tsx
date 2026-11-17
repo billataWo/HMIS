@@ -1,3 +1,6 @@
+import { EN } from "@/lib/format";
+import type { T } from "@/lib/i18n";
+
 /**
  * Small dependency-free charts. One series per chart, one hue (teal), thin marks with rounded
  * data ends anchored to the baseline, a hover tooltip on every mark, and a table view, so values
@@ -11,16 +14,16 @@ export interface Point {
 }
 
 /** Vertical bars over time. Labels the first, last and a few in-between days. */
-export function ColumnChart({ title, points, unit }: { title: string; points: Point[]; unit?: string }) {
+export function ColumnChart({ title, points, unit, t = EN }: { title: string; points: Point[]; unit?: string; t?: T }) {
   const max = Math.max(...points.map((p) => p.value), 0);
   const every = Math.max(1, Math.ceil(points.length / 6));
   return (
     <figure className="space-y-2">
       <figcaption className="flex items-baseline justify-between text-sm">
         <span className="font-medium">{title}</span>
-        <span className="text-xs text-slate-500">peak {points.find((p) => p.value === max)?.display ?? "0"}</span>
+        <span className="text-xs text-slate-500">{t("peak {value}", { value: points.find((p) => p.value === max)?.display ?? "0" })}</span>
       </figcaption>
-      <div className="flex h-40 items-end gap-[2px] border-b border-slate-300 dark:border-slate-700" role="img" aria-label={`${title}, ${points.length} days`}>
+      <div className="flex h-40 items-end gap-[2px] border-b border-slate-300 dark:border-slate-700" role="img" aria-label={t("{title}, {n} days", { title, n: points.length })}>
         {points.map((p, i) => (
           <div key={p.label} className="group relative flex h-full min-w-[3px] flex-1 items-end justify-center">
             <div

@@ -2,7 +2,9 @@ import { Phone, Syringe } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { Badge, EmptyState, linkClass, Notice, PageHeader, pillClass, Skeleton } from "@/components/ui";
+import { PageTitle } from "@/components/page-title";
+import { Badge, EmptyState, linkClass, Notice, pillClass, Skeleton } from "@/components/ui";
+import { getT } from "@/lib/lang";
 import { api, type DueChild, type Me } from "@/lib/api";
 import { ageText, formatAgo, formatDualDate, fullName } from "@/lib/format";
 import { DOSE_STATUS, EPI_FOLLOW_UPS } from "@/lib/immunization";
@@ -20,24 +22,24 @@ const day = (d: string) => formatDualDate(`${d}T12:00:00+03:00`);
  */
 async function Due({ searchParams }: { searchParams: Promise<Search> }) {
   const show = (await searchParams).show === "due" ? "due" : "late";
-  const me = await api<Me>("/auth/me");
-  if (!["ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST"].includes(me.role)) return <Notice tone="info">Immunization follow-up is kept by the nurses and the front desk.</Notice>;
+  const [me, t] = await Promise.all([api<Me>("/auth/me"), getT()]);
+  if (!["ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST"].includes(me.role)) return <Notice tone="info">{t("Immunization follow-up is kept by the nurses and the front desk.")}</Notice>;
   const all = await api<DueChild[]>("/immunizations/due");
   const rows = all.filter((r) => (show === "late" ? r.defaulter : !r.defaulter));
   const late = all.filter((r) => r.defaulter).length;
   return (
     <div className="space-y-4">
-      <nav className="flex flex-wrap gap-2" aria-label="Which children">
+      <nav className="flex flex-wrap gap-2" aria-label={t("Which children")}>
         <Link href="/immunizations" aria-current={show === "late" ? "page" : undefined} className={pillClass(show === "late")}>
-          Late (defaulters) {late > 0 && `· ${late}`}
+          {t("Late (defaulters)")} {late > 0 && `· ${late}`}
         </Link>
         <Link href="/immunizations?show=due" aria-current={show === "due" ? "page" : undefined} className={pillClass(show === "due")}>
-          Due this week · {all.length - late}
+          {t("Due this week")} · {all.length - late}
         </Link>
       </nav>
       {rows.length === 0 ? (
-        <EmptyState icon={Syringe} title={show === "late" ? "No child is late for a vaccine" : "No vaccine due this week"}>
-          Children appear here once they have a dose recorded at this clinic.
+        <EmptyState icon={Syringe} title={t(show === "late" ? "No child is late for a vaccine" : "No vaccine due this week")}>
+          {t("Children appear here once they have a dose recorded at this clinic.")}
         </EmptyState>
       ) : (
         <ul className="space-y-3">
@@ -52,7 +54,7 @@ async function Due({ searchParams }: { searchParams: Promise<Search> }) {
                         {fullName(r.patient)}
                       </Link>{" "}
                       <span className="text-slate-500">
-                        · {r.patient.mrn} · {ageText(r.patient.dateOfBirth)}
+                        · {r.patient.mrn} · {ageText(r.patient.dateOfBirth, false, t)}
                       </span>
                     </p>
                     <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
@@ -62,21 +64,21 @@ async function Due({ searchParams }: { searchParams: Promise<Search> }) {
                           {r.patient.phone}
                         </a>
                       ) : (
-                        <span>no phone</span>
+                        <span>{t("no phone")}</span>
                       )}
-                      {r.defaulter && <span className="font-medium text-red-700 dark:text-red-400">{r.daysLate} days late</span>}
+                      {r.defaulter && <span className="font-medium text-red-700 dark:text-red-400">{t("{n} days late", { n: r.daysLate })}</span>}
                     </p>
                     <p className="flex flex-wrap gap-1.5">
                       {r.doses.map((d) => (
                         <Badge key={d.label} tone={DOSE_STATUS[d.status].tone}>
-                          {d.label} · due {day(d.dueOn)}
+                          {d.label} · {t("due {date}", { date: day(d.dueOn) })}
                         </Badge>
                       ))}
                     </p>
                     {r.lastFollowUp && (
                       <p className="text-xs text-slate-500">
-                        Last call: {f?.label ?? r.lastFollowUp.outcome}
-                        {r.lastFollowUp.note && ` · ${r.lastFollowUp.note}`} · {r.lastFollowUp.by}, {formatAgo(r.lastFollowUp.at)}
+                        {t("Last call: {outcome}", { outcome: t(f?.label ?? r.lastFollowUp.outcome) })}
+                        {r.lastFollowUp.note && ` · ${r.lastFollowUp.note}`} · {r.lastFollowUp.by}, {formatAgo(r.lastFollowUp.at, t)}
                       </p>
                     )}
                   </div>
@@ -94,7 +96,7 @@ async function Due({ searchParams }: { searchParams: Promise<Search> }) {
 export default function ImmunizationsPage({ searchParams }: { searchParams: Promise<Search> }) {
   return (
     <>
-      <PageHeader title="Immunization" subtitle="ክትባት · children due or late for a vaccine" />
+      <PageTitle title="Immunization" subtitle="children due or late for a vaccine" />
       <Suspense fallback={<Skeleton className="h-96" />}>
         <Due searchParams={searchParams} />
       </Suspense>

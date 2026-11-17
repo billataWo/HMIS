@@ -4,11 +4,14 @@
  * by the server when it is sent; nothing here bypasses them.
  */
 import type { DrugOption, Frequency, IcdEntry, LabWorkOrder, Patient, PharmacyPrescription, QueuePatient, Service, VisitStatus } from "@/lib/api";
+import { EN } from "@/lib/format";
 import { enqueue } from "./engine";
 import { type OfflineLabTest, tmpId } from "./types";
 import type { OfflineVisit } from "./view";
 
 const who = (p: Pick<QueuePatient, "firstName" | "fatherName">) => `${p.firstName} ${p.fatherName}`;
+/** An operation's list label: the English text, and the key and values the workspace translates. */
+const opLabel = (key: string, vars: Record<string, string | number>) => ({ label: EN(key, vars), labelKey: key, labelVars: vars });
 
 export type NewPatient = {
   firstName: string;
@@ -36,7 +39,7 @@ export async function registerPatient(userId: string, p: NewPatient) {
   await enqueue({
     userId,
     kind: "register",
-    label: `Register ${who(p)}`,
+    ...opLabel("Register {name}", { name: who(p) }),
     steps: [{ method: "POST", path: "/patients", body: { ...p, confirmDuplicate: p.confirmDuplicate ?? false } }],
     creates: [{ tmp, step: 0, pick: "id" }],
     data: { patient },
@@ -61,7 +64,7 @@ export async function checkIn(userId: string, patient: QueuePatient, service: Se
   await enqueue({
     userId,
     kind: "checkin",
-    label: `Check in ${who(patient)}`,
+    ...opLabel("Check in {name}", { name: who(patient) }),
     steps: [{ method: "POST", path: "/visits", body: { patientId: patient.id, ...(service && { serviceId: service.id }) } }],
     creates: [{ tmp, step: 0, pick: "id" }],
     data: { visit, charge: service && Number(service.price) > 0 ? { description: service.name, unitPrice: service.price } : null },
@@ -69,19 +72,19 @@ export async function checkIn(userId: string, patient: QueuePatient, service: Se
 }
 
 const STATUS_LABEL: Record<VisitStatus, string> = {
-  WAITING: "Back to waiting",
-  IN_CONSULTATION: "Call in",
-  AWAITING_LAB: "Send to lab",
-  AWAITING_PHARMACY: "Send to pharmacy",
-  COMPLETED: "Complete visit of",
-  CANCELLED: "Cancel visit of",
+  WAITING: "Back to waiting: {name}",
+  IN_CONSULTATION: "Call in {name}",
+  AWAITING_LAB: "Send {name} to the lab",
+  AWAITING_PHARMACY: "Send {name} to the pharmacy",
+  COMPLETED: "Complete the visit of {name}",
+  CANCELLED: "Cancel the visit of {name}",
 };
 
 export const setStatus = (userId: string, visit: OfflineVisit, status: VisitStatus) =>
   enqueue({
     userId,
     kind: "status",
-    label: `${STATUS_LABEL[status]} ${who(visit.patient)}`,
+    ...opLabel(STATUS_LABEL[status], { name: who(visit.patient) }),
     steps: [{ method: "PATCH", path: `/visits/${visit.id}/status`, body: { status } }],
     data: { visitId: visit.id, status },
   });
@@ -90,7 +93,7 @@ export const saveNotes = (userId: string, visit: OfflineVisit, fields: Record<st
   enqueue({
     userId,
     kind: "notes",
-    label: `Notes and vitals for ${who(visit.patient)}`,
+    ...opLabel("Notes and vitals for {name}", { name: who(visit.patient) }),
     steps: [{ method: "PATCH", path: `/visits/${visit.id}`, body: fields }],
     data: { visitId: visit.id, fields },
   });
@@ -99,7 +102,7 @@ export const addDiagnosis = (userId: string, visit: OfflineVisit, icd: IcdEntry,
   enqueue({
     userId,
     kind: "diagnosis",
-    label: `Diagnosis ${icd.code} for ${who(visit.patient)}`,
+    ...opLabel("Diagnosis {code} for {name}", { code: icd.code, name: who(visit.patient) }),
     steps: [{ method: "POST", path: `/visits/${visit.id}/diagnoses`, body: { icd11Code: icd.code, label: icd.label, isPrimary } }],
     data: { visitId: visit.id, code: icd.code, label: icd.label },
   });
@@ -109,7 +112,7 @@ export async function orderLab(userId: string, visit: OfflineVisit, tests: Offli
   await enqueue({
     userId,
     kind: "lab-order",
-    label: `Lab: ${tests.map((t) => t.name).join(", ")} for ${who(visit.patient)}`,
+    ...opLabel("Lab: {tests} for {name}", { tests: tests.map((x) => x.name).join(", "), name: who(visit.patient) }),
     steps: [{ method: "POST", path: `/visits/${visit.id}/lab-orders`, body: { labTestIds: tests.map((t) => t.id) } }],
     // The API returns the orders in the order they were asked for.
     creates: orders.map((o, i) => ({ tmp: o.tmp, step: 0, pick: `${i}.id` })),
@@ -137,7 +140,7 @@ export async function prescribe(userId: string, visit: OfflineVisit, lines: RxLi
   await enqueue({
     userId,
     kind: "prescribe",
-    label: `Prescription (${lines.map((l) => l.drug.genericName).join(", ")}) for ${who(visit.patient)}`,
+    ...opLabel("Prescription ({drugs}) for {name}", { drugs: lines.map((l) => l.drug.genericName).join(", "), name: who(visit.patient) }),
     steps: [
       {
         method: "POST",
@@ -161,7 +164,9 @@ export const payVisit = (userId: string, visitId: string, patient: QueuePatient,
   enqueue({
     userId,
     kind: "pay",
-    label: `${method === "CASH" ? "Cash" : `Telebirr (${reference})`} payment ${amount.toFixed(2)} ETB from ${who(patient)}`,
+    ...(method === "CASH"
+      ? opLabel("Cash payment of {amount} ETB from {name}", { amount: amount.toFixed(2), name: who(patient) })
+      : opLabel("Telebirr payment ({reference}) of {amount} ETB from {name}", { reference: reference ?? "", amount: amount.toFixed(2), name: who(patient) })),
     steps: [{ method: "POST", path: `/visits/${visitId}/payments`, body: { method, amount, ...(reference && { reference }) } }],
     data: { visitId, amount, method, patient },
   });
@@ -170,7 +175,7 @@ export const collectSample = (userId: string, order: LabWorkOrder, sampleId?: st
   enqueue({
     userId,
     kind: "collect",
-    label: `Sample for ${order.labTest.name} (${who(order.visit.patient)})`,
+    ...opLabel("Sample for {test} ({name})", { test: order.labTest.name, name: who(order.visit.patient) }),
     steps: [{ method: "POST", path: `/lab-orders/${order.id}/collect`, body: sampleId ? { sampleId } : {} }],
     data: { orderId: order.id, sampleId },
   });
@@ -179,7 +184,7 @@ export const enterResult = (userId: string, order: LabWorkOrder, value: string, 
   enqueue({
     userId,
     kind: "result",
-    label: `Result ${order.labTest.name}: ${value} (${who(order.visit.patient)})`,
+    ...opLabel("Result {test}: {value} ({name})", { test: order.labTest.name, value, name: who(order.visit.patient) }),
     steps: [{ method: "POST", path: `/lab-orders/${order.id}/result`, body: { value, ...(note && { note }) } }],
     data: { orderId: order.id, value, note },
   });
@@ -188,7 +193,7 @@ export const verifyResult = (userId: string, order: LabWorkOrder) =>
   enqueue({
     userId,
     kind: "verify",
-    label: `Verify ${order.labTest.name} (${who(order.visit.patient)})`,
+    ...opLabel("Verify {test} ({name})", { test: order.labTest.name, name: who(order.visit.patient) }),
     steps: [{ method: "POST", path: `/lab-orders/${order.id}/verify` }],
     data: { orderId: order.id },
   });
@@ -197,7 +202,7 @@ export const billDrugs = (userId: string, rx: PharmacyPrescription, items: { ite
   enqueue({
     userId,
     kind: "bill-drugs",
-    label: `Bill drugs for ${who(rx.visit.patient)}`,
+    ...opLabel("Bill drugs for {name}", { name: who(rx.visit.patient) }),
     steps: [{ method: "POST", path: `/prescriptions/${rx.id}/bill`, body: { items: items.map(({ itemId, quantity }) => ({ itemId, quantity })) } }],
     data: { rxId: rx.id, visitId: rx.visit.id, items },
   });
@@ -206,7 +211,7 @@ export const dispense = (userId: string, rx: PharmacyPrescription, items: { item
   enqueue({
     userId,
     kind: "dispense",
-    label: `Hand over drugs to ${who(rx.visit.patient)}`,
+    ...opLabel("Hand over drugs to {name}", { name: who(rx.visit.patient) }),
     steps: [{ method: "POST", path: `/prescriptions/${rx.id}/dispense`, body: { items } }],
     data: { rxId: rx.id, items },
   });

@@ -1,10 +1,15 @@
+// i18n: english-only — the report itself is the government form, submitted in English; the screen
+// controls around it (title, week/month arrows, alert, CSV and Print buttons) follow the language.
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { PrintButton } from "@/components/print-button";
-import { PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
+import { LangBoundary } from "@/components/lang-boundary";
+import { PageTitle } from "@/components/page-title";
+import { secondaryButtonClass, Skeleton } from "@/components/ui";
 import { api, ApiError, type MohReport } from "@/lib/api";
 import { formatDualDate, shiftDay, toEthiopian } from "@/lib/format";
+import { getT } from "@/lib/lang";
 
 type Search = { y?: string; m?: string };
 
@@ -18,11 +23,12 @@ function step(y: number, m: number, by: number) {
 async function Report({ searchParams }: { searchParams: Promise<Search> }) {
   const params = await searchParams;
   const qs = params.y && params.m ? `?ecYear=${Number(params.y)}&ecMonth=${Number(params.m)}` : "";
+  const t = await getT();
   let r: MohReport;
   try {
     r = await api<MohReport>(`/reports/moh-monthly${qs}`);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">Only clinic admins can see reports.</p>;
+    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only clinic admins can see reports.")}</p>;
     throw e;
   }
   const { ecYear: y, ecMonth: m } = r.period;
@@ -36,19 +42,19 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-2 print:hidden">
-        <Link href={`/reports/moh?y=${prev.y}&m=${prev.m}`} aria-label="Previous month" className={`${secondaryButtonClass} px-2.5`}>
+        <Link href={`/reports/moh?y=${prev.y}&m=${prev.m}`} aria-label={t("Previous month")} className={`${secondaryButtonClass} px-2.5`}>
           <ChevronLeft aria-hidden />
         </Link>
         <span className="px-2 font-medium">
           {r.period.labelAm} · {r.period.label}
         </span>
         {!isCurrent && (
-          <Link href={`/reports/moh?y=${next.y}&m=${next.m}`} aria-label="Next month" className={`${secondaryButtonClass} px-2.5`}>
+          <Link href={`/reports/moh?y=${next.y}&m=${next.m}`} aria-label={t("Next month")} className={`${secondaryButtonClass} px-2.5`}>
             <ChevronRight aria-hidden />
           </Link>
         )}
         <a href={`/reports/moh/csv?y=${y}&m=${m}`} className={`${secondaryButtonClass} ml-auto`}>
-          Download CSV
+          {t("Download CSV")}
         </a>
       </div>
 
@@ -209,9 +215,20 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
         current reporting form before submitting.
       </p>
       <div className="max-w-xs print:hidden">
-        <PrintButton />
+        <LangBoundary>
+          <PrintButton />
+        </LangBoundary>
       </div>
     </div>
+  );
+}
+
+async function BackToDashboard() {
+  const t = await getT();
+  return (
+    <Link href="/reports" className={secondaryButtonClass}>
+      {t("Dashboard")}
+    </Link>
   );
 }
 
@@ -219,15 +236,7 @@ export default function MohPage({ searchParams }: PageProps<"/reports/moh">) {
   return (
     <>
       <div className="print:hidden">
-        <PageHeader
-          title="Monthly MoH report"
-          subtitle="ወርሃዊ ሪፖርት · by Ethiopian calendar month"
-          actions={
-            <Link href="/reports" className={secondaryButtonClass}>
-              Dashboard
-            </Link>
-          }
-        />
+        <PageTitle title="Monthly MoH report" subtitle="by Ethiopian calendar month" actions={<BackToDashboard />} />
       </div>
       <Suspense fallback={<Skeleton className="h-96" />}>
         <Report searchParams={searchParams as Promise<Search>} />
