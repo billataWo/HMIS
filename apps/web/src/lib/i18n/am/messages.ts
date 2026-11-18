@@ -470,4 +470,5 @@ export const MESSAGES: Record<string, string> = {
   "Backups are not running on this server.": "በዚህ ሰርቨር ላይ ምትኬ እየተወሰደ አይደለም።",
   "{name} not run today": "{name} ዛሬ አልተካሄደም",
   "{name}: expected {answer}": "{name}፦ የሚጠበቀው {answer}",
+  "The doctor cancels tests ordered in a consultation": "በምክክር የታዘዙ ምርመራዎችን የሚሰርዘው ሐኪሙ ነው",
 };

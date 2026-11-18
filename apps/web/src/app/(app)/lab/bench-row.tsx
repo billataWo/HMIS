@@ -2,7 +2,9 @@
 
 import { TriangleAlert } from "lucide-react";
 import { useActionState, useState, useTransition } from "react";
-import { labStep, markLabUrgent, type FormState } from "@/app/actions";
+import { cancelLabOnlyTest, labStep, markLabUrgent, type FormState } from "@/app/actions";
+import { ConfirmCancel } from "@/components/confirm-cancel";
+import { CANCEL_REASONS } from "@/lib/cancel-reasons";
 import { isCritical, LAB_STATUS, LabValue, rangeText } from "@/components/lab-result";
 import { useT } from "@/components/lang-provider";
 import { Alert, Badge, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
@@ -391,6 +393,8 @@ export function BenchRow({
         </p>
       )}
       {o.status === "ORDERED" && unpaid && <p className="text-sm text-slate-500">{t("Send the patient to the cashier before taking the sample.")}</p>}
+      {/* A lab-only visit has no doctor to cancel its tests: the lab does, when the patient won't have them. */}
+      {o.status === "ORDERED" && o.visit.kind === "LAB" && <CancelLabOnly id={o.id} />}
 
       {o.status === "SAMPLE_COLLECTED" && o.sentAt && <AtReferenceLab o={o} days={sentSince ?? ""} />}
       {o.status === "SAMPLE_COLLECTED" && !o.sentAt && <SendOut o={o} labs={labs} open={!!lt.sendOut} />}
@@ -424,6 +428,38 @@ export function BenchRow({
 
       {(o.status === "SAMPLE_COLLECTED" || o.status === "RESULTED") && <RejectSample o={o} />}
     </li>
+  );
+}
+
+/** Cancels a lab-only visit's test before its sample is taken; the visit closes when nothing is left. */
+function CancelLabOnly({ id }: { id: string }) {
+  const t = useT();
+  const [reason, setReason] = useState<string>("LEFT_WITHOUT_BEING_SEEN");
+  const [error, setError] = useState<string>();
+  const [pending, start] = useTransition();
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <select value={reason} onChange={(e) => setReason(e.target.value)} aria-label={t("Why the test is cancelled")} className={`${inputClass} w-auto py-1 text-xs`}>
+        {CANCEL_REASONS.filter((r) => r.value !== "SENT_ELSEWHERE").map((r) => (
+          <option key={r.value} value={r.value}>
+            {t(r.label)}
+          </option>
+        ))}
+      </select>
+      <ConfirmCancel
+        disabled={pending}
+        label={t("Cancel test")}
+        question={t("Cancel this test? The patient won't have it.")}
+        onConfirm={() =>
+          start(async () => {
+            setError(undefined);
+            const res = await cancelLabOnlyTest(id, reason);
+            if (res.error) setError(res.error);
+          })
+        }
+      />
+      {error && <span className="text-xs text-red-700 dark:text-red-400">{t(error)}</span>}
+    </div>
   );
 }
 

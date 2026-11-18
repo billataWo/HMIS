@@ -1,4 +1,4 @@
-import { Body, ConflictException, Controller, Get, NotFoundException, Param, Post, Query } from '@nestjs/common';
+import { Body, ConflictException, Controller, ForbiddenException, Get, NotFoundException, Param, Post, Query } from '@nestjs/common';
 import type { LabOrderStatus, Prisma, Role } from '@hmis/db';
 import { z } from 'zod';
 import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
@@ -8,7 +8,7 @@ import { chargeTerms, isSettled, isEmergency, prepaymentRequired, settlementSele
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { assertNotMerged } from '../patients/merged.js';
-import { queuePatientSelect } from '../visits/visits.controller.js';
+import { CANCEL_REASONS, queuePatientSelect } from '../visits/visits.controller.js';
 import { qcStates, reagentShortTests, useReagents } from './qc.js';
 import { visitCoverage } from '../billing/coverage.js';
 import { type Specimen, SPECIMENS } from './specimens.js';
@@ -56,6 +56,8 @@ const SendSchema = z.object({
     .optional(),
 });
 const DaySchema = z.object({ day: z.string().regex(DAY_PATTERN).optional() });
+/** Why a lab-only visit's test is cancelled (the visit's cancel reasons: left, couldn't pay…). */
+const CancelSchema = z.object({ reason: z.enum(CANCEL_REASONS).optional() }).default({}); // the doctor's cancel sends no body
 /** One sample (one tube or container) for one or more of a visit's tests: they share its number. */
 const CollectTubeSchema = z.object({ orderIds: OrderSchema.shape.labTestIds, sampleId: sampleIdField });
 const resultFields = {
@@ -261,17 +263,35 @@ export class LabController {
     });
   }
 
+  /**
+   * Cancels a test whose sample hasn't been taken. In a consultation the doctor who orders tests
+   * cancels them; a lab-only visit has no doctor, so the lab or the front desk may too (the patient
+   * left, or couldn't pay). A lab-only visit with nothing left open then closes: completed if some
+   * results went out, cancelled if none did.
+   */
   @Post('lab-orders/:id/cancel')
-  @Roles('DOCTOR')
-  async cancel(@CurrentUser() me: AuthUser, @Param('id') id: string) {
+  @Roles('ADMIN', 'DOCTOR', 'LAB_TECH', 'RECEPTIONIST')
+  async cancel(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(CancelSchema)) body: z.infer<typeof CancelSchema>) {
     return this.prisma.client.$transaction(async (tx) => {
       const order = await this.order(me, id, tx);
+      const visit = await tx.visit.findUniqueOrThrow({ where: { id: order.visitId }, select: { id: true, kind: true, status: true } });
+      if (visit.kind !== 'LAB' && me.role !== 'DOCTOR') throw new ForbiddenException('The doctor cancels tests ordered in a consultation');
       if (order.status !== 'ORDERED') throw new ConflictException('Only tests whose sample has not been taken can be cancelled');
       const invoiced = await tx.charge.count({ where: { source: 'LAB', sourceId: id, invoiceId: { not: null }, voidedAt: null } });
       if (invoiced) throw new ConflictException('This test is already on an invoice; an admin removes it there (refunding it if paid), which also cancels it');
       await tx.charge.deleteMany({ where: { source: 'LAB', sourceId: id, invoiceId: null } });
       const updated = await tx.labOrder.update({ where: { id }, data: { status: 'CANCELLED' }, include: orderInclude });
-      await this.audit.log(me, 'lab.cancel', 'LabOrder', id, undefined, tx);
+      if (visit.kind === 'LAB' && visit.status !== 'COMPLETED' && visit.status !== 'CANCELLED') {
+        const open = await tx.labOrder.count({ where: { visitId: visit.id, status: { in: OPEN } } });
+        if (!open) {
+          const released = await tx.labOrder.count({ where: { visitId: visit.id, status: 'VERIFIED' } });
+          await tx.visit.update({
+            where: { id: visit.id },
+            data: released ? { status: 'COMPLETED', completedAt: new Date() } : { status: 'CANCELLED', cancelReason: body.reason ?? null },
+          });
+        }
+      }
+      await this.audit.log(me, 'lab.cancel', 'LabOrder', id, body.reason ? { reason: body.reason } : undefined, tx);
       return updated;
     });
   }

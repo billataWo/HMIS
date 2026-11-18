@@ -78,6 +78,46 @@ describe('lab-only visits and lab history', () => {
     await api.post(`/visits/${visitId}/prescriptions`).set(bearer(doctor.token)).send({ items: [{ drugId: drug.id, dose: '1', frequency: 'OD', quantity: 1 }] }).expect(409);
   });
 
+  it('lets the lab or the front desk cancel a test the patient won’t have, closing the visit when nothing is left', async () => {
+    // Its own patient, so the history test below still sees only its two results.
+    const other = (await api.post('/patients').set(bearer(desk.token)).send({ confirmDuplicate: true, firstName: 'Left', fatherName: 'Early', sex: 'MALE', ageYears: 40 }).expect(201)).body.id;
+    // The patient left before paying: both tests go, and the visit is cancelled, not left on the bench.
+    const left = (await walkIn({ patientId: other, labTestIds: [hb, film] }, desk).expect(201)).body.visitId;
+    const [a, b] = (await db.labOrder.findMany({ where: { visitId: left }, orderBy: { orderedAt: 'asc' } })).map((o) => o.id);
+    await api.post(`/lab-orders/${a}/cancel`).set(bearer(cashier.token)).send({}).expect(403);
+    await api.post(`/lab-orders/${a}/cancel`).set(bearer(tech.token)).send({ reason: 'NOT_A_REASON' }).expect(400);
+    await api.post(`/lab-orders/${a}/cancel`).set(bearer(tech.token)).send({ reason: 'CANNOT_PAY' }).expect(201);
+    expect((await db.visit.findUniqueOrThrow({ where: { id: left } })).status).toBe('AWAITING_LAB');
+    await api.post(`/lab-orders/${b}/cancel`).set(bearer(desk.token)).send({ reason: 'CANNOT_PAY' }).expect(201);
+    expect(await db.visit.findUniqueOrThrow({ where: { id: left } })).toMatchObject({ status: 'CANCELLED', cancelReason: 'CANNOT_PAY' });
+    expect(await db.charge.count({ where: { visitId: left } })).toBe(0);
+    const bench = (await api.get('/lab/worklist').set(bearer(tech.token)).expect(200)).body;
+    expect(bench.open.some((o: { visit: { id: string } }) => o.visit.id === left)).toBe(false);
+
+    // One result went out, the other test was dropped: the visit is completed. (A paid, invoiced test
+    // is refunded by an admin instead; a free one has no charge, so it can simply be cancelled.)
+    const free = (await db.labTest.create({ data: { tenantId, name: 'HIV rapid test', price: '0', resultOptions: ['Non-reactive', 'Reactive'] } })).id;
+    const part = (await walkIn({ patientId: other, labTestIds: [hb, free] }).expect(201)).body.visitId;
+    const [c, d] = (await db.labOrder.findMany({ where: { visitId: part }, orderBy: { orderedAt: 'asc' } })).map((o) => o.id);
+    await api.post(`/visits/${part}/payments`).set(bearer(cashier.token)).send({ method: 'CASH', amount: 100 }).expect(201);
+    await finish(c, '13.0');
+    expect((await db.visit.findUniqueOrThrow({ where: { id: part } })).status).toBe('AWAITING_LAB');
+    await api.post(`/lab-orders/${d}/cancel`).set(bearer(tech.token)).send({}).expect(201);
+    expect((await db.visit.findUniqueOrThrow({ where: { id: part } })).status).toBe('COMPLETED');
+    // A sample already taken can't be cancelled.
+    await api.post(`/lab-orders/${c}/cancel`).set(bearer(tech.token)).send({}).expect(409);
+  });
+
+  it('keeps cancelling a consultation’s tests with the doctor', async () => {
+    const someone = (await api.post('/patients').set(bearer(desk.token)).send({ confirmDuplicate: true, firstName: 'Seen', fatherName: 'Here', sex: 'FEMALE', ageYears: 25 }).expect(201)).body.id;
+    const opd = await db.visit.create({ data: { tenantId, patientId: someone, kind: 'OPD', status: 'IN_CONSULTATION', queueNumber: 99, doctorId: doctor.id } });
+    const [o] = (await api.post(`/visits/${opd.id}/lab-orders`).set(bearer(doctor.token)).send({ labTestIds: [film] }).expect(201)).body;
+    await api.post(`/lab-orders/${o.id}/cancel`).set(bearer(tech.token)).send({}).expect(403);
+    await api.post(`/lab-orders/${o.id}/cancel`).set(bearer(desk.token)).send({}).expect(403);
+    await api.post(`/lab-orders/${o.id}/cancel`).set(bearer(doctor.token)).send({}).expect(201);
+    expect((await db.visit.findUniqueOrThrow({ where: { id: opd.id } })).status).toBe('IN_CONSULTATION');
+  });
+
   it('lists a patient’s released results from every visit, newest first, to clinicians and the lab only', async () => {
     const list = (await api.get(`/patients/${patientId}/lab-results`).set(bearer(doctor.token)).expect(200)).body;
     expect(list.map((o: { labTest: { name: string }; resultValue: string }) => [o.labTest.name, o.resultValue])).toEqual([

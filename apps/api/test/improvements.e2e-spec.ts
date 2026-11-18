@@ -235,9 +235,16 @@ describe('improvements to the current modules', () => {
       await api.post(`/purchase-orders/${po.id}/order`).set(bearer(pharmacist.token)).expect(201);
       await receipt([{ drugId: amoxId, batchNo: 'P1', expiryDate: expiry, quantity: 60, costPrice: 2 }]).expect(201);
       expect((await api.get(`/purchase-orders/${po.id}`).set(bearer(pharmacist.token)).expect(200)).body.status).toBe('PARTLY_RECEIVED');
-      await receipt([{ drugId: amoxId, batchNo: 'P2', expiryDate: expiry, quantity: 40, costPrice: 2 }]).expect(201);
+      // No supplier named: a delivery against the order comes from the order's supplier.
+      await api
+        .post('/inventory/receipts')
+        .set(bearer(pharmacist.token))
+        .send({ purchaseOrderId: po.id, items: [{ drugId: amoxId, batchNo: 'P2', expiryDate: expiry, quantity: 40, costPrice: 2 }] })
+        .expect(201);
       const done = (await api.get(`/purchase-orders/${po.id}`).set(bearer(pharmacist.token)).expect(200)).body;
       expect([done.status, done.lines[0].receivedQty]).toEqual(['RECEIVED', 100]);
+      const p2 = await db.stockBatch.findFirstOrThrow({ where: { drugId: amoxId, batchNo: 'P2' } });
+      expect([p2.supplierId, p2.supplier]).toEqual([supplier.id, 'EPSS Hub']);
     });
 
     it('sets counted batches to what is on the shelf and records each difference', async () => {
@@ -261,11 +268,18 @@ describe('improvements to the current modules', () => {
       const { visitId } = await seen();
       await api.post(`/visits/${visitId}/documents`).set(bearer(nurse.token)).send(cert).expect(403);
       const doc = (await api.post(`/visits/${visitId}/documents`).set(bearer(doctor.token)).send(cert).expect(201)).body;
-      await api
-        .post(`/visits/${visitId}/documents`)
-        .set(bearer(doctor.token))
-        .send({ type: 'REFERRAL', to: 'Tikur Anbessa Hospital, surgery', urgency: 'URGENT', reason: 'Suspected appendicitis', summary: 'RLQ pain 2 days, fever' })
-        .expect(201);
+      await db.visit.update({ where: { id: visitId }, data: { temperatureC: '38.4', pulse: 104, systolicBp: 118, diastolicBp: 76 } });
+      const referral = (
+        await api
+          .post(`/visits/${visitId}/documents`)
+          .set(bearer(doctor.token))
+          .send({ type: 'REFERRAL', to: 'Tikur Anbessa Hospital, surgery', urgency: 'URGENT', reason: 'Suspected appendicitis', summary: 'RLQ pain 2 days, fever' })
+          .expect(201)
+      ).body;
+      // The letter carries what the receiving clinician needs: allergies, vital signs, released results.
+      const letter = (await api.get(`/documents/${referral.id}`).set(bearer(doctor.token)).expect(200)).body;
+      expect(letter.visit).toMatchObject({ temperatureC: '38.4', pulse: 104, systolicBp: 118, diastolicBp: 76, labOrders: [] });
+      expect(letter.visit.patient).toHaveProperty('allergies');
       const printed = (await api.get(`/documents/${doc.id}`).set(bearer(doctor.token)).expect(200)).body;
       expect([printed.data.restDays, printed.data.issuedBy, printed.visit.tenant.name]).toEqual([3, 'DOCTOR user', 'Improvements Clinic']);
       expect((await api.get(`/visits/${visitId}/documents`).set(bearer(nurse.token)).expect(200)).body).toHaveLength(2);

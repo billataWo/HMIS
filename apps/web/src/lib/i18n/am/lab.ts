@@ -243,4 +243,7 @@ export const LAB: Record<string, string> = {
   "one per label (label printer)": "በአንድ መለያ አንድ (የመለያ ማተሚያ)",
   "all on one A4 sheet": "ሁሉም በአንድ A4 ወረቀት",
   "No samples taken yet.": "እስካሁን ናሙና አልተወሰደም።",
+  "Why the test is cancelled": "ምርመራው የተሰረዘበት ምክንያት",
+  "Cancel test": "ምርመራውን ሰርዝ",
+  "Cancel this test? The patient won't have it.": "ይህ ምርመራ ይሰረዝ? ታካሚው አያሰራውም።",
 };

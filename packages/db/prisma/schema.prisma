@@ -180,6 +180,7 @@ model Patient {
   problems          PatientProblem[]
   immunizations     ImmunizationDose[]
   immunizationCalls ImmunizationFollowUp[]
+  aefis             ImmunizationAefi[]
   pregnancies       Pregnancy[]
 
   @@unique([tenantId, mrn])
@@ -210,9 +211,38 @@ model ImmunizationDose {
   voidedAt   DateTime?
   voidReason String?
   voidedById String?
+  aefis      ImmunizationAefi[]
 
   @@index([patientId])
   @@index([tenantId, givenOn])
+}
+
+/// An adverse event following immunization (AEFI): what happened after a dose, how serious, how it
+/// ended, and whether it was reported to the woreda (serious ones must be, within a day).
+model ImmunizationAefi {
+  id          String            @id @default(uuid())
+  tenantId    String
+  patientId   String
+  patient     Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  /// The dose it followed, when known (the vaccine name stays on the dose).
+  doseId      String?
+  dose        ImmunizationDose? @relation(fields: [doseId], references: [id])
+  onsetOn     DateTime          @db.Date
+  /// Keys of AEFI_SIGNS in the API.
+  signs       String[]
+  /// Death, hospital admission, disability, or life-threatening: reported at once.
+  serious     Boolean           @default(false)
+  /// RECOVERED, RECOVERING, NOT_RECOVERED, DIED or UNKNOWN.
+  outcome     String
+  reportedTo  String?
+  reportedOn  DateTime?         @db.Date
+  note        String?
+  createdById String
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([patientId])
+  @@index([tenantId, onsetOn])
 }
 
 /// A call or visit to a child who missed a vaccine: what came of it. Never changed.
@@ -293,6 +323,11 @@ model AncContact {
   nextContactOn  DateTime  @db.Date
   createdById    String
   createdAt      DateTime  @default(now())
+  /// Recorded by mistake (wrong woman, wrong day): kept, marked void with the reason, and left out
+  /// of the contact count, the next contact and the monthly report.
+  voidedAt       DateTime?
+  voidReason     String?
+  voidedById     String?
 
   @@index([pregnancyId])
   @@index([tenantId, contactOn])
@@ -1116,6 +1151,10 @@ model ClinicalDocument {
   createdById String
   createdAt   DateTime             @default(now())
   followUps   ReferralFollowUp[]
+  /// Issued with a mistake: kept, marked void with the reason, and issued again correctly.
+  voidedAt    DateTime?
+  voidReason  String?
+  voidedById  String?
 
   @@index([visitId])
 }

@@ -1257,6 +1257,16 @@ export interface ClinicalDocumentDetail extends ClinicalDocument {
     patient: QueuePatient;
     tenant: { name: string; nameAm: string | null; phone: string | null; address: string | null };
     diagnoses: { icd11Code: string; label: string; isPrimary: boolean }[];
+    // The visit's vital signs and released results, for the referral letter.
+    temperatureC?: string | null;
+    pulse?: number | null;
+    systolicBp?: number | null;
+    diastolicBp?: number | null;
+    respRate?: number | null;
+    spo2?: number | null;
+    weightKg?: string | null;
+    muacMm?: number | null;
+    labOrders?: { resultValue: string | null; resultFlag: string | null; rangeText: string | null; verifiedAt: string | null; labTest: { name: string; unit: string | null } }[];
   };
 }
 

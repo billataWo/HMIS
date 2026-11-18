@@ -268,8 +268,12 @@ export class InventoryController {
   async receive(@CurrentUser() me: AuthUser, @Body(new ZodPipe(ReceiptSchema)) body: z.infer<typeof ReceiptSchema>) {
     const today = clinicDay();
     return this.prisma.client.$transaction(async (tx) => {
-      const supplier = body.supplierId ? await tx.supplier.findFirst({ where: { id: body.supplierId, tenantId: me.tenantId } }) : null;
-      if (body.supplierId && !supplier) throw new NotFoundException('Supplier not found');
+      const po = body.purchaseOrderId ? await tx.purchaseOrder.findFirst({ where: { id: body.purchaseOrderId, tenantId: me.tenantId }, include: { lines: true } }) : null;
+      if (body.purchaseOrderId && !po) throw new NotFoundException('Purchase order not found');
+      // A delivery against an order comes from the order's supplier, unless another one is named.
+      const supplierId = body.supplierId ?? po?.supplierId;
+      const supplier = supplierId ? await tx.supplier.findFirst({ where: { id: supplierId, tenantId: me.tenantId } }) : null;
+      if (supplierId && !supplier) throw new NotFoundException('Supplier not found');
       // Several stores: into the chosen store, or the main store. One store: batches have none.
       const { multi } = await storeMode(tx, me.tenantId);
       const store = !multi
@@ -319,9 +323,7 @@ export class InventoryController {
         await tx.stockMovement.create({ data: { batchId, type: 'RECEIPT', quantity: item.quantity, reference: body.receiptRef, userId: me.sub } });
         received.push({ drug: drug.genericName, batchNo: item.batchNo, quantity: item.quantity });
       }
-      if (body.purchaseOrderId) {
-        const po = await tx.purchaseOrder.findFirst({ where: { id: body.purchaseOrderId, tenantId: me.tenantId }, include: { lines: true } });
-        if (!po) throw new NotFoundException('Purchase order not found');
+      if (po) {
         if (po.status !== 'ORDERED' && po.status !== 'PARTLY_RECEIVED') throw new ConflictException(`Purchase order ${po.number} is ${po.status.toLowerCase().replace('_', ' ')}`);
         if (supplier && po.supplierId !== supplier.id) throw new ConflictException('This delivery is from a different supplier than the purchase order');
         for (const line of po.lines) {

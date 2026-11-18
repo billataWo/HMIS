@@ -12,3 +12,6 @@ packages/db/src/generated/
 !.env.example
 .DS_Store
 deploy/hmis-ca.crt
+
+# graphify knowledge graph output (rebuilt locally with /graphify)
+graphify-out/

@@ -24,6 +24,15 @@ async function Document({ params }: { params: Promise<{ id: string }> }) {
   const { visit, data } = doc;
   const p = visit.patient;
   const age = ageText(p.dateOfBirth);
+  const vitals = [
+    visit.temperatureC != null && `Temp ${Number(visit.temperatureC)} °C`,
+    visit.pulse != null && `Pulse ${visit.pulse}/min`,
+    visit.systolicBp != null && visit.diastolicBp != null && `BP ${visit.systolicBp}/${visit.diastolicBp} mmHg`,
+    visit.respRate != null && `RR ${visit.respRate}/min`,
+    visit.spo2 != null && `SpO₂ ${visit.spo2}%`,
+    visit.weightKg != null && `Weight ${Number(visit.weightKg)} kg`,
+    visit.muacMm != null && `MUAC ${visit.muacMm} mm`,
+  ].filter((x): x is string => !!x);
   const restDays = Number(data.restDays ?? 0);
   const from = String(data.fromDate ?? "");
 
@@ -81,10 +90,34 @@ async function Document({ params }: { params: Promise<{ id: string }> }) {
             <span className="text-slate-600">To:</span> <strong>{String(data.to)}</strong> · Urgency: <strong>{URGENCY[String(data.urgency)] ?? String(data.urgency)}</strong>
           </p>
           <p>Dear colleague, I am referring the above patient for: {String(data.reason)}.</p>
+          <p>
+            <span className="font-semibold">Allergies:</span> {p.allergies?.length ? <strong>{p.allergies.join(", ")}</strong> : "none known"}
+          </p>
           <div>
             <p className="font-semibold">History and findings</p>
             <p className="whitespace-pre-wrap">{String(data.summary)}</p>
           </div>
+          {vitals.length > 0 && (
+            <div>
+              <p className="font-semibold">Vital signs at this visit</p>
+              <p>{vitals.join(" · ")}</p>
+            </div>
+          )}
+          {!!visit.labOrders?.length && (
+            <div>
+              <p className="font-semibold">Investigations</p>
+              <ul>
+                {visit.labOrders.map((o, i) => (
+                  <li key={i}>
+                    {o.labTest.name}: <strong>{o.resultValue}</strong>
+                    {o.labTest.unit && ` ${o.labTest.unit}`}
+                    {o.resultFlag && o.resultFlag !== "N" && ` (${o.resultFlag})`}
+                    {o.rangeText && <span className="text-slate-600"> · ref {o.rangeText}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {visit.diagnoses.length > 0 && (
             <div>
               <p className="font-semibold">Diagnosis</p>

@@ -62,6 +62,21 @@ const include = {
       patient: { select: queuePatientSelect },
       tenant: { select: { name: true, nameAm: true, phone: true, address: true } },
       diagnoses: { select: { icd11Code: true, label: true, isPrimary: true } },
+      // What a referral letter carries for the receiving clinician: the visit's vital signs and its
+      // released lab results (allergies come with the patient).
+      temperatureC: true,
+      pulse: true,
+      systolicBp: true,
+      diastolicBp: true,
+      respRate: true,
+      spo2: true,
+      weightKg: true,
+      muacMm: true,
+      labOrders: {
+        where: { status: 'VERIFIED' },
+        orderBy: [{ orderedAt: 'asc' }, { id: 'asc' }],
+        select: { resultValue: true, resultFlag: true, rangeText: true, verifiedAt: true, labTest: { select: { name: true, unit: true } } },
+      },
     },
   },
 } satisfies Prisma.ClinicalDocumentInclude;

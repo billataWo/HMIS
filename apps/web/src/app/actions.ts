@@ -548,6 +548,18 @@ export async function cancelLabOrder(id: string) {
   refresh();
 }
 
+/** At the lab: a lab-only visit's test the patient won't have (left, couldn't pay). */
+export async function cancelLabOnlyTest(id: string, reason: string): Promise<{ error?: string }> {
+  try {
+    await api(`/lab-orders/${id}/cancel`, { method: "POST", body: JSON.stringify(reason ? { reason } : {}) });
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.message };
+    throw e;
+  }
+  refresh();
+  return {};
+}
+
 /** Settings: a lab test's critical limits and its ranges for men, women and age groups (replaces them all). */
 export async function saveLabRanges(
   testId: string,
