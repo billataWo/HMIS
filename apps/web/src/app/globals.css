@@ -197,6 +197,24 @@
 .stagger > :nth-child(n + 9) { animation-delay: 280ms; }
 
 /*
+ * The heartbeat monitor (components/activity-field.tsx): each layer of the pen is one dash of
+ * --tail units on a 1000-unit trace. Hidden unless motion is allowed (below), so with reduced
+ * motion only the still trace shows.
+ */
+/* Where the pen is along the trace (0 to 1000). Registered, so it animates smoothly; a keyframe
+   written with var() would only jump between its two ends. */
+@property --ecg-pen {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+.ecg-sweep {
+  visibility: hidden;
+  stroke-dasharray: var(--tail) calc(1000 - var(--tail));
+  stroke-dashoffset: calc(var(--tail) - var(--ecg-pen));
+}
+
+/*
  * The public front page (/welcome). Motion only orients and never hides content:
  *  - scroll reveals are CSS scroll-driven animations: no JavaScript, and a browser without them
  *    simply shows everything (they run from slightly faded to fully shown, as `.enter` does);
@@ -262,6 +280,22 @@
   }
   .land-drift-slow {
     animation: land-drift 26s ease-in-out -9s infinite alternate-reverse;
+  }
+
+  /* The monitor's pen sweeps the trace left to right: four beats in 3.33 s, 72 a minute. The dash
+     repeats every 1000 units, so as the pen starts again on the left, the end of its last sweep is
+     still fading on the right, as on a real monitor. */
+  @keyframes ecg-sweep {
+    from {
+      --ecg-pen: 0;
+    }
+    to {
+      --ecg-pen: 1000;
+    }
+  }
+  .ecg-sweep {
+    visibility: visible;
+    animation: ecg-sweep 3.333s linear infinite;
   }
 
   /* Cards lift a little under the pointer. */

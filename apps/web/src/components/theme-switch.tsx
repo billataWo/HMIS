@@ -32,38 +32,36 @@ function choose(theme: Theme) {
 }
 
 /**
- * Day or Dark. Until someone chooses, the screen follows the device's setting. `look` matches the
+ * A Day / Dark toggle: a sun and a moon on a track, the knob on the theme showing; one click
+ * switches. Until someone chooses, the screen follows the device's setting. `look` matches the
  * language switch next to it: the app's sidebar, or the public site and sign-in.
  */
 export function ThemeSwitch({ label, day, dark, look = "app", className = "" }: { label: string; day: string; dark: string; look?: "app" | "site"; className?: string }) {
   // Null on the server and in the first render: the theme is only known in the browser.
   const theme = useSyncExternalStore(subscribe, current, () => null);
-  const option = (value: Theme, text: string, Icon: typeof Sun) => {
-    const on = theme === value;
-    const style =
-      look === "app"
-        ? on
-          ? "bg-brand-700 text-white"
-          : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
-        : on
-          ? "bg-(--l-ink) text-(--l-paper)"
-          : "text-(--l-muted) hover:bg-black/5 hover:text-(--l-ink) dark:hover:bg-white/10";
-    return (
-      <button
-        type="button"
-        aria-pressed={on}
-        onClick={() => choose(value)}
-        className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${style}`}
-      >
-        <Icon aria-hidden className="size-3.5" />
-        {text}
-      </button>
-    );
-  };
+  const isDark = theme === "dark";
+  const track = look === "app" ? "bg-slate-200 dark:bg-slate-700" : "bg-black/10 dark:bg-white/15";
+  const knob = look === "app" ? "bg-white text-brand-700 dark:bg-slate-900 dark:text-brand-300" : "bg-(--l-paper) text-(--l-ink)";
   return (
-    <div role="group" aria-label={label} className={`flex items-center gap-0.5 ${className}`}>
-      {option("light", day, Sun)}
-      {option("dark", dark, Moon)}
-    </div>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={isDark}
+      aria-label={`${label}: ${isDark ? dark : day}`}
+      title={isDark ? day : dark}
+      onClick={() => choose(isDark ? "light" : "dark")}
+      className={`relative inline-flex h-7 w-13 shrink-0 items-center rounded-full ${track} transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${className}`}
+    >
+      {/* The two ends: the sun on the left, the moon on the right. */}
+      <Sun aria-hidden className="absolute left-1.5 size-3.5 text-slate-500 dark:text-slate-400" />
+      <Moon aria-hidden className="absolute right-1.5 size-3.5 text-slate-500 dark:text-slate-400" />
+      {/* The knob, on the theme showing (hidden until it is known, so it never jumps). */}
+      <span
+        aria-hidden
+        className={`absolute top-0.5 left-0.5 grid size-6 place-items-center rounded-full shadow-sm transition-transform duration-200 ${knob} ${isDark ? "translate-x-6" : "translate-x-0"} ${theme ? "" : "opacity-0"}`}
+      >
+        {isDark ? <Moon className="size-3.5" /> : <Sun className="size-3.5" />}
+      </span>
+    </button>
   );
 }

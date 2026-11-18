@@ -83,7 +83,7 @@ export function WelcomeView({ lang }: { lang: Lang }) {
           <div className="land-drift-slow absolute -right-1/4 -bottom-1/2 size-[65vmax] rounded-full bg-[radial-gradient(circle,rgb(16_185_129/0.22),transparent_60%)]" />
         </div>
         <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.07] bg-[linear-gradient(white_1px,transparent_1px),linear-gradient(90deg,white_1px,transparent_1px)] bg-size-[32px_32px]" />
-        <HeartbeatBackground />
+        <HeartbeatBackground style={{ bottom: 0 }} />
         <div className="relative mx-auto grid max-w-6xl gap-14 px-4 pt-16 pb-20 sm:px-6 lg:grid-cols-[1fr_1.05fr] lg:items-center lg:gap-10 lg:pt-24 lg:pb-28">
           <div>
             <FadeIn y={12}>
