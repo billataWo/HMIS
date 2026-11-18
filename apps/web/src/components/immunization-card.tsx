@@ -3,11 +3,11 @@
 import { Printer, Syringe } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useActionState, useState } from "react";
-import { giveDose, voidDose, type FormState } from "@/app/actions";
-import type { ImmunizationRecord, ScheduledDose } from "@/lib/api";
+import { giveDose, recordAefi, updateAefi, voidDose, type FormState } from "@/app/actions";
+import type { Aefi, ImmunizationRecord, ScheduledDose } from "@/lib/api";
 import { clinicToday, formatDualDate } from "@/lib/format";
 import type { T } from "@/lib/i18n";
-import { DOSE_STATUS, milestoneText, SITES } from "@/lib/immunization";
+import { AEFI_OUTCOMES, AEFI_SIGNS, DOSE_STATUS, milestoneText, SITES } from "@/lib/immunization";
 import { useT } from "./lang-provider";
 import { Alert, Badge, buttonClass, inputClass } from "./ui";
 
@@ -146,7 +146,157 @@ export function ImmunizationCard({ patientId, record, canGive }: { patientId: st
           </ul>
         </details>
       )}
+      <Reactions patientId={patientId} record={record} canRecord={canGive} />
     </section>
+  );
+}
+
+/**
+ * Adverse events following immunization (AEFI): what happened after a dose, how serious, how it
+ * ended. A serious one (death, admission, disability, life-threatening) is reported to the woreda at
+ * once; until that is recorded it shows as waiting.
+ */
+function Reactions({ patientId, record, canRecord }: { patientId: string; record: ImmunizationRecord; canRecord: boolean }) {
+  const t = useT();
+  const [adding, setAdding] = useState(false);
+  const aefis = record.aefis ?? [];
+  const given = record.doses.filter((d) => !d.voidedAt && !d.elsewhere);
+  if (!aefis.length && !canRecord) return null;
+  return (
+    <div className="space-y-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">{t("Reactions after a vaccine (AEFI)")}</h3>
+        {canRecord && (
+          <button type="button" onClick={() => setAdding(!adding)} className={`${small} text-brand-700 hover:bg-brand-50 dark:text-brand-400 dark:hover:bg-brand-950`}>
+            {t(adding ? "Close" : "Record a reaction")}
+          </button>
+        )}
+      </div>
+      {adding && <AefiForm patientId={patientId} doses={given} onDone={() => setAdding(false)} />}
+      {aefis.length === 0 && !adding && <p className="text-xs text-slate-500">{t("None recorded.")}</p>}
+      <ul className="space-y-2">
+        {aefis.map((a) => (
+          <AefiRow key={a.id} a={a} canUpdate={canRecord} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function AefiRow({ a, canUpdate }: { a: Aefi; canUpdate: boolean }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const pending = a.serious && !a.reportedOn;
+  return (
+    <li className="rounded-lg border border-slate-100 p-2 text-xs dark:border-slate-800">
+      <p className="flex flex-wrap items-center gap-2">
+        <span className="font-medium">{day(a.onsetOn)}</span>
+        {a.doseLabel && <span>{t("after {dose}", { dose: a.doseLabel })}</span>}
+        {a.serious && <Badge tone="danger">{t("Serious")}</Badge>}
+        <Badge tone={a.outcome === "RECOVERED" ? "success" : a.outcome === "DIED" ? "danger" : "neutral"}>{t(AEFI_OUTCOMES[a.outcome] ?? a.outcome)}</Badge>
+        {pending && <Badge tone="warning">{t("Not reported yet")}</Badge>}
+      </p>
+      <p className="mt-1">{a.signs.map((s) => t(AEFI_SIGNS[s] ?? s)).join(", ")}</p>
+      <p className="text-slate-500">
+        {[a.note, a.reportedOn && t("reported {date} to {to}", { date: day(a.reportedOn), to: a.reportedTo ?? "" }), a.by].filter(Boolean).join(" · ")}
+      </p>
+      {canUpdate && (a.outcome !== "RECOVERED" || pending) && (
+        <button type="button" onClick={() => setOpen(!open)} className="mt-1 font-medium text-brand-700 hover:underline dark:text-brand-400">
+          {t(open ? "Close" : pending ? "Record that it was reported" : "Update how it ended")}
+        </button>
+      )}
+      {open && <AefiUpdate a={a} onDone={() => setOpen(false)} />}
+    </li>
+  );
+}
+
+function AefiForm({ patientId, doses, onDone }: { patientId: string; doses: ImmunizationRecord["doses"]; onDone: () => void }) {
+  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, form) => {
+    const r = await recordAefi(prev, form);
+    if (r.ok) onDone();
+    return r;
+  }, {});
+  const t = useT();
+  const v = state.values ?? {};
+  const err = state.fieldErrors ?? {};
+  return (
+    <form action={action} className="space-y-2 rounded-lg bg-slate-50 p-3 text-xs dark:bg-slate-900">
+      <input type="hidden" name="patientId" value={patientId} />
+      {state.error && <Alert>{t(state.error)}</Alert>}
+      <div className="flex flex-wrap gap-2">
+        <select name="doseId" defaultValue={v.doseId ?? doses.at(-1)?.id ?? ""} aria-label={t("After which dose")} className={`${inputClass} w-48`}>
+          <option value="">{t("Dose not known")}</option>
+          {[...doses].reverse().map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.label} · {day(d.givenOn)}
+            </option>
+          ))}
+        </select>
+        <label className="flex items-center gap-1">
+          {t("Began")}
+          <input name="onsetOn" type="date" required max={clinicToday()} defaultValue={v.onsetOn ?? clinicToday()} className={`${inputClass} w-40`} />
+        </label>
+        <select name="outcome" defaultValue={v.outcome ?? "RECOVERING"} aria-label={t("How it ended")} className={`${inputClass} w-40`}>
+          {Object.entries(AEFI_OUTCOMES).map(([k, label]) => (
+            <option key={k} value={k}>
+              {t(label)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <fieldset className="grid gap-1 sm:grid-cols-2">
+        <legend className="mb-1 font-medium">{t("What happened")}</legend>
+        {Object.entries(AEFI_SIGNS).map(([k, label]) => (
+          <label key={k} className="flex items-center gap-1.5">
+            <input type="checkbox" name="signs" value={k} /> {t(label)}
+          </label>
+        ))}
+      </fieldset>
+      {err.signs && <p className="text-red-700 dark:text-red-400">{t(err.signs)}</p>}
+      <label className="flex items-center gap-1.5 font-medium text-red-800 dark:text-red-300">
+        <input type="checkbox" name="serious" /> {t("Serious: death, admitted to hospital, disability, or life-threatening (report to the woreda today)")}
+      </label>
+      <input name="note" defaultValue={v.note} placeholder={t("What was seen and done")} aria-label={t("Note")} className={inputClass} />
+      <div className="flex flex-wrap gap-2">
+        <input name="reportedTo" defaultValue={v.reportedTo} placeholder={t("Reported to (if already reported)")} aria-label={t("Reported to")} className={`${inputClass} min-w-0 flex-1`} />
+        <input name="reportedOn" type="date" max={clinicToday()} defaultValue={v.reportedOn} aria-label={t("Reported on")} className={`${inputClass} w-40`} />
+      </div>
+      {(err.note || err.reportedTo) && <p className="text-red-700 dark:text-red-400">{t(err.note ?? err.reportedTo ?? "")}</p>}
+      <button disabled={pending} className={`${buttonClass} px-3 py-1.5 text-xs`}>
+        {pending ? t("Saving…") : t("Record the reaction")}
+      </button>
+    </form>
+  );
+}
+
+function AefiUpdate({ a, onDone }: { a: Aefi; onDone: () => void }) {
+  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, form) => {
+    const r = await updateAefi(prev, form);
+    if (r.ok) onDone();
+    return r;
+  }, {});
+  const t = useT();
+  return (
+    <form action={action} className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-2 dark:bg-slate-900">
+      <input type="hidden" name="aefiId" value={a.id} />
+      {state.error && <Alert>{t(state.error)}</Alert>}
+      <select name="outcome" defaultValue={a.outcome} aria-label={t("How it ended")} className={`${inputClass} w-40`}>
+        {Object.entries(AEFI_OUTCOMES).map(([k, label]) => (
+          <option key={k} value={k}>
+            {t(label)}
+          </option>
+        ))}
+      </select>
+      {!a.reportedOn && (
+        <>
+          <input name="reportedTo" placeholder={t("Reported to (e.g. woreda EPI focal person)")} aria-label={t("Reported to")} className={`${inputClass} min-w-0 flex-1`} />
+          <input name="reportedOn" type="date" max={clinicToday()} defaultValue={clinicToday()} aria-label={t("Reported on")} className={`${inputClass} w-40`} />
+        </>
+      )}
+      <button disabled={pending} className={`${buttonClass} px-3 py-1.5 text-xs`}>
+        {pending ? t("Saving…") : t("Save")}
+      </button>
+    </form>
   );
 }
 

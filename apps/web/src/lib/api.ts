@@ -755,6 +755,10 @@ export interface AncContact {
   nextContactOn: string;
   by: string | null;
   alerts: { level: "URGENT" | "WARNING"; text: string }[];
+  /** Recorded by mistake: shown, marked, but counts for nothing. */
+  voidedAt?: string | null;
+  voidReason?: string | null;
+  voidedBy?: string | null;
 }
 
 /** A pregnancy followed in antenatal care. */
@@ -774,6 +778,8 @@ export interface Pregnancy {
   gestation: { weeks: number; days: number } | null;
   nextContactOn: string | null;
   late: boolean;
+  /** About the pregnancy as a whole: Rh-negative, a Td dose due. */
+  alerts?: { level: "URGENT" | "WARNING"; text: string }[];
   contacts: AncContact[];
 }
 
@@ -829,6 +835,27 @@ export interface ImmunizationRecord {
   schedule: ScheduledDose[];
   doses: ImmunizationDoseRecord[];
   followUps: { id: string; outcome: string; note: string | null; createdAt: string; by: string | null }[];
+  aefis?: Aefi[];
+}
+
+/** An adverse event following immunization. */
+export interface Aefi {
+  id: string;
+  patientId: string;
+  doseId: string | null;
+  doseLabel: string | null;
+  onsetOn: string;
+  signs: string[];
+  serious: boolean;
+  outcome: string;
+  reportedTo: string | null;
+  reportedOn: string | null;
+  note: string | null;
+  by?: string | null;
+  createdAt: string;
+  /** Serious and not yet reported to the woreda. */
+  reportPending?: boolean;
+  patient?: QueuePatient;
 }
 
 /** A child due or late for a vaccine. */
@@ -1245,6 +1272,9 @@ export interface ClinicalDocument {
   type: "MEDICAL_CERTIFICATE" | "REFERRAL";
   data: Record<string, string | number>;
   createdAt: string;
+  /** Issued with a mistake: kept, marked void, and issued again. */
+  voidedAt?: string | null;
+  voidReason?: string | null;
   /** Referrals only: where it stands, from its follow-ups. */
   referralStatus?: ReferralStatus | null;
   followUps?: ReferralFollowUp[];

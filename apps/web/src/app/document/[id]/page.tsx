@@ -38,6 +38,11 @@ async function Document({ params }: { params: Promise<{ id: string }> }) {
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-5 text-sm leading-relaxed text-black">
+      {doc.voidedAt && (
+        <p className="border-2 border-red-700 p-2 text-center font-bold tracking-widest text-red-700">
+          VOID · ተሰርዟል — {doc.voidReason}
+        </p>
+      )}
       <header className="border-b border-black pb-3 text-center">
         <p className="text-lg font-bold">{visit.tenant.name}</p>
         {visit.tenant.nameAm && <p>{visit.tenant.nameAm}</p>}

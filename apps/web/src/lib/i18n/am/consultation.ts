@@ -287,4 +287,7 @@ export const CONSULTATION: Record<string, string> = {
   "Patient arrived there": "ታካሚው እዚያ ደርሷል",
   "Patient did not go": "ታካሚው አልሄደም",
   "Note only (e.g. phoned the patient)": "ማስታወሻ ብቻ (ለምሳሌ ለታካሚው ተደውሏል)",
+  "What was wrong (e.g. wrong hospital)": "ስህተቱ ምን ነበር (ለምሳሌ የተሳሳተ ሆስፒታል)",
+  "Why the document is voided": "ሰነዱ የተሰረዘበት ምክንያት",
+  "Void it": "ሰርዘው",
 };

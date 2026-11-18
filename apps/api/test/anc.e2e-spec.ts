@@ -94,4 +94,37 @@ describe('antenatal care', () => {
     const r = await api.post(`/visits/${visit}/prescriptions`).set(bearer(doctor.token)).send({ items: [{ drugId: drug.id, dose: '5 mg', frequency: 'OD', durationDays: 5, quantity: 5 }] }).expect(409);
     expect(r.body.alerts).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'PREGNANCY', severity: 'BLOCK' })]));
   });
+
+  it('voids a contact recorded by mistake, and flags an Rh-negative mother and a Td dose due', async () => {
+    const id = await woman(24);
+    const p = (await register(id, { lmp: clinicDay(-140), bloodGroup: 'O-' }).expect(201)).body; // 20 weeks
+    const contact = (body: object = {}) => api.post(`/pregnancies/${p.id}/contacts`).set(bearer(nurse.token)).send(body);
+    const first = (await contact({ contactOn: clinicDay(-7), systolicBp: 110, diastolicBp: 70 }).expect(201)).body;
+    const wrong = (await contact({ systolicBp: 112, diastolicBp: 72 }).expect(201)).body;
+    expect(wrong.contactNo).toBe(2);
+
+    const voidIt = (cid: string, body: object, who = nurse) => api.post(`/anc-contacts/${cid}/void`).set(bearer(who.token)).send(body);
+    await voidIt(wrong.id, { reason: 'x' }).expect(400);
+    await voidIt(wrong.id, { reason: 'Entered for the wrong woman' }, desk).expect(403);
+    await voidIt(first.id, { reason: 'Entered twice' }).expect(409); // only the latest
+    await voidIt(wrong.id, { reason: 'Entered for the wrong woman' }).expect(201);
+    await voidIt(wrong.id, { reason: 'Again' }).expect(409);
+
+    // The day is free again and the next contact takes number 2; the voided one stays on record.
+    const again = (await contact({ systolicBp: 108, diastolicBp: 70 }).expect(201)).body;
+    expect(again.contactNo).toBe(2);
+    const [view] = (await api.get(`/patients/${id}/pregnancies`).set(bearer(desk.token)).expect(200)).body;
+    expect(view.contacts.map((c: { contactNo: number; voidedAt: string | null; voidReason: string | null }) => [c.contactNo, c.voidReason])).toEqual([
+      [1, null],
+      [2, 'Entered for the wrong woman'],
+      [2, null],
+    ]);
+    expect(view.alerts.map((a: { text: string }) => a.text)).toEqual([expect.stringMatching(/^Rh-negative/), expect.stringMatching(/^Td 1 is due/)]);
+
+    // Td 1 given today: Td 2 is not due for four weeks, so only the Rh alert is left.
+    await api.post(`/patients/${id}/immunizations`).set(bearer(nurse.token)).send({ vaccine: 'TD', doseNo: 1 }).expect(201);
+    const [after] = (await api.get(`/patients/${id}/pregnancies`).set(bearer(desk.token)).expect(200)).body;
+    expect(after.alerts.map((a: { text: string }) => a.text)).toEqual([expect.stringMatching(/^Rh-negative/)]);
+  });
+
 });

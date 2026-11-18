@@ -277,9 +277,28 @@ describe('improvements to the current modules', () => {
           .expect(201)
       ).body;
       // The letter carries what the receiving clinician needs: allergies, vital signs, released results.
+      const v = await db.visit.findUniqueOrThrow({ where: { id: visitId } });
+      await db.patient.update({ where: { id: v.patientId }, data: { allergies: ['Penicillin'] } });
+      const hbTest = await db.labTest.create({ data: { tenantId, name: 'Hemoglobin (referral)', unit: 'g/dL', price: '0', resultOptions: [] } });
+      const lab = (status: 'VERIFIED' | 'RESULTED', resultValue: string) =>
+        db.labOrder.create({ data: { tenantId, visitId, labTestId: hbTest.id, orderedById: doctor.id, status, resultValue, resultFlag: 'L', rangeText: '12–16 g/dL', verifiedAt: status === 'VERIFIED' ? new Date() : null } });
+      await lab('VERIFIED', '9.8');
+      await lab('RESULTED', '9.9'); // entered, not released: never on a letter
       const letter = (await api.get(`/documents/${referral.id}`).set(bearer(doctor.token)).expect(200)).body;
-      expect(letter.visit).toMatchObject({ temperatureC: '38.4', pulse: 104, systolicBp: 118, diastolicBp: 76, labOrders: [] });
-      expect(letter.visit.patient).toHaveProperty('allergies');
+      expect(letter.visit).toMatchObject({ temperatureC: '38.4', pulse: 104, systolicBp: 118, diastolicBp: 76 });
+      expect(letter.visit.labOrders).toEqual([expect.objectContaining({ resultValue: '9.8', resultFlag: 'L', rangeText: '12–16 g/dL', labTest: { name: 'Hemoglobin (referral)', unit: 'g/dL' } })]);
+      expect(letter.visit.patient.allergies).toEqual(['Penicillin']);
+
+      // Issued with a mistake: voided with the reason (the doctor issues a new one), and no longer followed up.
+      const voidDoc = (body: object, who = doctor) => api.post(`/documents/${referral.id}/void`).set(bearer(who.token)).send(body);
+      await voidDoc({ reason: 'Wrong hospital' }, nurse).expect(403);
+      await voidDoc({ reason: 'x' }).expect(400);
+      await voidDoc({ reason: 'Wrong hospital' }).expect(201);
+      await voidDoc({ reason: 'Again' }).expect(409);
+      expect((await api.get(`/documents/${referral.id}`).set(bearer(nurse.token)).expect(200)).body).toMatchObject({ voidReason: 'Wrong hospital' });
+      await api.post(`/documents/${referral.id}/follow-ups`).set(bearer(nurse.token)).send({ status: 'ARRIVED' }).expect(409);
+      const open = (await api.get('/referrals?view=all').set(bearer(doctor.token)).expect(200)).body;
+      expect(open.some((r: { id: string }) => r.id === referral.id)).toBe(false);
       const printed = (await api.get(`/documents/${doc.id}`).set(bearer(doctor.token)).expect(200)).body;
       expect([printed.data.restDays, printed.data.issuedBy, printed.visit.tenant.name]).toEqual([3, 'DOCTOR user', 'Improvements Clinic']);
       expect((await api.get(`/visits/${visitId}/documents`).set(bearer(nurse.token)).expect(200)).body).toHaveLength(2);

@@ -102,4 +102,36 @@ describe('immunization', () => {
     expect(r.fullyImmunized).toBeGreaterThanOrEqual(1);
     expect(r.dropOut).toHaveProperty('penta1ToPenta3');
   });
+
+  it('records adverse events after a vaccine, and lists serious ones until they are reported', async () => {
+    const id = await child(clinicDay(-50));
+    const dose = (await give(id, { vaccine: 'PENTA', doseNo: 1, givenOn: clinicDay(-3) }).expect(201)).body;
+    const aefi = (body: object, who = nurse) => api.post(`/patients/${id}/aefis`).set(bearer(who.token)).send(body);
+    await aefi({ doseId: dose.id, onsetOn: clinicDay(-2), signs: ['FEVER'] }, desk).expect(403);
+    await aefi({ doseId: dose.id, onsetOn: clinicDay(-2), signs: [] }).expect(400);
+    await aefi({ doseId: dose.id, onsetOn: clinicDay(-2), signs: ['OTHER'] }).expect(400); // say what
+    await aefi({ doseId: dose.id, onsetOn: clinicDay(-5), signs: ['FEVER'] }).expect(409); // before the dose
+    await aefi({ doseId: dose.id, onsetOn: clinicDay(1), signs: ['FEVER'] }).expect(409); // future
+    const mild = (await aefi({ doseId: dose.id, onsetOn: clinicDay(-2), signs: ['FEVER', 'INJECTION_SITE'], outcome: 'RECOVERED' }).expect(201)).body;
+    const serious = (await aefi({ doseId: dose.id, onsetOn: clinicDay(-1), signs: ['SEIZURE'], serious: true, outcome: 'RECOVERING' }).expect(201)).body;
+
+    const mine = async () => ((await api.get('/immunizations/aefis').set(bearer(nurse.token)).expect(200)).body as { id: string; patientId: string; reportPending: boolean; doseLabel: string }[]).filter((a) => a.patientId === id);
+    expect((await mine()).map((a) => [a.id, a.reportPending, a.doseLabel])).toEqual([
+      [serious.id, true, 'Penta 1'],
+      [mild.id, false, 'Penta 1'],
+    ]);
+    await api.get('/immunizations/aefis').set(bearer(desk.token)).expect(403);
+
+    await api.patch(`/aefis/${serious.id}`).set(bearer(nurse.token)).send({ reportedOn: clinicDay() }).expect(400); // to whom
+    await api.patch(`/aefis/${serious.id}`).set(bearer(nurse.token)).send({ reportedTo: 'Woreda health office, EPI focal person', reportedOn: clinicDay(), outcome: 'RECOVERED' }).expect(200);
+    expect((await mine()).every((a) => !a.reportPending)).toBe(true);
+    expect((await schedule(id)).aefis).toHaveLength(2);
+
+    // A death is serious, whatever was ticked; another clinic can't touch the record.
+    const died = (await aefi({ onsetOn: clinicDay(), signs: ['ANAPHYLAXIS'], outcome: 'DIED' }).expect(201)).body;
+    expect(died.serious).toBe(true);
+    const other = await makeStaff((await makeClinic(`Other EPI ${Date.now()}`)).id, 'NURSE');
+    await api.patch(`/aefis/${serious.id}`).set(bearer(other.token)).send({ outcome: 'UNKNOWN' }).expect(404);
+  });
+
 });

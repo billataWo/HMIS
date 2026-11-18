@@ -1,4 +1,4 @@
-import { Body, ConflictException, Controller, Get, NotFoundException, Param, Post } from '@nestjs/common';
+import { Body, ConflictException, Controller, Get, NotFoundException, Param, Patch, Post } from '@nestjs/common';
 import type { Prisma } from '@hmis/db';
 import { z } from 'zod';
 import { type AuthUser, CurrentUser, Roles } from '../auth/auth.decorators.js';
@@ -36,6 +36,41 @@ const FollowUpSchema = z.object({
   note: text(500),
 });
 
+/** What can follow a vaccine (the EPI AEFI reporting form's common events). */
+export const AEFI_SIGNS = {
+  INJECTION_SITE: 'Swelling, redness or abscess at the injection site',
+  FEVER: 'High fever (39 °C or more)',
+  RASH: 'Rash',
+  CRYING: 'Crying for 3 hours or more',
+  SEIZURE: 'Fits (convulsions)',
+  HHE: 'Floppy, pale and unresponsive',
+  ANAPHYLAXIS: 'Severe allergic reaction (anaphylaxis)',
+  BCG_LYMPHADENITIS: 'BCG: swollen lymph node',
+  OTHER: 'Other',
+} as const;
+type AefiSign = keyof typeof AEFI_SIGNS;
+export const AEFI_OUTCOMES = ['RECOVERED', 'RECOVERING', 'NOT_RECOVERED', 'DIED', 'UNKNOWN'] as const;
+const reported = {
+  reportedTo: text(200),
+  reportedOn: z.string().regex(DAY_PATTERN).optional(),
+};
+const AefiSchema = z
+  .object({
+    doseId: z.uuid().optional(),
+    onsetOn: z.string().regex(DAY_PATTERN),
+    signs: z.array(z.enum(Object.keys(AEFI_SIGNS) as [AefiSign, ...AefiSign[]])).min(1, 'Tick what happened').max(10),
+    /** Death, admission to hospital, disability or life-threatening. */
+    serious: z.boolean().default(false),
+    outcome: z.enum(AEFI_OUTCOMES).default('UNKNOWN'),
+    ...reported,
+    note: text(1000),
+  })
+  .refine((b) => !b.signs.includes('OTHER') || !!b.note, { message: 'Say what happened', path: ['note'] })
+  .refine((b) => !b.reportedOn || !!b.reportedTo, { message: 'Say who it was reported to', path: ['reportedTo'] });
+const AefiUpdateSchema = z
+  .object({ outcome: z.enum(AEFI_OUTCOMES).optional(), ...reported, note: text(1000) })
+  .refine((b) => !b.reportedOn || !!b.reportedTo, { message: 'Say who it was reported to', path: ['reportedTo'] });
+
 const CLINICAL = ['ADMIN', 'DOCTOR', 'NURSE'] as const;
 const FRONT = ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'] as const;
 /** Follow-ups after which a child leaves the defaulter list until a new dose is recorded. */
@@ -68,11 +103,12 @@ export class ImmunizationController {
   async forPatient(@CurrentUser() me: AuthUser, @Param('id') id: string) {
     const p = await this.patient(me, id);
     const db = this.prisma.client;
-    const [doses, calls] = await Promise.all([
+    const [doses, calls, aefis] = await Promise.all([
       db.immunizationDose.findMany({ where: { patientId: id }, orderBy: [{ givenOn: 'asc' }, { createdAt: 'asc' }] }),
       db.immunizationFollowUp.findMany({ where: { patientId: id }, orderBy: { createdAt: 'desc' }, take: 10 }),
+      db.immunizationAefi.findMany({ where: { patientId: id }, orderBy: { onsetOn: 'desc' }, include: { dose: { select: { vaccine: true, doseNo: true, givenOn: true } } } }),
     ]);
-    const names = await this.names([...doses.flatMap((d) => [d.givenById, d.voidedById]), ...calls.map((c) => c.createdById)]);
+    const names = await this.names([...doses.flatMap((d) => [d.givenById, d.voidedById]), ...calls.map((c) => c.createdById), ...aefis.map((a) => a.createdById)]);
     const live = doses.filter((d) => !d.voidedAt);
     return {
       dobKnown: !!p.dateOfBirth,
@@ -80,7 +116,83 @@ export class ImmunizationController {
       schedule: p.dateOfBirth ? scheduleFor({ dob: day(p.dateOfBirth), sex: p.sex }, live.map(asGiven), clinicDay()) : [],
       doses: doses.map((d) => ({ ...d, label: doseLabel(d.vaccine as Vaccine, d.doseNo), givenBy: names.get(d.givenById) ?? null, voidedBy: d.voidedById ? (names.get(d.voidedById) ?? null) : null })),
       followUps: calls.map((c) => ({ ...c, by: names.get(c.createdById) ?? null })),
+      aefis: aefis.map((a) => ({ ...a, doseLabel: a.dose ? doseLabel(a.dose.vaccine as Vaccine, a.dose.doseNo) : null, by: names.get(a.createdById) ?? null })),
     };
+  }
+
+  /**
+   * An adverse event after a vaccine. Serious ones (death, admission, disability, life-threatening)
+   * must be reported to the woreda at once: until it is recorded as reported, the event shows as
+   * waiting on the immunization page.
+   */
+  @Post('patients/:id/aefis')
+  @Roles('DOCTOR', 'NURSE')
+  async addAefi(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(AefiSchema)) body: z.infer<typeof AefiSchema>) {
+    const p = await this.patient(me, id);
+    await assertNotMerged(this.prisma.client, p);
+    const today = clinicDay();
+    if (body.onsetOn > today || (body.reportedOn && body.reportedOn > today)) throw new ConflictException('The date is in the future');
+    if (body.reportedOn && body.reportedOn < body.onsetOn) throw new ConflictException('It was reported before it began: check the dates');
+    if (body.doseId) {
+      const dose = await this.prisma.client.immunizationDose.findFirst({ where: { id: body.doseId, patientId: id, tenantId: me.tenantId, voidedAt: null } });
+      if (!dose) throw new NotFoundException('Dose not found');
+      if (body.onsetOn < day(dose.givenOn)) throw new ConflictException('It began before the dose was given: check the dates');
+    }
+    const created = await this.prisma.client.immunizationAefi.create({
+      data: {
+        tenantId: me.tenantId,
+        patientId: id,
+        doseId: body.doseId ?? null,
+        onsetOn: new Date(`${body.onsetOn}T00:00:00Z`),
+        signs: [...new Set(body.signs)],
+        // A death is always serious.
+        serious: body.serious || body.outcome === 'DIED',
+        outcome: body.outcome,
+        reportedTo: body.reportedTo ?? null,
+        reportedOn: body.reportedOn ? new Date(`${body.reportedOn}T00:00:00Z`) : null,
+        note: body.note ?? null,
+        createdById: me.sub,
+      },
+    });
+    await this.audit.log(me, 'immunization.aefi', 'Patient', id, { serious: created.serious, outcome: created.outcome });
+    return created;
+  }
+
+  /** How it ended, and when and to whom it was reported. */
+  @Patch('aefis/:id')
+  @Roles('DOCTOR', 'NURSE')
+  async updateAefi(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(AefiUpdateSchema)) body: z.infer<typeof AefiUpdateSchema>) {
+    if (!z.uuid().safeParse(id).success) throw new NotFoundException('AEFI not found');
+    const a = await this.prisma.client.immunizationAefi.findFirst({ where: { id, tenantId: me.tenantId } });
+    if (!a) throw new NotFoundException('AEFI not found');
+    if (body.reportedOn && (body.reportedOn > clinicDay() || body.reportedOn < day(a.onsetOn))) throw new ConflictException('Check the date it was reported');
+    const updated = await this.prisma.client.immunizationAefi.update({
+      where: { id },
+      data: {
+        ...(body.outcome && { outcome: body.outcome, ...(body.outcome === 'DIED' && { serious: true }) }),
+        ...(body.reportedTo !== undefined && { reportedTo: body.reportedTo }),
+        ...(body.reportedOn && { reportedOn: new Date(`${body.reportedOn}T00:00:00Z`) }),
+        ...(body.note !== undefined && { note: body.note }),
+      },
+    });
+    await this.audit.log(me, 'immunization.aefi-update', 'Patient', a.patientId, { fields: Object.keys(body), outcome: updated.outcome });
+    return updated;
+  }
+
+  /** AEFIs of the last 90 days for the EPI focal person: serious ones not yet reported first. */
+  @Get('immunizations/aefis')
+  @Roles(...CLINICAL)
+  async aefis(@CurrentUser() me: AuthUser) {
+    const since = new Date(`${addDays(clinicDay(), -90)}T00:00:00Z`);
+    const rows = await this.prisma.client.immunizationAefi.findMany({
+      where: { tenantId: me.tenantId, onsetOn: { gte: since } },
+      orderBy: { onsetOn: 'desc' },
+      include: { patient: { select: queuePatientSelect }, dose: { select: { vaccine: true, doseNo: true } } },
+    });
+    const pending = (a: { serious: boolean; reportedOn: Date | null }) => a.serious && !a.reportedOn;
+    return rows
+      .map((a) => ({ ...a, doseLabel: a.dose ? doseLabel(a.dose.vaccine as Vaccine, a.dose.doseNo) : null, reportPending: pending(a) }))
+      .sort((x, y) => Number(y.reportPending) - Number(x.reportPending));
   }
 
   /**

@@ -40,6 +40,7 @@ const FollowUpSchema = z
     path: ['note'],
   });
 const ReferralQuerySchema = z.object({ view: z.enum(['open', 'all']).default('open') });
+const VoidSchema = z.object({ reason: text(300).min(3, 'Say what was wrong with it') });
 
 /** A referral not followed up after this many days is overdue: a day for urgent ones, a week otherwise. */
 export function referralDueDays(urgency: unknown) {
@@ -133,6 +134,22 @@ export class DocumentsController {
   }
 
   /**
+   * A certificate or letter issued with a mistake (wrong dates, wrong hospital): kept and marked void
+   * with the reason, so the paper copy can be recognised as cancelled; the doctor issues a new one.
+   */
+  @Post('documents/:id/void')
+  @Roles('ADMIN', 'DOCTOR')
+  async void(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(VoidSchema)) { reason }: z.infer<typeof VoidSchema>) {
+    if (!z.uuid().safeParse(id).success) throw new NotFoundException('Document not found');
+    const doc = await this.prisma.client.clinicalDocument.findFirst({ where: { id, tenantId: me.tenantId } });
+    if (!doc) throw new NotFoundException('Document not found');
+    if (doc.voidedAt) throw new ConflictException('This document is already void');
+    const updated = await this.prisma.client.clinicalDocument.update({ where: { id }, data: { voidedAt: new Date(), voidReason: reason, voidedById: me.sub } });
+    await this.audit.log(me, 'document.void', 'ClinicalDocument', id, { type: doc.type, visitId: doc.visitId });
+    return updated;
+  }
+
+  /**
    * What became of a referral: the patient arrived, the other facility's feedback, they did not go,
    * or a note of a call made. Never changed afterwards; the latest is the referral's status.
    */
@@ -140,9 +157,10 @@ export class DocumentsController {
   @Roles('ADMIN', 'DOCTOR', 'NURSE')
   async followUp(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(FollowUpSchema)) body: z.infer<typeof FollowUpSchema>) {
     if (!z.uuid().safeParse(id).success) throw new NotFoundException('Referral not found');
-    const doc = await this.prisma.client.clinicalDocument.findFirst({ where: { id, tenantId: me.tenantId }, select: { type: true, visitId: true } });
+    const doc = await this.prisma.client.clinicalDocument.findFirst({ where: { id, tenantId: me.tenantId }, select: { type: true, visitId: true, voidedAt: true } });
     if (!doc) throw new NotFoundException('Referral not found');
     if (doc.type !== 'REFERRAL') throw new ConflictException('Only referrals are followed up');
+    if (doc.voidedAt) throw new ConflictException('This referral is void: follow up the one issued in its place');
     const f = await this.prisma.client.referralFollowUp.create({
       data: { tenantId: me.tenantId, documentId: id, status: body.status, note: body.note || null, createdById: me.sub },
     });
@@ -165,7 +183,8 @@ export class DocumentsController {
       return dayRange(d.toISOString().slice(0, 10)).start;
     };
     const docs = await this.prisma.client.clinicalDocument.findMany({
-      where: { tenantId: me.tenantId, type: 'REFERRAL', createdAt: { gte: back(q.view === 'open' ? 365 : 90) } },
+      // A voided letter isn't a referral: the one issued in its place is followed up.
+      where: { tenantId: me.tenantId, type: 'REFERRAL', voidedAt: null, createdAt: { gte: back(q.view === 'open' ? 365 : 90) } },
       orderBy: { createdAt: q.view === 'open' ? 'asc' : 'desc' },
       include: { followUps: followUpOrder, visit: { select: { id: true, checkedInAt: true, patient: { select: queuePatientSelect } } } },
     });

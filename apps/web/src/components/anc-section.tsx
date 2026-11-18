@@ -2,8 +2,8 @@
 
 import { Baby, Printer, TriangleAlert } from "lucide-react";
 import Link from "next/link";
-import { Fragment, useActionState, useState } from "react";
-import { endPregnancy, recordAncContact, registerPregnancy, type FormState } from "@/app/actions";
+import { Fragment, useActionState, useState, useTransition } from "react";
+import { endPregnancy, recordAncContact, registerPregnancy, voidAncContact, type FormState } from "@/app/actions";
 import type { AncContact, Pregnancy } from "@/lib/api";
 import { BLOOD_GROUPS, DANGER_SIGNS, OUTCOMES, PRESENTATION, RISK_FACTORS, TEST_RESULT, URINE_PROTEIN } from "@/lib/anc";
 import { clinicToday, formatDualDate } from "@/lib/format";
@@ -17,6 +17,8 @@ const ga = (w: number, d: number, t: T) => [t("{n}w", { n: w }), d ? t("{n} d", 
 
 /** The API's alert text in the screen's language; the danger-sign alert lists the signs. */
 function alertText(t: T, text: string) {
+  const td = /^(Td \d) is due: give it at this contact \(it protects her and the newborn from tetanus\)$/.exec(text);
+  if (td) return t("{dose} is due: give it at this contact (it protects her and the newborn from tetanus)", { dose: td[1] });
   const m = /^Danger signs?: (.*)\. Assess now and refer$/.exec(text);
   if (!m) return t(text);
   return t("Danger signs: {list}. Assess now and refer", { list: m[1].split(", ").map((s) => t(s)).join(", ") });
@@ -103,9 +105,19 @@ export function AncSection({ patientId, pregnancies, canEdit }: { patientId: str
               ))}
             </p>
           )}
+          {!!active.alerts?.length && (
+            <div className="space-y-0.5">
+              {active.alerts.map((a) => (
+                <p key={a.text} className={`flex items-center gap-1 ${a.level === "URGENT" ? "font-medium text-red-700 dark:text-red-400" : "text-amber-700 dark:text-amber-400"}`}>
+                  <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
+                  {alertText(t, a.text)}
+                </p>
+              ))}
+            </div>
+          )}
           {open === "contact" && <ContactForm pregnancyId={active.id} onDone={() => setOpen(null)} />}
           {open === "end" && <EndForm pregnancyId={active.id} />}
-          <Contacts contacts={active.contacts} />
+          <Contacts contacts={active.contacts} canVoid={canEdit} />
         </>
       )}
 
@@ -116,7 +128,8 @@ export function AncSection({ patientId, pregnancies, canEdit }: { patientId: str
             {past.map((p) => (
               <li key={p.id}>
                 {t("Due {date}", { date: day(p.edd) })} · {t(OUTCOMES[p.outcome ?? ""] ?? p.outcome ?? "")}
-                {p.endedOn && ` · ${day(p.endedOn)}`} · {t(p.contacts.length === 1 ? "{n} contact" : "{n} contacts", { n: p.contacts.length })}
+                {p.endedOn && ` · ${day(p.endedOn)}`} ·{" "}
+                {t(p.contacts.filter((c) => !c.voidedAt).length === 1 ? "{n} contact" : "{n} contacts", { n: p.contacts.filter((c) => !c.voidedAt).length })}
               </li>
             ))}
           </ul>
@@ -126,8 +139,10 @@ export function AncSection({ patientId, pregnancies, canEdit }: { patientId: str
   );
 }
 
-function Contacts({ contacts }: { contacts: AncContact[] }) {
+function Contacts({ contacts, canVoid }: { contacts: AncContact[]; canVoid: boolean }) {
   const t = useT();
+  // Only the latest live contact can be voided, so later numbers never change.
+  const latest = contacts.filter((c) => !c.voidedAt).at(-1);
   if (!contacts.length) return <p className="text-slate-500">{t("No contact recorded yet.")}</p>;
   const tests = (c: AncContact) =>
     [
@@ -153,7 +168,7 @@ function Contacts({ contacts }: { contacts: AncContact[] }) {
         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
           {contacts.map((c) => (
             <Fragment key={c.id}>
-              <tr>
+              <tr className={c.voidedAt ? "text-slate-400 line-through dark:text-slate-600" : undefined}>
                 <td className="py-1.5 pr-3 font-semibold">{c.contactNo}</td>
                 <td className="py-1.5 pr-3 whitespace-nowrap">{day(c.contactOn)}</td>
                 <td className="py-1.5 pr-3">{ga(c.gaWeeks, c.gaDays, t)}</td>
@@ -165,7 +180,24 @@ function Contacts({ contacts }: { contacts: AncContact[] }) {
                 <td className="py-1.5 pr-3">{c.hb ? Number(c.hb) : "—"}</td>
                 <td className="py-1.5 pr-3">{tests(c) || "—"}</td>
               </tr>
-              {(c.alerts.length > 0 || c.dangerSigns.length > 0 || c.note || c.presentation || c.ifaTablets || c.dewormed) && (
+              {c.voidedAt && (
+                <tr>
+                  <td />
+                  <td colSpan={9} className="pb-2 text-xs text-slate-500">
+                    {t("Void: {reason}", { reason: c.voidReason ?? "" })}
+                    {c.voidedBy && ` · ${c.voidedBy}`}
+                  </td>
+                </tr>
+              )}
+              {canVoid && latest?.id === c.id && (
+                <tr>
+                  <td />
+                  <td colSpan={9} className="pb-2">
+                    <VoidContact id={c.id} />
+                  </td>
+                </tr>
+              )}
+              {!c.voidedAt && (c.alerts.length > 0 || c.dangerSigns.length > 0 || c.note || c.presentation || c.ifaTablets || c.dewormed) && (
                 <tr>
                   <td />
                   <td colSpan={9} className="pb-2 text-xs">
@@ -193,6 +225,52 @@ function Contacts({ contacts }: { contacts: AncContact[] }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** Voids the latest contact when it was recorded by mistake: the reason is kept with it. */
+function VoidContact({ id }: { id: string }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string>();
+  const [pending, start] = useTransition();
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="text-xs text-slate-500 underline-offset-2 hover:text-red-700 hover:underline">
+        {t("Recorded by mistake? Void this contact")}
+      </button>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <input
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder={t("Why (e.g. entered for the wrong woman)")}
+        aria-label={t("Why the contact is voided")}
+        className={`${inputClass} w-72 py-1 text-xs`}
+      />
+      <button
+        type="button"
+        disabled={pending || reason.trim().length < 3}
+        onClick={() =>
+          start(async () => {
+            setError(undefined);
+            const res = await voidAncContact(id, reason.trim());
+            if (res.error) setError(res.error);
+            else setOpen(false);
+          })
+        }
+        className={`${secondaryButtonClass} px-3 py-1 text-xs text-red-700 dark:text-red-400`}
+      >
+        {t("Void contact")}
+      </button>
+      <button type="button" onClick={() => setOpen(false)} className="text-slate-500 hover:underline">
+        {t("Keep")}
+      </button>
+      {error && <span className="text-red-700 dark:text-red-400">{t(error)}</span>}
     </div>
   );
 }

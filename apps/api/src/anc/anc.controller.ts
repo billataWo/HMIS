@@ -20,11 +20,13 @@ import {
   gestation,
   lmpFromEdd,
   nextContactOn,
+  pregnancyAlerts,
   RISK_FACTORS,
   type RiskFactor,
   TEST_RESULTS,
   URINE_PROTEIN,
 } from './anc-rules.js';
+import { scheduleFor } from '../immunization/schedule.js';
 
 const day = (d: Date) => d.toISOString().slice(0, 10);
 const asDate = (d: string) => new Date(`${d}T00:00:00Z`);
@@ -57,6 +59,7 @@ const UpdateSchema = z.object({
   /** A due date from an ultrasound replaces the one from the period. */
   edd: z.string().regex(DAY_PATTERN).optional(),
 });
+const VoidSchema = z.object({ reason: z.string().trim().min(3, 'Give the reason').max(300) });
 const EndSchema = z.object({
   outcome: z.enum(['DELIVERED', 'DELIVERED_ELSEWHERE', 'MISCARRIAGE', 'ABORTION', 'STILLBIRTH', 'TRANSFERRED', 'LOST_TO_FOLLOW_UP']),
   endedOn: z.string().regex(DAY_PATTERN).optional(),
@@ -89,9 +92,10 @@ const MAX_WEEKS = 44;
 type PregnancyWithContacts = Prisma.PregnancyGetPayload<{ include: { contacts: true } }>;
 
 /** A pregnancy as the screens show it: how far along today, the next contact, each contact's alerts. */
-function view(p: PregnancyWithContacts, today: string, dob: Date | null, names: Map<string, string>) {
+function view(p: PregnancyWithContacts, today: string, dob: Date | null, names: Map<string, string>, tdDue: string | null = null) {
   const lmp = day(p.lmp);
-  const last = p.contacts.at(-1);
+  // A voided contact is shown, marked, but counts for nothing.
+  const last = p.contacts.filter((c) => !c.voidedAt).at(-1);
   const next = last ? day(last.nextContactOn) : null;
   const age = dob ? ageAt(dob, p.createdAt) : null;
   return {
@@ -100,10 +104,12 @@ function view(p: PregnancyWithContacts, today: string, dob: Date | null, names: 
     nextContactOn: p.status === 'ACTIVE' ? next : null,
     late: p.status === 'ACTIVE' && !!next && addDays(next, ANC_LATE_AFTER_DAYS) < today,
     risks: [...new Set([...derivedRisks(age, p.para), ...(p.riskFactors as RiskFactor[])])].map((k) => ({ key: k, label: RISK_FACTORS[k] ?? k })),
+    alerts: p.status === 'ACTIVE' ? pregnancyAlerts({ bloodGroup: p.bloodGroup, tdDue }) : [],
     contacts: p.contacts.map((c) => ({
       ...c,
       by: names.get(c.createdById) ?? null,
-      alerts: ancAlerts({ ...c, hb: c.hb === null ? null : Number(c.hb), gaWeeks: c.gaWeeks, urineProtein: c.urineProtein as never, syphilis: c.syphilis as never, hiv: c.hiv as never, hbsag: c.hbsag as never }),
+      voidedBy: c.voidedById ? (names.get(c.voidedById) ?? null) : null,
+      alerts: c.voidedAt ? [] : ancAlerts({ ...c, hb: c.hb === null ? null : Number(c.hb), gaWeeks: c.gaWeeks, urineProtein: c.urineProtein as never, syphilis: c.syphilis as never, hiv: c.hiv as never, hbsag: c.hbsag as never }),
     })),
   };
 }
@@ -128,9 +134,20 @@ export class AncController {
 
   private async pregnancy(me: AuthUser, id: string) {
     if (!z.uuid().safeParse(id).success) throw new NotFoundException('Pregnancy not found');
-    const p = await this.prisma.client.pregnancy.findFirst({ where: { id, tenantId: me.tenantId }, include: { contacts: { orderBy: { contactNo: 'asc' } } } });
+    const p = await this.prisma.client.pregnancy.findFirst({ where: { id, tenantId: me.tenantId }, include: { contacts: { orderBy: [{ contactNo: 'asc' }, { createdAt: 'asc' }] } } });
     if (!p) throw new NotFoundException('Pregnancy not found');
     return p;
+  }
+
+  /** The Td dose due today for her by the immunization schedule, if any ("Td 2"). */
+  private async tdDue(patientId: string, sex: 'MALE' | 'FEMALE', dob: Date | null) {
+    if (!dob || sex !== 'FEMALE') return null;
+    const doses = await this.prisma.client.immunizationDose.findMany({ where: { patientId, voidedAt: null }, select: { id: true, vaccine: true, doseNo: true, givenOn: true } });
+    const today = clinicDay();
+    const next = scheduleFor({ dob: day(dob), sex }, doses.map((d) => ({ ...d, givenOn: day(d.givenOn) })), today, 'TD').find(
+      (d) => d.vaccine === 'TD' && d.status !== 'GIVEN',
+    );
+    return next && !next.waitingFor && next.dueOn <= today ? next.label : null;
   }
 
   private async names(ids: string[]) {
@@ -147,11 +164,12 @@ export class AncController {
     const all = await this.prisma.client.pregnancy.findMany({
       where: { patientId: id },
       orderBy: { createdAt: 'desc' },
-      include: { contacts: { orderBy: { contactNo: 'asc' } } },
+      include: { contacts: { orderBy: [{ contactNo: 'asc' }, { createdAt: 'asc' }] } },
     });
-    const names = await this.names(all.flatMap((x) => x.contacts.map((c) => c.createdById)));
+    const names = await this.names(all.flatMap((x) => x.contacts.flatMap((c) => [c.createdById, ...(c.voidedById ? [c.voidedById] : [])])));
     const today = clinicDay();
-    return all.map((x) => view(x, today, p.dateOfBirth, names));
+    const td = all.some((x) => x.status === 'ACTIVE') ? await this.tdDue(id, p.sex, p.dateOfBirth) : null;
+    return all.map((x) => view(x, today, p.dateOfBirth, names, td));
   }
 
   /** One pregnancy with the patient, for her printed ANC card. */
@@ -160,8 +178,9 @@ export class AncController {
   async get(@CurrentUser() me: AuthUser, @Param('id') id: string) {
     const p = await this.pregnancy(me, id);
     const patient = await this.prisma.client.patient.findUniqueOrThrow({ where: { id: p.patientId }, select: { ...queuePatientSelect, address: true } });
-    const names = await this.names(p.contacts.map((c) => c.createdById));
-    return { ...view(p, clinicDay(), patient.dateOfBirth, names), patient };
+    const names = await this.names(p.contacts.flatMap((c) => [c.createdById, ...(c.voidedById ? [c.voidedById] : [])]));
+    const td = p.status === 'ACTIVE' ? await this.tdDue(p.patientId, patient.sex, patient.dateOfBirth) : null;
+    return { ...view(p, clinicDay(), patient.dateOfBirth, names, td), patient };
   }
 
   /** Registers a pregnancy: one at a time per woman, from the last period or an ultrasound due date. */
@@ -244,7 +263,7 @@ export class AncController {
     if (contactOn > clinicDay()) throw new ConflictException('The date is in the future');
     const ga = gestation(day(p.lmp), contactOn);
     if (ga.totalDays < 0) throw new ConflictException('The date is before the last period');
-    if (p.contacts.some((c) => day(c.contactOn) === contactOn)) throw new ConflictException('A contact is already recorded on that day');
+    if (p.contacts.some((c) => !c.voidedAt && day(c.contactOn) === contactOn)) throw new ConflictException('A contact is already recorded on that day');
     if (body.visitId) {
       const v = await this.prisma.client.visit.findFirst({ where: { id: body.visitId, tenantId: me.tenantId, patientId: p.patientId }, select: { id: true } });
       if (!v) throw new NotFoundException('Visit not found');
@@ -252,7 +271,7 @@ export class AncController {
     const { contactOn: _, ...rest } = body;
     const created = await this.prisma.client.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "Pregnancy" WHERE "id" = ${id} FOR UPDATE`;
-      const count = await tx.ancContact.count({ where: { pregnancyId: id } });
+      const count = await tx.ancContact.count({ where: { pregnancyId: id, voidedAt: null } });
       return tx.ancContact.create({
         data: {
           ...rest,
@@ -273,6 +292,30 @@ export class AncController {
   }
 
   /**
+   * A contact recorded by mistake (wrong woman, wrong day, entered twice): kept and marked void with
+   * the reason. It leaves the contact count, the next contact's date and the monthly report; a later
+   * contact takes the next number. Only the latest live contact can be voided, so the numbers of
+   * those recorded after it never change.
+   */
+  @Post('anc-contacts/:id/void')
+  @Roles('DOCTOR', 'NURSE')
+  async voidContact(@CurrentUser() me: AuthUser, @Param('id') id: string, @Body(new ZodPipe(VoidSchema)) { reason }: z.infer<typeof VoidSchema>) {
+    if (!z.uuid().safeParse(id).success) throw new NotFoundException('Contact not found');
+    return this.prisma.client.$transaction(async (tx) => {
+      const c = await tx.ancContact.findFirst({ where: { id, tenantId: me.tenantId } });
+      if (!c) throw new NotFoundException('Contact not found');
+      await tx.$queryRaw`SELECT "id" FROM "Pregnancy" WHERE "id" = ${c.pregnancyId} FOR UPDATE`;
+      if (c.voidedAt) throw new ConflictException('This contact is already void');
+      const latest = await tx.ancContact.findFirst({ where: { pregnancyId: c.pregnancyId, voidedAt: null }, orderBy: { contactNo: 'desc' } });
+      if (latest?.id !== c.id) throw new ConflictException('Only the latest contact can be voided');
+      const updated = await tx.ancContact.update({ where: { id }, data: { voidedAt: new Date(), voidReason: reason, voidedById: me.sub } });
+      const p = await tx.pregnancy.findUniqueOrThrow({ where: { id: c.pregnancyId }, select: { patientId: true } });
+      await this.audit.log(me, 'anc.contact-void', 'Patient', p.patientId, { pregnancy: c.pregnancyId, contactNo: c.contactNo }, tx);
+      return updated;
+    });
+  }
+
+  /**
    * Women followed in antenatal care: late for their next contact (more than a week past it), due
    * this week, and those whose due date is within two weeks (birth preparedness).
    */
@@ -282,7 +325,7 @@ export class AncController {
     const today = clinicDay();
     const active = await this.prisma.client.pregnancy.findMany({
       where: { tenantId: me.tenantId, status: 'ACTIVE', patient: { mergedIntoId: null } },
-      include: { patient: { select: queuePatientSelect }, contacts: { orderBy: { contactNo: 'desc' }, take: 1 } },
+      include: { patient: { select: queuePatientSelect }, contacts: { where: { voidedAt: null }, orderBy: { contactNo: 'desc' }, take: 1 } },
     });
     const rows = active.map((p) => {
       const last = p.contacts[0];
@@ -309,7 +352,7 @@ export class AncController {
 /** The month's antenatal tally for the MoH report. */
 export async function ancTally(db: Pick<Prisma.TransactionClient, 'ancContact'>, tenantId: string, start: string, end: string) {
   const contacts = await db.ancContact.findMany({
-    where: { tenantId, contactOn: { gte: asDate(start), lt: asDate(end) } },
+    where: { tenantId, voidedAt: null, contactOn: { gte: asDate(start), lt: asDate(end) } },
     select: { contactNo: true, gaWeeks: true, syphilis: true, hiv: true, hbsag: true, hb: true, ifaTablets: true },
   });
   const first = contacts.filter((c) => c.contactNo === 1);

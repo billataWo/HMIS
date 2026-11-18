@@ -548,6 +548,18 @@ export async function cancelLabOrder(id: string) {
   refresh();
 }
 
+/** A certificate or referral letter issued with a mistake: kept, marked void with the reason. */
+export async function voidDocument(id: string, reason: string): Promise<{ error?: string }> {
+  try {
+    await api(`/documents/${id}/void`, { method: "POST", body: JSON.stringify({ reason }) });
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.body.errors?.[0]?.message ?? e.message };
+    throw e;
+  }
+  refresh();
+  return {};
+}
+
 /** At the lab: a lab-only visit's test the patient won't have (left, couldn't pay). */
 export async function cancelLabOnlyTest(id: string, reason: string): Promise<{ error?: string }> {
   try {
@@ -1072,6 +1084,18 @@ export async function recordAncContact(_: FormState, form: FormData): Promise<Fo
 }
 
 /** Ends a pregnancy's antenatal follow-up (delivered, lost, transferred). */
+/** An antenatal contact recorded by mistake (only the latest): kept, marked void with the reason. */
+export async function voidAncContact(id: string, reason: string): Promise<{ error?: string }> {
+  try {
+    await api(`/anc-contacts/${id}/void`, { method: "POST", body: JSON.stringify({ reason }) });
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.body.errors?.[0]?.message ?? e.message };
+    throw e;
+  }
+  refresh();
+  return {};
+}
+
 export async function endPregnancy(_: FormState, form: FormData): Promise<FormState> {
   try {
     await api(`/pregnancies/${text(form, "pregnancyId")}/end`, {
@@ -1112,6 +1136,49 @@ export async function giveDose(_: FormState, form: FormData): Promise<FormState>
 export async function voidDose(_: FormState, form: FormData): Promise<FormState> {
   try {
     await api(`/immunizations/${text(form, "doseId")}/void`, { method: "POST", body: JSON.stringify({ reason: text(form, "reason") }) });
+  } catch (e) {
+    return toFormState(e, formValues(form));
+  }
+  refresh();
+  return { ok: true };
+}
+
+/** An adverse event after a vaccine (AEFI). */
+export async function recordAefi(_: FormState, form: FormData): Promise<FormState> {
+  const reportedOn = text(form, "reportedOn");
+  try {
+    await api(`/patients/${text(form, "patientId")}/aefis`, {
+      method: "POST",
+      body: JSON.stringify({
+        doseId: text(form, "doseId") || undefined,
+        onsetOn: text(form, "onsetOn"),
+        signs: form.getAll("signs").map(String),
+        serious: form.get("serious") === "on",
+        outcome: text(form, "outcome") || undefined,
+        reportedTo: text(form, "reportedTo") || undefined,
+        reportedOn: reportedOn || undefined,
+        note: text(form, "note") || undefined,
+      }),
+    });
+  } catch (e) {
+    return toFormState(e, formValues(form));
+  }
+  refresh();
+  return { ok: true };
+}
+
+/** An AEFI's outcome, and when and to whom it was reported. */
+export async function updateAefi(_: FormState, form: FormData): Promise<FormState> {
+  const reportedOn = text(form, "reportedOn");
+  try {
+    await api(`/aefis/${text(form, "aefiId")}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        outcome: text(form, "outcome") || undefined,
+        reportedTo: text(form, "reportedTo") || undefined,
+        reportedOn: reportedOn || undefined,
+      }),
+    });
   } catch (e) {
     return toFormState(e, formValues(form));
   }

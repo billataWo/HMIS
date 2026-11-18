@@ -72,7 +72,7 @@ async function Card({ params }: { params: Promise<{ id: string }> }) {
           </tr>
         </thead>
         <tbody>
-          {p.contacts.map((c) => (
+          {p.contacts.filter((c) => !c.voidedAt).map((c) => (
             <tr key={c.id}>
               <td className={cell}>{c.contactNo}</td>
               <td className={cell}>{day(c.contactOn)}</td>

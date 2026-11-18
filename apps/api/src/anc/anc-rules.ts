@@ -108,6 +108,20 @@ export function ancAlerts(f: Findings): AncAlert[] {
   return out;
 }
 
+/**
+ * What the pregnancy as a whole calls for, beyond one contact's findings: an Rh-negative mother
+ * (anti-D), and a tetanus-diphtheria (Td) dose due by the immunization schedule (it protects her
+ * and the newborn from tetanus). `tdDue` is the label of the Td dose due now, if any.
+ */
+export function pregnancyAlerts(p: { bloodGroup: string | null; tdDue: string | null }): AncAlert[] {
+  const out: AncAlert[] = [];
+  if (p.bloodGroup?.endsWith('-')) {
+    out.push({ level: 'WARNING', text: "Rh-negative: check the father's blood group, and plan anti-D at 28 weeks and within 72 hours of birth" });
+  }
+  if (p.tdDue) out.push({ level: 'WARNING', text: `${p.tdDue} is due: give it at this contact (it protects her and the newborn from tetanus)` });
+  return out;
+}
+
 /** Risk factors that follow from her age and history, added to those ticked by hand. */
 export function derivedRisks(age: number | null, para: number): RiskFactor[] {
   const out: RiskFactor[] = [];

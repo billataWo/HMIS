@@ -326,7 +326,7 @@ export class ReportsController {
         where: { tenantId: t, status: 'VERIFIED', verifiedAt: range, labTest: { name: { contains: 'malaria', mode: 'insensitive' } } },
         select: { resultValue: true },
       }),
-      db.clinicalDocument.count({ where: { tenantId: t, type: 'REFERRAL', createdAt: range } }),
+      db.clinicalDocument.count({ where: { tenantId: t, type: 'REFERRAL', voidedAt: null, createdAt: range } }),
       db.visit.count({ where: { tenantId: t, kind: 'OPD', checkedInAt: range, status: { not: 'CANCELLED' }, referredFrom: { not: null } } }),
       immunizationTally(db, t, startDay, endDay),
       ancTally(db, t, startDay, endDay),

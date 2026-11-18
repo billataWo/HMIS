@@ -28,3 +28,25 @@ export const EPI_FOLLOW_UPS = [
 
 /** Injection sites offered when recording a dose. */
 export const SITES = ["Left thigh", "Right thigh", "Left upper arm", "Right upper arm", "By mouth"];
+
+/** What can follow a vaccine (AEFI): the API's AEFI_SIGNS. */
+export const AEFI_SIGNS: Record<string, string> = {
+  INJECTION_SITE: "Swelling, redness or abscess at the injection site",
+  FEVER: "High fever (39 °C or more)",
+  RASH: "Rash",
+  CRYING: "Crying for 3 hours or more",
+  SEIZURE: "Fits (convulsions)",
+  HHE: "Floppy, pale and unresponsive",
+  ANAPHYLAXIS: "Severe allergic reaction (anaphylaxis)",
+  BCG_LYMPHADENITIS: "BCG: swollen lymph node",
+  OTHER: "Other",
+};
+
+/** How an adverse event ended. */
+export const AEFI_OUTCOMES: Record<string, string> = {
+  RECOVERED: "Recovered",
+  RECOVERING: "Recovering",
+  NOT_RECOVERED: "Not recovered",
+  DIED: "Died",
+  UNKNOWN: "Not known yet",
+};

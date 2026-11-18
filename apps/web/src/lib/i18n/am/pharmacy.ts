@@ -417,4 +417,6 @@ export const PHARMACY: Record<string, string> = {
   "Pharmacist (name, signature, date)": "ፋርማሲስት (ስም፣ ፊርማ፣ ቀን)",
   "Checked by (name, signature, date)": "ያረጋገጠው (ስም፣ ፊርማ፣ ቀን)",
   "Narcotic and psychotropic drugs · every unit in and out, with the balance": "ናርኮቲክና ሳይኮትሮፒክ መድኃኒቶች · እያንዳንዱ ገቢና ወጪ ከቀሪው ጋር",
+  "From {date}": "ከ{date}",
+  "Hand it over, or close it if the patient isn't coming back": "ያስረክቡ፣ ወይም ታካሚው የማይመለስ ከሆነ ይዝጉት",
 };

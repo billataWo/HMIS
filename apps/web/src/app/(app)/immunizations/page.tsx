@@ -5,9 +5,9 @@ import { Suspense } from "react";
 import { PageTitle } from "@/components/page-title";
 import { Badge, EmptyState, linkClass, Notice, pillClass, Skeleton } from "@/components/ui";
 import { getT } from "@/lib/lang";
-import { api, type DueChild, type Me } from "@/lib/api";
+import { type Aefi, api, type DueChild, type Me } from "@/lib/api";
 import { ageText, formatAgo, formatDualDate, fullName } from "@/lib/format";
-import { DOSE_STATUS, EPI_FOLLOW_UPS } from "@/lib/immunization";
+import { AEFI_SIGNS, DOSE_STATUS, EPI_FOLLOW_UPS } from "@/lib/immunization";
 import { EpiFollowUpForm } from "./epi-follow-up-form";
 
 export const metadata: Metadata = { title: "Immunization" };
@@ -24,11 +24,32 @@ async function Due({ searchParams }: { searchParams: Promise<Search> }) {
   const show = (await searchParams).show === "due" ? "due" : "late";
   const [me, t] = await Promise.all([api<Me>("/auth/me"), getT()]);
   if (!["ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST"].includes(me.role)) return <Notice tone="info">{t("Immunization follow-up is kept by the nurses and the front desk.")}</Notice>;
-  const all = await api<DueChild[]>("/immunizations/due");
+  const clinical = ["ADMIN", "DOCTOR", "NURSE"].includes(me.role);
+  const [all, aefis] = await Promise.all([api<DueChild[]>("/immunizations/due"), clinical ? api<Aefi[]>("/immunizations/aefis") : Promise.resolve([] as Aefi[])]);
   const rows = all.filter((r) => (show === "late" ? r.defaulter : !r.defaulter));
   const late = all.filter((r) => r.defaulter).length;
+  // Serious reactions are reported to the woreda at once: those not yet reported stay here until they are.
+  const unreported = aefis.filter((a) => a.reportPending);
   return (
     <div className="space-y-4">
+      {unreported.length > 0 && (
+        <Notice tone="danger">
+          <p className="font-medium">{t("Serious reactions after a vaccine, not yet reported to the woreda")}</p>
+          <ul className="mt-1 space-y-0.5">
+            {unreported.map((a) => (
+              <li key={a.id}>
+                {a.patient && (
+                  <Link href={`/patients/${a.patient.id}#immunization`} className="font-medium underline-offset-2 hover:underline">
+                    {fullName(a.patient)}
+                  </Link>
+                )}{" "}
+                · {day(a.onsetOn.slice(0, 10))}
+                {a.doseLabel && ` · ${t("after {dose}", { dose: a.doseLabel })}`} · {a.signs.map((s) => t(AEFI_SIGNS[s] ?? s)).join(", ")}
+              </li>
+            ))}
+          </ul>
+        </Notice>
+      )}
       <nav className="flex flex-wrap gap-2" aria-label={t("Which children")}>
         <Link href="/immunizations" aria-current={show === "late" ? "page" : undefined} className={pillClass(show === "late")}>
           {t("Late (defaulters)")} {late > 0 && `· ${late}`}

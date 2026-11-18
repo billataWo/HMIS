@@ -9,7 +9,7 @@ import { Badge, buttonClass, EmptyState, secondaryButtonClass, Skeleton } from "
 import type { T } from "@/lib/i18n";
 import { getT } from "@/lib/lang";
 import { api, ApiError, type DrugReturnRow, type Me, type PharmacyPrescription } from "@/lib/api";
-import { ageText, formatDuration, formatTime, fullName } from "@/lib/format";
+import { ageText, clinicToday, formatDualDate, formatDuration, formatTime, fullName } from "@/lib/format";
 import { ClosePrescriptionForm, DispenseForm } from "./dispense-form";
 
 function PatientLine({ p, t }: { p: PharmacyPrescription; t: T }) {
@@ -29,6 +29,12 @@ function PatientLine({ p, t }: { p: PharmacyPrescription; t: T }) {
         {p.visit.kind === "WALK_IN" && (
           <span className="ml-2">
             <Badge tone="violet">{t("Walk-in sale")}</Badge>
+          </span>
+        )}
+        {/* Left from an earlier day: hand it over, or close it if the patient isn't coming back. */}
+        {clinicToday(new Date(p.createdAt)) < clinicToday() && (
+          <span className="ml-2" title={t("Hand it over, or close it if the patient isn't coming back")}>
+            <Badge tone="warning">{t("From {date}", { date: formatDualDate(p.createdAt) })}</Badge>
           </span>
         )}
       </div>
