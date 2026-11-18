@@ -13,6 +13,9 @@ import { hashPassword, temporaryPasswordExpiry } from '../common/passwords.js';
  *                     creates this owner; while this owner has never signed in, gives a new
  *                     temporary password (so a password that scrolled out of the logs is not
  *                     lost). Once they have signed in, it does nothing.
+ *   reset-at-start <email>
+ *                     for hosts without a shell, on every start while HMIS_RESET_OPERATOR_EMAIL is
+ *                     set: a new temporary password (two-step sign-in is kept), until they sign in
  *   voice-import <file | ->
  *                     on a clinic's own server: loads the waiting-room voice pack downloaded from
  *                     the platform console (Voice → Download the voice), replacing any voice
@@ -60,7 +63,13 @@ async function firstOwner() {
   const count = await owner.platformUser.count();
   const existing = await owner.platformUser.findUnique({ where: { email } });
   if (count > 0 && !(existing && existing.role === 'OWNER' && !existing.lastSignInAt)) {
-    console.log(existing?.lastSignInAt ? `Platform console: ${email} has signed in; nothing to do (remove HMIS_FIRST_OPERATOR_EMAIL).` : 'Platform console: operators exist; nothing to do.');
+    if (existing?.lastSignInAt) console.log(`Platform console: ${email} has signed in; nothing to do (remove HMIS_FIRST_OPERATOR_EMAIL).`);
+    else {
+      // The email is not the owner it names: say who the operators are, so the owner knows which
+      // email to sign in with (or to reset, with HMIS_RESET_OPERATOR_EMAIL).
+      console.log(`Platform console: ${email} is ${existing ? `an operator (${existing.role}), not the owner` : 'not an operator'}; operators exist, nothing to do. The operators:`);
+      await list();
+    }
     return;
   }
   const password = temporaryPassword();
@@ -114,6 +123,42 @@ async function reset() {
   console.log(`${op.fullName}: temporary password ${password}. Their sign-ins have ended; they set up two-step sign-in again.`);
 }
 
+/**
+ * For hosts without a shell (AletCloud), on every start while HMIS_RESET_OPERATOR_EMAIL is set: a
+ * forgotten operator password. Resets it once, then again only if the operator has not signed in
+ * since the last start-up reset, so a restart after they sign in does not lock them out again.
+ */
+async function resetAtStart() {
+  const email = args[0]?.toLowerCase();
+  if (!email) fail('usage: reset-at-start <email>');
+  const op = await owner.platformUser.findUnique({ where: { email } });
+  if (!op) {
+    console.log(`Platform console: no operator with email ${email} to reset. The operators:`);
+    return list();
+  }
+  const last = await owner.platformAuditLog.findFirst({
+    where: { action: 'operator.reset', entityId: op.id, data: { path: ['by'], equals: 'server start (reset)' } },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (last && op.lastSignInAt && op.lastSignInAt > last.createdAt) {
+    console.log(`Platform console: ${email} has signed in since the reset; nothing to do (remove HMIS_RESET_OPERATOR_EMAIL).`);
+    return;
+  }
+  const password = temporaryPassword();
+  await owner.platformUser.update({
+    where: { id: op.id },
+    data: { passwordHash: await hashPassword(password), mustChangePassword: true, temporaryPasswordExpiresAt: temporaryPasswordExpiry(), active: true, sessionsValidAfter: new Date() },
+  });
+  await owner.platformAuditLog.create({ data: { action: 'operator.reset', entity: 'PlatformUser', entityId: op.id, data: { by: 'server start (reset)', email } } });
+  console.log('==================== HMIS PLATFORM CONSOLE: PASSWORD RESET ====================');
+  console.log(`  Sign in at:         ${process.env.HMIS_PUBLIC_URL?.replace(/\/+$/, '') || 'https://<this server>'}/platform/login`);
+  console.log(`  Email:              ${email} (${op.role})`);
+  console.log(`  Temporary password: ${password}`);
+  console.log('  A new one is shown at every start until you sign in. Then choose your own password');
+  console.log('  and remove HMIS_RESET_OPERATOR_EMAIL.');
+  console.log('================================================================================');
+}
+
 async function voiceImport() {
   if (!args[0]) fail('usage: voice-import <file>   (or "-" to read it from standard input)');
   let pack: { format?: string; clips?: { lang: string; key: string; data: string }[] };
@@ -141,6 +186,7 @@ try {
   else if (cmd === 'list') await list();
   else if (cmd === 'reset') await reset();
   else if (cmd === 'first-owner') await firstOwner();
+  else if (cmd === 'reset-at-start') await resetAtStart();
   else fail('usage: node dist/platform/cli.js add-operator|list|reset|first-owner|voice-import (see the top of src/platform/cli.ts)');
 } finally {
   await owner.$disconnect();

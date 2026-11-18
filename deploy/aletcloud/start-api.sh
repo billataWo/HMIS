@@ -31,5 +31,10 @@ if [ "${HMIS_PLATFORM:-}" = "1" ] && [ -n "${HMIS_FIRST_OPERATOR_EMAIL:-}" ]; th
   # A problem here must not keep the API from starting.
   node dist/platform/cli.js first-owner --email "$HMIS_FIRST_OPERATOR_EMAIL" --name "${HMIS_FIRST_OPERATOR_NAME:-HMIS owner}" || true
 fi
+# A forgotten operator password, with no shell to run `reset`: set HMIS_RESET_OPERATOR_EMAIL, read
+# the temporary password in the app logs ("PASSWORD RESET"), sign in, then remove the variable.
+if [ "${HMIS_PLATFORM:-}" = "1" ] && [ -n "${HMIS_RESET_OPERATOR_EMAIL:-}" ]; then
+  node dist/platform/cli.js reset-at-start "$HMIS_RESET_OPERATOR_EMAIL" || true
+fi
 
 exec node dist/main.js
