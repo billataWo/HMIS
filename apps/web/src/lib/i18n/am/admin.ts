@@ -249,6 +249,9 @@ export const ADMIN: Record<string, string> = {
   "automatic, encrypted, copied off-site and tested every week": "በራሱ የሚሠራ፣ የተመሰጠረ፣ ከቦታው ውጪ የሚገለበጥና በየሳምንቱ የሚፈተሽ",
   "Only clinic admins can see the backup status.": "የምትኬ ሁኔታን ማየት የሚችሉት የክሊኒኩ አስተዳዳሪዎች ብቻ ናቸው።",
   "Backups are not running on this server": "በዚህ ሰርቨር ላይ ምትኬ እየተወሰደ አይደለም",
+  "Backups are made by the hosting provider": "ምትኬ የሚወሰደው በሆስቲንግ አቅራቢው ነው",
+  "HMIS cannot see or test these backups: to restore, ask the HMIS support team. The off-site copy and weekly restore test of the HMIS backup service are not set up on this server.":
+    "HMIS እነዚህን ምትኬዎች ማየትም ሆነ መሞከር አይችልም፤ ለመመለስ የHMIS ድጋፍ ቡድንን ይጠይቁ። የHMIS ምትኬ አገልግሎት ከቦታ ውጭ ቅጂና ሳምንታዊ የመመለስ ሙከራ በዚህ ሰርቨር ላይ አልተዘጋጁም።",
   "No backup has been recorded. The backup service is set up on the server by the HMIS support team (deploy/compose.yml); once it runs, this page shows every backup, the off-site copy and the weekly restore test.":
     "ምንም ምትኬ አልተመዘገበም። የምትኬ አገልግሎቱ በሰርቨሩ ላይ በHMIS የድጋፍ ቡድን ይዘጋጃል (deploy/compose.yml)፤ መሥራት ሲጀምር ይህ ገጽ እያንዳንዱን ምትኬ፣ ከቦታው ውጪ ያለውን ቅጂና ሳምንታዊውን የመመለስ ሙከራ ያሳያል።",
   "Backups are healthy": "ምትኬዎች ደህና ናቸው",

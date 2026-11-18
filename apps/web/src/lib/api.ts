@@ -1442,6 +1442,8 @@ export interface BackupEventRow {
 export interface BackupStatus {
   monitored: boolean;
   overall: BackupCheckStatus;
+  /** Not monitored, but the host backs the database up itself (HMIS_BACKUPS_MANAGED_BY). */
+  managedBy: string | null;
   banner: string | null;
   site: string | null;
   lastBackup: { at: string; type: string | null; databaseBytes: number | null } | null;

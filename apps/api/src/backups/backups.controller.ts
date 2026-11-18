@@ -182,11 +182,16 @@ export class BackupsController {
     const overall: CheckStatus = monitored ? worst(checks) : 'failing';
     const backupData = data(backupOk);
     const expected = monitored || process.env.NODE_ENV === 'production';
+    // Where the HMIS backup service cannot run (app hosting with a managed database, e.g.
+    // AletCloud), the host's own database backups are named in HMIS_BACKUPS_MANAGED_BY. HMIS
+    // cannot see or test those, so it says who makes them instead of warning every admin.
+    const managedBy = !monitored ? process.env.HMIS_BACKUPS_MANAGED_BY?.trim() || null : null;
     return {
       monitored,
       overall,
+      managedBy,
       // A banner across the app for admins, only when something needs action now.
-      banner: !expected
+      banner: !expected || managedBy
         ? null
         : !monitored
           ? 'Backups are not running on this server.'

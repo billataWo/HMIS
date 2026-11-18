@@ -51,6 +51,32 @@ describe('backup status', () => {
     expect(s.banner).toBeNull();
   });
 
+  it('in production, warns that backups are not running, unless the host backs the database up (HMIS_BACKUPS_MANAGED_BY)', async () => {
+    const saved = { env: process.env.NODE_ENV, by: process.env.HMIS_BACKUPS_MANAGED_BY };
+    try {
+      process.env.NODE_ENV = 'production';
+      delete process.env.HMIS_BACKUPS_MANAGED_BY;
+      let s = await status();
+      expect(s.banner).toBe('Backups are not running on this server.');
+      expect(s.managedBy).toBeNull();
+
+      process.env.HMIS_BACKUPS_MANAGED_BY = 'Managed database: daily backup, kept 7 days';
+      s = await status();
+      expect(s.banner).toBeNull();
+      expect(s.managedBy).toBe('Managed database: daily backup, kept 7 days');
+
+      // Once the HMIS backup service reports, its own checks apply and the setting is not shown.
+      await healthy();
+      s = await status();
+      expect(s.managedBy).toBeNull();
+      expect(s.overall).toBe('ok');
+    } finally {
+      process.env.NODE_ENV = saved.env;
+      if (saved.by === undefined) delete process.env.HMIS_BACKUPS_MANAGED_BY;
+      else process.env.HMIS_BACKUPS_MANAGED_BY = saved.by;
+    }
+  });
+
   it('reports a healthy server: recent backup, off-site copy, restore tests, verification, archive', async () => {
     await healthy();
     const s = await status();

@@ -62,6 +62,19 @@ async function Status() {
     throw e;
   }
 
+  if (!s.monitored && s.managedBy) {
+    return (
+      <EmptyState icon={DatabaseBackup} title={t("Backups are made by the hosting provider")}>
+        <span className="block">{s.managedBy}</span>
+        <span className="mt-2 block">
+          {t(
+            "HMIS cannot see or test these backups: to restore, ask the HMIS support team. The off-site copy and weekly restore test of the HMIS backup service are not set up on this server.",
+          )}
+        </span>
+      </EmptyState>
+    );
+  }
+
   if (!s.monitored) {
     return (
       <EmptyState icon={DatabaseBackup} title={t("Backups are not running on this server")}>
