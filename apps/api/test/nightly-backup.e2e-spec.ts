@@ -7,7 +7,7 @@ import { Decrypter, generateX25519Identity, identityToRecipient } from 'age-encr
 import pg from 'pg';
 import { createPrismaClient } from '@hmis/db';
 import { DumpError, restoreDump } from '../src/backups/dump.js';
-import { type NightlyConfig, NightlyBackupService, runNightlyBackup } from '../src/backups/nightly.js';
+import { connectWhenFree, type NightlyConfig, NightlyBackupService, runNightlyBackup } from '../src/backups/nightly.js';
 import { RESTORE_URL } from './global-setup.js';
 import { api, bearer, db, makeClinic, makeStaff, nestApp, startApp, stopApp } from './helpers.js';
 
@@ -176,6 +176,24 @@ describe('nightly backup (app hosting: dump, encrypt, upload, restore)', { timeo
       ['VERIFY', 'FAILED'],
       ['BACKUP', 'FAILED'],
     ]);
+  });
+
+  it('waits for a free connection when the database is full, and gives up after its tries', async () => {
+    // A role allowed one connection stands in for a small managed database (both fail with 53300).
+    await db.$executeRawUnsafe(`DO $$ BEGIN CREATE ROLE hmis_backup_full LOGIN PASSWORD 'full-test' CONNECTION LIMIT 1; EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
+    const url = SOURCE_URL.replace(/\/\/[^@]+@/, '//hmis_backup_full:full-test@');
+    const holder = new pg.Client({ connectionString: url });
+    await holder.connect();
+    try {
+      await expect(connectWhenFree(url, { times: 1, waitMs: 50 })).rejects.toMatchObject({ code: '53300' });
+      // Freed while it waits: the next try gets in.
+      setTimeout(() => void holder.end(), 150);
+      const c = await connectWhenFree(url, { times: 5, waitMs: 100 });
+      expect((await c.query('SELECT 1 AS one')).rows[0].one).toBe(1);
+      await c.end();
+    } finally {
+      await holder.end().catch(() => undefined);
+    }
   });
 
   it('is due once a night (or right away with no copy yet), not again within the hour after a failure', async () => {

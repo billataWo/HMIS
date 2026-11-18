@@ -104,21 +104,44 @@ async function sha256(stream: Readable) {
   return h.digest('hex');
 }
 
+/** PostgreSQL's "too many connections" (53300), also "remaining connection slots are reserved". */
+const isFull = (e: unknown) => (e as { code?: string })?.code === '53300' || /too many clients|connection slots are reserved/i.test(String((e as Error)?.message));
+
+/**
+ * The backup's own connection. A small managed database (AletCloud's free plan: 10 connections,
+ * some reserved for the provider) can be full for a moment while the app is busy: wait and try
+ * again, `retry.times` times, before giving up for this hour.
+ */
+export async function connectWhenFree(url: string, retry = { times: 6, waitMs: 20_000 }) {
+  for (let attempt = 0; ; attempt++) {
+    const client = new pg.Client({ connectionString: url, application_name: 'hmis-backup' });
+    try {
+      await client.connect();
+      return client;
+    } catch (e) {
+      await client.end().catch(() => undefined);
+      if (!isFull(e) || attempt >= retry.times) throw e;
+      log.warn(`Database full (no free connection); trying again in ${Math.round(retry.waitMs / 1000)} s`);
+      await new Promise((r) => setTimeout(r, retry.waitMs));
+    }
+  }
+}
+
 export type NightlyResult = { status: 'OK'; key: string; sizeBytes: number; totalRows: number; deleted: number } | { status: 'SKIPPED' } | { status: 'FAILED'; error: string };
 
 /**
  * One backup now. `db` records the events (the system client); `url` is the owner connection the
  * copy is read with. Never throws: a failure is recorded and returned.
  */
-export async function runNightlyBackup(db: Db, url: string, cfg: NightlyConfig, now = new Date()): Promise<NightlyResult> {
-  const client = new pg.Client({ connectionString: url, application_name: 'hmis-backup' });
+export async function runNightlyBackup(db: Db, url: string, cfg: NightlyConfig, now = new Date(), retry?: { times: number; waitMs: number }): Promise<NightlyResult> {
+  let client: pg.Client | undefined;
   const startedAt = new Date();
   const store = new S3Store(cfg.s3);
   const name = backupName(now);
   const key = cfg.prefix + name;
   let dir: string | undefined;
   try {
-    await client.connect();
+    client = await connectWhenFree(url, retry);
     const [{ locked }] = (await client.query<{ locked: boolean }>('SELECT pg_try_advisory_lock($1) AS locked', [LOCK])).rows;
     if (!locked) return { status: 'SKIPPED' };
 
@@ -214,7 +237,7 @@ export async function runNightlyBackup(db: Db, url: string, cfg: NightlyConfig, 
       .catch((err: Error) => log.error(`Could not record the failure: ${err.message}`));
     return { status: 'FAILED', error: message(e) };
   } finally {
-    await client.end().catch(() => undefined);
+    await client?.end().catch(() => undefined);
     if (dir) await rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }
 }

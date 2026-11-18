@@ -168,8 +168,13 @@ Setting it up:
    `HMIS_BACKUP_S3_BUCKET`, `HMIS_BACKUP_S3_ACCESS_KEY`, `HMIS_BACKUP_S3_SECRET_KEY`
    (`HMIS_BACKUP_S3_REGION`, `HMIS_BACKUP_S3_PREFIX` = `hmis-backups/`, `HMIS_BACKUP_SITE` to name
    it on the status page). Remove `HMIS_BACKUPS_MANAGED_BY`.
-4. After the restart, the first copy is made within a few minutes; check Settings → Backups.
-5. Every few months, do a restore drill ([RESTORE.md](RESTORE.md#restoring-a-nightly-copy-app-hosting)).
+4. The backup needs one database connection of its own. On a small database (AletCloud's free
+   plan: 10 connections, 3 reserved for the provider) keep `DB_POOL_MAX` at 3 or less: the API
+   holds two pools of that size. A full database makes the backup wait and retry; if it stays
+   full, Settings → Backups says "remaining connection slots are reserved" and it tries again an
+   hour later.
+5. After the restart, the first copy is made within a few minutes; check Settings → Backups.
+6. Every few months, do a restore drill ([RESTORE.md](RESTORE.md#restoring-a-nightly-copy-app-hosting)).
 
 ## Everyday commands
 
