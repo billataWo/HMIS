@@ -2,6 +2,7 @@
 
 import {
   Baby,
+  HeartHandshake,
   CalendarDays,
   ChartColumn,
   FlaskConical,
@@ -62,6 +63,7 @@ const GROUPS: { title?: string; items: Item[] }[] = [
       { href: "/referrals", label: "Referrals", labelAm: "ሪፈራሎች", icon: Send, roles: ["ADMIN", "DOCTOR", "NURSE"] },
       { href: "/immunizations", label: "Immunization", labelAm: "ክትባት", icon: Syringe, roles: ["ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST"] },
       { href: "/anc", label: "Antenatal care", labelAm: "ቅድመ ወሊድ", icon: Baby, roles: ["ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST"] },
+      { href: "/family-planning", label: "Family planning", labelAm: "ቤተሰብ ዕቅድ", icon: HeartHandshake, roles: ["ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST"] },
     ],
   },
   {

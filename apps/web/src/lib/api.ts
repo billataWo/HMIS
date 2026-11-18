@@ -632,6 +632,16 @@ export interface MohReport {
     anaemic: number;
     ifaGiven: number;
   };
+  familyPlanning?: {
+    acceptorsNew: number;
+    acceptorsRepeat: number;
+    byMethod: { method: string; label: string; new: number; repeat: number }[];
+    byAge: { ageGroup: string; new: number; repeat: number }[];
+    removals: number;
+    earlyRemovals: number;
+    removalsByMethod: { method: string; label: string; count: number }[];
+    cyp: number;
+  };
   immunization?: {
     doses: { vaccine: string; doseNo: number; label: string; under1: number; over1: number }[];
     fullyImmunized: number;
@@ -836,6 +846,40 @@ export interface ImmunizationRecord {
   doses: ImmunizationDoseRecord[];
   followUps: { id: string; outcome: string; note: string | null; createdAt: string; by: string | null }[];
   aefis?: Aefi[];
+}
+
+/** One family planning service: a method started, resupplied, removed or stopped. */
+export interface FpRecordRow {
+  id: string;
+  givenOn: string;
+  service: "START" | "RESUPPLY" | "REMOVAL" | "STOP";
+  method: string;
+  clientType: "NEW" | "REPEAT" | null;
+  quantity: number | null;
+  nextDueOn: string | null;
+  reason: string | null;
+  note: string | null;
+  by: string | null;
+  voidedAt: string | null;
+  voidReason: string | null;
+  voidedBy: string | null;
+}
+
+/** A client's family planning: her records, current method and when she is next due. */
+export interface FpView {
+  records: FpRecordRow[];
+  current: { method: string; since: string; nextDueOn: string | null; device: boolean; late: boolean; removalDue: boolean } | null;
+  servedBefore: boolean;
+}
+
+/** A client due back: a resupply due or late, or a device due out. */
+export interface FpDueRow {
+  patient: QueuePatient;
+  method: string;
+  nextDueOn: string;
+  removal: boolean;
+  late: boolean;
+  daysLate: number;
 }
 
 /** An adverse event following immunization. */

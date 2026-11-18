@@ -25,6 +25,7 @@ import { ClinicalRecordController } from './consultation/clinical-record.control
 import { PublicHealthController } from './consultation/public-health.controller.js';
 import { ImmunizationController } from './immunization/immunization.controller.js';
 import { AncController } from './anc/anc.controller.js';
+import { FamilyPlanningController } from './family-planning/fp.controller.js';
 import { SettingsController } from './settings/settings.controller.js';
 import { InventoryController } from './inventory/inventory.controller.js';
 import { CatalogController } from './catalog/catalog.controller.js';
@@ -88,6 +89,7 @@ if (process.env.NODE_ENV === 'production' && (jwtSecret.length < 32 || WEAK_SECR
     PublicHealthController,
     ImmunizationController,
     AncController,
+    FamilyPlanningController,
     SettingsController,
     InventoryController,
     CatalogController,

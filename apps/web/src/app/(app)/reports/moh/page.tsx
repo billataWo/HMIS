@@ -168,6 +168,48 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
         </section>
       )}
 
+      {r.familyPlanning && (
+        <section>
+          <h2 className="mb-2 font-medium">Family planning</h2>
+          {r.familyPlanning.byMethod.length === 0 && r.familyPlanning.removals === 0 ? (
+            <p className="text-sm text-slate-500">No family planning services this month.</p>
+          ) : (
+            <>
+              <table className="w-full max-w-xl border-collapse text-sm">
+                <thead className="bg-slate-50 dark:bg-slate-900">
+                  <tr>
+                    <th className={`${cell} text-left`}>Method</th>
+                    <th className={`${cell} text-right`}>New acceptors</th>
+                    <th className={`${cell} text-right`}>Repeat acceptors</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {r.familyPlanning.byMethod.map((m) => (
+                    <tr key={m.method}>
+                      <td className={cell}>{m.label}</td>
+                      <td className={`${cell} text-right tabular-nums`}>{m.new}</td>
+                      <td className={`${cell} text-right tabular-nums`}>{m.repeat}</td>
+                    </tr>
+                  ))}
+                  <tr className="font-semibold">
+                    <td className={cell}>Total</td>
+                    <td className={`${cell} text-right tabular-nums`}>{r.familyPlanning.acceptorsNew}</td>
+                    <td className={`${cell} text-right tabular-nums`}>{r.familyPlanning.acceptorsRepeat}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p className="mt-2 text-sm">
+                By age: {r.familyPlanning.byAge.map((a) => `${a.ageGroup} ${a.new} new / ${a.repeat} repeat`).join(" · ") || "—"}
+              </p>
+              <p className="text-sm">
+                Implant and IUCD removals <strong>{r.familyPlanning.removals}</strong> (early <strong>{r.familyPlanning.earlyRemovals}</strong>) · couple-years of protection{" "}
+                <strong>{r.familyPlanning.cyp}</strong>
+              </p>
+            </>
+          )}
+        </section>
+      )}
+
       {r.immunization && (
         <section>
           <h2 className="mb-2 font-medium">3. Immunization (doses given here)</h2>

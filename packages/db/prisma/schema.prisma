@@ -181,6 +181,7 @@ model Patient {
   immunizations     ImmunizationDose[]
   immunizationCalls ImmunizationFollowUp[]
   aefis             ImmunizationAefi[]
+  fpRecords         FpRecord[]
   pregnancies       Pregnancy[]
 
   @@unique([tenantId, mrn])
@@ -212,6 +213,38 @@ model ImmunizationDose {
   voidReason String?
   voidedById String?
   aefis      ImmunizationAefi[]
+
+  @@index([patientId])
+  @@index([tenantId, givenOn])
+}
+
+/// Family planning: each service given to a client, a method started, resupplied, removed (implant,
+/// IUCD) or stopped. The client's current method and next due date are worked out from these.
+/// A mistaken entry is voided with a reason, never deleted.
+model FpRecord {
+  id          String    @id @default(uuid())
+  tenantId    String
+  patientId   String
+  patient     Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  givenOn     DateTime  @db.Date
+  /// START, RESUPPLY, REMOVAL or STOP.
+  service     String
+  /// A key of FP_METHODS in the API (COC, DMPA_IM, IMPLANT_5Y, IUCD, CONDOM_MALE…).
+  method      String
+  /// NEW (her first modern method ever) or REPEAT; null for removals and stops.
+  clientType  String?
+  /// Cycles of pills, condoms, doses; null where it doesn't apply.
+  quantity    Int?
+  /// When she should come back: resupply, or the device's removal or replacement.
+  nextDueOn   DateTime? @db.Date
+  /// Why a device was removed or a method stopped.
+  reason      String?
+  note        String?
+  createdById String
+  createdAt   DateTime  @default(now())
+  voidedAt    DateTime?
+  voidReason  String?
+  voidedById  String?
 
   @@index([patientId])
   @@index([tenantId, givenOn])

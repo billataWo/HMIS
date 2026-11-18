@@ -15,3 +15,6 @@ deploy/hmis-ca.crt
 
 # graphify knowledge graph output (rebuilt locally with /graphify)
 graphify-out/
+
+# TypeScript incremental build caches (rebuilt on every build)
+*.tsbuildinfo

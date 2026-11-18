@@ -52,12 +52,18 @@ describe('access rules', () => {
 
   it('refuses every clinic and console route without a sign-in', async () => {
     const routes = routeInventory().filter((r) => r.access === 'roles' || r.access === 'platform');
-    const answers = await Promise.all(
-      routes.map(async (r) => {
-        const [method, path] = r.route.split(' ');
-        return [r.route, (await call(method, withIds(path))).status] as const;
-      }),
-    );
+    // In batches: hundreds of connections at once overflow the test server's backlog (ECONNREFUSED).
+    const answers: (readonly [string, number])[] = [];
+    for (let i = 0; i < routes.length; i += 40) {
+      answers.push(
+        ...(await Promise.all(
+          routes.slice(i, i + 40).map(async (r) => {
+            const [method, path] = r.route.split(' ');
+            return [r.route, (await call(method, withIds(path))).status] as const;
+          }),
+        )),
+      );
+    }
     // The sign-in is checked before anything else, so every one of them answers 401.
     expect(answers.filter(([, status]) => status !== 401)).toEqual([]);
   }, 60_000);

@@ -29,6 +29,21 @@ export async function GET(request: Request) {
     ["Rank", "ICD-11", "Diagnosis", "Male", "Female", "Total"],
     ...r.morbidity.map((x, i) => [i + 1, x.code, x.label, x.male, x.female, x.total]),
     [],
+    ...(r.familyPlanning
+      ? [
+          ["Family planning: acceptors by method"],
+          ["Method", "New", "Repeat"],
+          ...r.familyPlanning.byMethod.map((m) => [m.label, m.new, m.repeat]),
+          ["Total", r.familyPlanning.acceptorsNew, r.familyPlanning.acceptorsRepeat],
+          ["Family planning: acceptors by age"],
+          ["Age group", "New", "Repeat"],
+          ...r.familyPlanning.byAge.map((a) => [a.ageGroup, a.new, a.repeat]),
+          ["Implant and IUCD removals", r.familyPlanning.removals],
+          ["Early removals", r.familyPlanning.earlyRemovals],
+          ["Couple-years of protection", r.familyPlanning.cyp],
+          [],
+        ]
+      : []),
     ["Malaria tests performed", r.malaria.tested],
     ["Malaria tests positive", r.malaria.positive],
     ...r.malaria.byResult.map((x) => [`Result: ${x.result}`, x.count]),

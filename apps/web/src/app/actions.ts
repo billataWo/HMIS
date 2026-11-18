@@ -1186,6 +1186,54 @@ export async function updateAefi(_: FormState, form: FormData): Promise<FormStat
   return { ok: true };
 }
 
+/** Family planning: a method given (started or resupplied: the API works out which). */
+export async function giveFp(_: FormState, form: FormData): Promise<FormState> {
+  const quantity = text(form, "quantity");
+  try {
+    await api(`/patients/${text(form, "patientId")}/family-planning`, {
+      method: "POST",
+      body: JSON.stringify({
+        method: text(form, "method"),
+        givenOn: text(form, "givenOn") || undefined,
+        quantity: quantity ? Number(quantity) : undefined,
+        clientType: text(form, "clientType") || undefined,
+        note: text(form, "note") || undefined,
+      }),
+    });
+  } catch (e) {
+    return toFormState(e, formValues(form));
+  }
+  refresh();
+  return { ok: true };
+}
+
+/** Family planning: an implant or IUCD removed, or a method stopped, with why. */
+export async function endFp(_: FormState, form: FormData): Promise<FormState> {
+  const kind = text(form, "kind") === "removal" ? "removal" : "stop";
+  try {
+    await api(`/patients/${text(form, "patientId")}/family-planning/${kind}`, {
+      method: "POST",
+      body: JSON.stringify({ givenOn: text(form, "givenOn") || undefined, reason: text(form, "reason"), note: text(form, "note") || undefined }),
+    });
+  } catch (e) {
+    return toFormState(e, formValues(form));
+  }
+  refresh();
+  return { ok: true };
+}
+
+/** Family planning: an entry recorded by mistake, voided with the reason. */
+export async function voidFp(id: string, reason: string): Promise<{ error?: string }> {
+  try {
+    await api(`/fp-records/${id}/void`, { method: "POST", body: JSON.stringify({ reason }) });
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.body.errors?.[0]?.message ?? e.message };
+    throw e;
+  }
+  refresh();
+  return {};
+}
+
 /** What came of a call to a child who missed a vaccine. */
 export async function epiFollowUp(_: FormState, form: FormData): Promise<FormState> {
   try {
