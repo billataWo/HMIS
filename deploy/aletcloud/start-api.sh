@@ -36,5 +36,10 @@ fi
 if [ "${HMIS_PLATFORM:-}" = "1" ] && [ -n "${HMIS_RESET_OPERATOR_EMAIL:-}" ]; then
   node dist/platform/cli.js reset-at-start "$HMIS_RESET_OPERATOR_EMAIL" || true
 fi
+# The same for a locked-out clinic admin: HMIS_RESET_CLINIC_ADMIN = their phone, or the clinic's
+# name if it has one admin; the logs show "CLINIC ADMIN: PASSWORD RESET" (or the admins to choose).
+if [ -n "${HMIS_RESET_CLINIC_ADMIN:-}" ]; then
+  node dist/clinic/cli.js reset-admin-at-start "$HMIS_RESET_CLINIC_ADMIN" || true
+fi
 
 exec node dist/main.js

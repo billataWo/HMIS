@@ -15,6 +15,10 @@ import { hashPassword, temporaryPasswordExpiry } from '../common/passwords.js';
  *   reset-admin <phone> [--clinic <clinic id>]
  *                     a new temporary password for an admin who is locked out and has no other
  *                     admin to reset it (also ends their sign-ins and resets two-step sign-in)
+ *   reset-admin-at-start <phone | clinic name>
+ *                     for hosts without a shell, on every start while HMIS_RESET_CLINIC_ADMIN is
+ *                     set: a new temporary password for that admin (two-step sign-in is kept),
+ *                     until they sign in
  *   import <file|->    a clinic from an HMIS export (Settings → Data on its old server), e.g. moving
  *                     from the HMIS cloud to the clinic's own server. Staff passwords are not in
  *                     exports: each admin gets a new one (reset-admin), then resets the others
@@ -221,6 +225,63 @@ async function resetAdmin() {
   );
 }
 
+/**
+ * For hosts without a shell (AletCloud), on every start while HMIS_RESET_CLINIC_ADMIN is set: a
+ * locked-out clinic admin, named by phone or by the clinic's name (when the clinic has one active
+ * admin). Resets once, then again only if that admin has not signed in since the last start-up
+ * reset, so a restart after they sign in does not lock them out again. Two-step sign-in is kept.
+ */
+async function resetAdminAtStart() {
+  const target = args.join(' ').trim();
+  if (!target) fail('usage: reset-admin-at-start <admin phone | clinic name>');
+  const phone = normalizePhone(target);
+  let admins = /^0[79]\d{8}$/.test(phone)
+    ? await owner.user.findMany({ where: { phone, role: 'ADMIN' }, include: { tenant: true } })
+    : await owner.user.findMany({
+        where: { role: 'ADMIN', active: true, tenant: { name: { equals: target, mode: 'insensitive' } } },
+        include: { tenant: true },
+      });
+  if (admins.length !== 1) {
+    console.log(
+      admins.length
+        ? `Clinic admin reset: "${target}" matches ${admins.length} admins; set HMIS_RESET_CLINIC_ADMIN to one phone. Nothing was changed.`
+        : `Clinic admin reset: no admin matches "${target}" (a phone, or a clinic's exact name). Nothing was changed.`,
+    );
+    if (!admins.length) admins = await owner.user.findMany({ where: { role: 'ADMIN' }, include: { tenant: true }, orderBy: { createdAt: 'asc' } });
+    for (const a of admins) console.log(`  ${a.phone}  ${a.fullName}  (${a.tenant.name})${a.active ? '' : '  inactive'}`);
+    return;
+  }
+  const [admin] = admins;
+  const last = await owner.auditLog.findFirst({
+    where: { tenantId: admin.tenantId, entityId: admin.id, action: 'user.admin_reset', data: { path: ['by'], equals: 'server start (reset)' } },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (last) {
+    const signedIn = await owner.auditLog.findFirst({ where: { tenantId: admin.tenantId, userId: admin.id, action: 'auth.login', createdAt: { gt: last.createdAt } } });
+    if (signedIn) {
+      console.log(`Clinic admin reset: ${admin.fullName} (${admin.tenant.name}) has signed in since the reset; nothing to do (remove HMIS_RESET_CLINIC_ADMIN).`);
+      return;
+    }
+  }
+  const password = temporaryPassword();
+  await owner.user.update({
+    where: { id: admin.id },
+    data: { passwordHash: await hashPassword(password), mustChangePassword: true, temporaryPasswordExpiresAt: temporaryPasswordExpiry(), active: true, sessionsValidAfter: new Date() },
+  });
+  await owner.auditLog.create({
+    data: { tenantId: admin.tenantId, userId: admin.id, action: 'user.admin_reset', entity: 'User', entityId: admin.id, data: { by: 'server start (reset)' } },
+  });
+  console.log('======================= HMIS CLINIC ADMIN: PASSWORD RESET =======================');
+  console.log(`  Sign in at:         ${process.env.HMIS_PUBLIC_URL?.replace(/\/+$/, '') || 'https://<this server>'}/login`);
+  console.log(`  Clinic:             ${admin.tenant.name}`);
+  console.log(`  Admin:              ${admin.fullName}`);
+  console.log(`  Phone:              ${admin.phone}`);
+  console.log(`  Temporary password: ${password}`);
+  console.log('  A new one is shown at every start until they sign in. Then they choose their own');
+  console.log('  password; remove HMIS_RESET_CLINIC_ADMIN.');
+  console.log('===================================================================================');
+}
+
 /** Is the file gzip-compressed (an export as downloaded), or plain JSON lines? */
 function gzipped(file: string) {
   const fd = openSync(file, 'r');
@@ -279,6 +340,7 @@ try {
   else if (cmd === 'import') await importFile();
   else if (cmd === 'list') await list();
   else if (cmd === 'reset-admin') await resetAdmin();
+  else if (cmd === 'reset-admin-at-start') await resetAdminAtStart();
   else
     fail(
       'usage: node dist/clinic/cli.js create|list|reset-admin|import (see the top of src/clinic/cli.ts)',
