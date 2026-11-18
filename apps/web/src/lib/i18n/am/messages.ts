@@ -497,4 +497,5 @@ export const MESSAGES: Record<string, string> = {
   "An implant or IUCD is removed, not stopped: record its removal": "ኢምፕላንት ወይም አይዩሲዲ የሚወጣ እንጂ የሚቆም አይደለም፦ መውጣቱን ይመዝግቡ",
   "A permanent method is not stopped": "ቋሚ ዘዴ አይቆምም",
   "Record not found": "መዝገቡ አልተገኘም",
+  "The server could not sign you in just now. Try again in a minute; if it keeps happening, tell your administrator.": "ሰርቨሩ አሁን ሊያስገባዎት አልቻለም። ከአንድ ደቂቃ በኋላ እንደገና ይሞክሩ፤ ከቀጠለ ለአስተዳዳሪዎ ይንገሩ።",
 };

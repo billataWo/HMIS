@@ -79,7 +79,13 @@ export async function login(_: FormState, form: FormData): Promise<FormState> {
     const { message } = (await res.json().catch(() => ({}))) as { message?: string };
     return { error: message ?? "Too many wrong passwords. Try again later.", values: { phone } };
   }
-  if (!res.ok) return { error: "Wrong phone number or password.", values: { phone } };
+  // A refusal says why (a wrong password, or a temporary password that has run out: the API never
+  // tells which phones have accounts). Anything else is the server's fault, not the password's.
+  if (res.status === 400 || res.status === 401) {
+    const { message } = (await res.json().catch(() => ({}))) as { message?: string };
+    return { error: typeof message === "string" ? message : "Wrong phone number or password.", values: { phone } };
+  }
+  if (!res.ok) return { error: "The server could not sign you in just now. Try again in a minute; if it keeps happening, tell your administrator.", values: { phone } };
 
   const body = (await res.json()) as { token?: string; mustChangePassword?: boolean; twoStepRequired?: boolean; challenge?: string };
   // Two-step sign-in: the password was right; the code comes next.

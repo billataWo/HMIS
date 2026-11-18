@@ -39,7 +39,10 @@ export async function platformLogin(_: FormState, form: FormData): Promise<FormS
   const { status, body } = await signInCall("/platform/auth/login", { email: text(form, "email"), password: String(form.get("password") ?? "") });
   if (status === 404) return { error: "The platform console is not available on this server." };
   if (status === 429) return { error: body.message ?? "Too many attempts. Wait 15 minutes." };
-  if (status !== 200) return { error: "Wrong email or password." };
+  // A refusal says why (a wrong password, or a temporary password that has run out). Anything else
+  // is the server's fault, not the password's.
+  if (status === 400 || status === 401) return { error: typeof body.message === "string" ? body.message : "Wrong email or password." };
+  if (status !== 200) return { error: "The server could not sign you in just now. Try again in a minute." };
   if (body.twoStepRequired) {
     (await cookies()).set(PLATFORM_CHALLENGE_COOKIE, body.challenge, { ...cookieBase, maxAge: 5 * 60 });
     redirect("/platform/login/code");
