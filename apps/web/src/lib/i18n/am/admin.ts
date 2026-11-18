@@ -247,6 +247,20 @@ export const ADMIN: Record<string, string> = {
   "{n} hour": "{n} ሰዓት",
   "{n} hours": "{n} ሰዓታት",
   "automatic, encrypted, copied off-site and tested every week": "በራሱ የሚሠራ፣ የተመሰጠረ፣ ከቦታው ውጪ የሚገለበጥና በየሳምንቱ የሚፈተሽ",
+  "automatic, encrypted and copied off-site": "በራሱ የሚሠራ፣ የተመሰጠረና ከቦታው ውጪ የሚገለበጥ",
+  "a full copy every night, encrypted and stored off-site": "በየሌሊቱ ሙሉ ቅጂ፣ ተመስጥሮ ከቦታው ውጪ ይቀመጣል",
+  "a nightly copy from any night since {date}": "ከ{date} ጀምሮ የማንኛውም ሌሊት ቅጂ",
+  "Each nightly copy is read back from storage and compared before it counts.": "እያንዳንዱ የሌሊት ቅጂ ከማከማቻው ተመልሶ ተነቦ ይነጻጸራል፤ ከዚያ በኋላ ብቻ ይቆጠራል።",
+  "A copy every night, off-site": "በየሌሊቱ ቅጂ፣ ከቦታው ውጪ",
+  "Every night a full copy of the database is made and stored in separate storage ({site}), apart from the database.":
+    "በየሌሊቱ የዳታቤዙ ሙሉ ቅጂ ተሠርቶ ከዳታቤዙ ተለይቶ በሌላ ማከማቻ ({site}) ይቀመጣል።",
+  "Only the offline key opens it": "የሚከፍተው ከመስመር ውጪ ያለው ቁልፍ ብቻ ነው",
+  "Copies are encrypted for a key the HMIS team keeps offline: this server can write them but not read them, so a stolen storage password exposes nothing.":
+    "ቅጂዎቹ የHMIS ቡድን ከመስመር ውጪ ለሚያስቀምጠው ቁልፍ ተመስጥረዋል፤ ይህ ሰርቨር ሊጽፋቸው እንጂ ሊያነባቸው አይችልም፤ ስለዚህ የማከማቻው የይለፍ ቃል ቢሰረቅ ምንም አይጋለጥም።",
+  "Kept for months": "ለወራት ይቀመጣል",
+  "Every night for {days} days, then the first copy of each month for {months} months.": "በየሌሊቱ ለ{days} ቀናት፣ ከዚያም የየወሩ የመጀመሪያ ቅጂ ለ{months} ወራት።",
+  "Restoring replaces live medical records, so it is done by the HMIS support team with the offline key, following the backup guide. Call them if data was deleted by mistake: the database can be put back to any nightly copy in the window above.":
+    "መመለስ በሥራ ላይ ያሉ የሕክምና መዝገቦችን ስለሚተካ በHMIS ድጋፍ ቡድን ከመስመር ውጪ ባለው ቁልፍ፣ የምትኬ መመሪያውን ተከትሎ ይሠራል። መረጃ በስሕተት ከተሰረዘ ይደውሉላቸው፤ ዳታቤዙ ከላይ ባለው ጊዜ ውስጥ ወደ ማንኛውም የሌሊት ቅጂ ሊመለስ ይችላል።",
   "Only clinic admins can see the backup status.": "የምትኬ ሁኔታን ማየት የሚችሉት የክሊኒኩ አስተዳዳሪዎች ብቻ ናቸው።",
   "Backups are not running on this server": "በዚህ ሰርቨር ላይ ምትኬ እየተወሰደ አይደለም",
   "Backups are made by the hosting provider": "ምትኬ የሚወሰደው በሆስቲንግ አቅራቢው ነው",

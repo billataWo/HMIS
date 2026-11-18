@@ -28,7 +28,15 @@ export default async function setup() {
   };
   execSync('npx prisma migrate deploy', { cwd, env: edge, stdio: 'inherit' });
   execSync('npx tsx prisma/app-role.ts', { cwd, env: edge, stdio: 'inherit' });
+
+  // A third, for the nightly backup's restore (it replaces all of that database's data).
+  const admin2 = createPrismaClient(env.DATABASE_URL);
+  await admin2.$executeRawUnsafe('CREATE DATABASE hmis_test_restore').catch(() => undefined);
+  await admin2.$disconnect();
+  execSync('npx prisma migrate deploy', { cwd, env: { ...process.env, DATABASE_URL: RESTORE_URL }, stdio: 'inherit' });
 }
+
+export const RESTORE_URL = 'postgresql://hmis:hmis_dev_password@localhost:5432/hmis_test_restore?schema=public';
 
 export const EDGE_URL = 'postgresql://hmis:hmis_dev_password@localhost:5432/hmis_test_edge?schema=public';
 export const EDGE_APP_URL = 'postgresql://hmis_app:hmis_app_dev_password@localhost:5432/hmis_test_edge?schema=public';

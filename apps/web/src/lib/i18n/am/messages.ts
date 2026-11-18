@@ -451,6 +451,8 @@ export const MESSAGES: Record<string, string> = {
   "Continuous archiving and disk space": "ቀጣይ ማህደር ማስቀመጥና የዲስክ ቦታ",
   "Disk encryption": "የዲስክ ምስጠራ",
   "Weekly restore test": "ሳምንታዊ የመመለስ ሙከራ",
+  "Nightly backup": "የሌሊት ምትኬ",
+  "Restore drill": "የመመለስ ልምምድ",
   "Monthly restore test from the off-site copy": "ከቦታው ውጪ ካለው ቅጂ ወርሃዊ የመመለስ ሙከራ",
   "Backup files verified": "የምትኬ ፋይሎች ተረጋግጠዋል",
   "Monthly long-term archive": "ወርሃዊ የረጅም ጊዜ ማህደር",

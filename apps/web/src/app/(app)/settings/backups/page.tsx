@@ -87,6 +87,7 @@ async function Status() {
 
   const head = STATUS[s.overall];
   const recovery = s.lastRestoreTest?.recoverySeconds;
+  const nightly = s.mode === "nightly";
   return (
     <div className="space-y-6">
       <section className="surface flex flex-wrap items-center gap-4 p-5">
@@ -95,7 +96,11 @@ async function Status() {
           <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{t(HEADLINE[s.overall])}</h2>
           <p className="text-sm text-slate-500">
             {s.site ? `${s.site} · ` : ""}
-            {t("every change is copied to the backup disk within about a minute, encrypted with AES-256")}
+            {t(
+              nightly
+                ? "a full copy every night, encrypted and stored off-site"
+                : "every change is copied to the backup disk within about a minute, encrypted with AES-256",
+            )}
           </p>
         </div>
         <Badge tone={head.tone} dot>
@@ -114,7 +119,11 @@ async function Status() {
           label={t("Can restore to")}
           icon={History}
           value={s.restoreWindow?.from ? since(s.restoreWindow.from, t) : "—"}
-          hint={s.restoreWindow?.from ? t("any moment since {date}", { date: formatDualDate(s.restoreWindow.from) }) : undefined}
+          hint={
+            s.restoreWindow?.from
+              ? t(nightly ? "a nightly copy from any night since {date}" : "any moment since {date}", { date: formatDualDate(s.restoreWindow.from) })
+              : undefined
+          }
         />
         <StatCard
           label={t("Off-site copy")}
@@ -140,7 +149,14 @@ async function Status() {
         </Notice>
       )}
 
-      <Card title={t("Checks")} description={t("Run automatically on the server; problems are also sent to the support team by Telegram or email.")}>
+      <Card
+        title={t("Checks")}
+        description={t(
+          nightly
+            ? "Each nightly copy is read back from storage and compared before it counts."
+            : "Run automatically on the server; problems are also sent to the support team by Telegram or email.",
+        )}
+      >
         <ul className="-my-2 divide-y divide-slate-100 dark:divide-slate-800">
           {s.checks.map((c) => {
             const st = STATUS[c.status];
@@ -159,6 +175,34 @@ async function Status() {
         </ul>
       </Card>
 
+      {nightly ? (
+        <Card title={t("How the clinic's data is protected")}>
+          <ul className="grid gap-4 text-sm text-slate-600 sm:grid-cols-3 dark:text-slate-400">
+            <li>
+              <p className="font-medium text-slate-900 dark:text-white">{t("A copy every night, off-site")}</p>
+              {t("Every night a full copy of the database is made and stored in separate storage ({site}), apart from the database.", { site: s.offsite.location ?? "S3" })}
+            </li>
+            <li>
+              <p className="flex items-center gap-1.5 font-medium text-slate-900 dark:text-white">
+                <Lock aria-hidden className="size-3.5" /> {t("Only the offline key opens it")}
+              </p>
+              {t("Copies are encrypted for a key the HMIS team keeps offline: this server can write them but not read them, so a stolen storage password exposes nothing.")}
+            </li>
+            <li>
+              <p className="font-medium text-slate-900 dark:text-white">{t("Kept for months")}</p>
+              {t("Every night for {days} days, then the first copy of each month for {months} months.", {
+                days: s.retention?.days ?? "?",
+                months: s.retention?.months ?? "?",
+              })}
+            </li>
+          </ul>
+          <p className="mt-4 text-sm text-slate-500">
+            {t(
+              "Restoring replaces live medical records, so it is done by the HMIS support team with the offline key, following the backup guide. Call them if data was deleted by mistake: the database can be put back to any nightly copy in the window above.",
+            )}
+          </p>
+        </Card>
+      ) : (
       <Card title={t("How the clinic's data is protected")}>
         <ul className="grid gap-4 text-sm text-slate-600 sm:grid-cols-3 dark:text-slate-400">
           <li>
@@ -182,6 +226,7 @@ async function Status() {
           )}
         </p>
       </Card>
+      )}
 
       <Card title={t("Recent activity")} className="overflow-hidden">
         <div className="-m-5 overflow-x-auto">
@@ -224,7 +269,7 @@ async function Status() {
 export default function BackupsPage() {
   return (
     <>
-      <PageTitle title="Backups" subtitle="automatic, encrypted, copied off-site and tested every week" actions={<BackToSettings />} />
+      <PageTitle title="Backups" subtitle="automatic, encrypted and copied off-site" actions={<BackToSettings />} />
       <Suspense fallback={<Skeleton className="h-96" />}>
         <Status />
       </Suspense>

@@ -114,3 +114,35 @@ createdb hmis_archive && pg_restore -d hmis_archive --no-owner hmis.dump
 ```
 
 Delete the decrypted `hmis.dump` when done.
+
+## Restoring a nightly copy (app hosting)
+
+The nightly copies (`hmis-backups/hmis-YYYY-MM-DDTHHMMSSZ.hmisdump.gz.age`, see the README) are
+restored with the API's backup tool, on a computer that has the secret key. In `apps/api`, with
+the bucket settings (`HMIS_BACKUP_S3_*`) in the environment:
+
+```sh
+npx tsx src/backups/cli.ts list                     # the copies, newest last
+npx tsx src/backups/cli.ts download <key>           # optional: a local file, still encrypted
+```
+
+The database to restore into must have **at least the copy's migrations** (`pnpm db:deploy` with
+its `DATABASE_URL`); the tool refuses otherwise. Restoring replaces **all** of its data, in one
+transaction: if anything is wrong (a damaged file, a row count that does not match), nothing
+changes.
+
+```sh
+# a restore drill: into a scratch database, recorded as passed on the live one
+DATABASE_URL=postgresql://…/hmis_drill npx tsx src/backups/cli.ts restore s3:<key> \
+  --identity hmis-backup.key --replace-all-data --test --record "$LIVE_DATABASE_URL"
+
+# the real thing: stop the app first (AletCloud: stop the app), then
+DATABASE_URL="$LIVE_DATABASE_URL" npx tsx src/backups/cli.ts restore s3:<key> \
+  --identity hmis-backup.key --replace-all-data
+```
+
+A managed database usually cannot be reached from outside: turn on its public access for the
+restore (and off afterwards), or restore into a database you can reach and move the app to it. The
+standard `age` tool also opens a copy: `age -d -i hmis-backup.key <file> | npx tsx
+src/backups/cli.ts restore - --replace-all-data` (the output is still gzipped, which the tool
+expects). Restores are recorded in the database's backup log (Settings → Backups).

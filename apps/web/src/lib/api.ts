@@ -1441,6 +1441,9 @@ export interface BackupEventRow {
 /** GET /backups/status: the server's backup health, from the backup worker's events. */
 export interface BackupStatus {
   monitored: boolean;
+  /** "continuous": the HMIS backup service on the server; "nightly": one encrypted copy a night to a bucket (app hosting). */
+  mode: "continuous" | "nightly";
+  retention: { days: number | null; months: number | null } | null;
   overall: BackupCheckStatus;
   /** Not monitored, but the host backs the database up itself (HMIS_BACKUPS_MANAGED_BY). */
   managedBy: string | null;

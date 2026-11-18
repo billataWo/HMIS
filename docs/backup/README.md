@@ -134,6 +134,43 @@ centre. One backup covers every clinic on the server; restoring one clinic's dat
 back the others is done by restoring into a separate database and copying that clinic's rows
 (ask for help: it is a careful, manual job).
 
+### App hosting (AletCloud): the nightly backup
+
+App hosting with a managed database has no server to run this stack on (no pgBackRest, no WAL
+archiving, no shell). There the API itself makes **one encrypted copy a night** and stores it in an
+S3 bucket (`apps/api/src/backups/nightly.ts`):
+
+- At `HMIS_BACKUP_HOUR` (default 2, server time), or soon after a start when tonight's copy is
+  missing, every table is read in one consistent snapshot, gzipped and encrypted with
+  [age](https://age-encryption.org) to `HMIS_BACKUP_RECIPIENT`, the **public** key of a key pair
+  whose secret half is kept offline. The server can write copies but never read them.
+- The copy is uploaded, read back and compared (SHA-256); a damaged upload is deleted and retried
+  an hour later.
+- Kept: every night for `HMIS_BACKUP_KEEP_DAYS` (30) days, then the first copy of each month for
+  `HMIS_BACKUP_KEEP_MONTHS` (12) months. Older copies are deleted.
+- Settings → Backups shows each copy, the check of the upload and when the last restore drill
+  passed. A missed night is a warning, two missed nights a failure (banner for admins).
+
+This is a smaller promise than the stack above: one copy a night (up to a day of work can be
+lost), one storage provider, no object lock. Use it where nothing better can run.
+
+Setting it up:
+
+1. On a trusted computer (not the server), make the key pair:
+   `node apps/api/dist/backups/cli.js keygen hmis-backup.key` (or `npx tsx src/backups/cli.ts
+   keygen …` in `apps/api`). Keep `hmis-backup.key` offline in two places (e.g. two USB sticks in
+   different places and the password manager). **Without it no copy can be read.**
+2. Create a private bucket and an access key scoped to it (AletCloud: Object storage; the 5 GB tier
+   is plenty for a database of a few hundred MB).
+3. Set in the app's environment: `HMIS_BACKUP_RECIPIENT` (the printed `age1…` public key) and the
+   bucket, either AletCloud's "connect to app" variables (`AWS_ENDPOINT_URL_S3`, `S3_BUCKET`,
+   `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`) or `HMIS_BACKUP_S3_ENDPOINT`,
+   `HMIS_BACKUP_S3_BUCKET`, `HMIS_BACKUP_S3_ACCESS_KEY`, `HMIS_BACKUP_S3_SECRET_KEY`
+   (`HMIS_BACKUP_S3_REGION`, `HMIS_BACKUP_S3_PREFIX` = `hmis-backups/`, `HMIS_BACKUP_SITE` to name
+   it on the status page). Remove `HMIS_BACKUPS_MANAGED_BY`.
+4. After the restart, the first copy is made within a few minutes; check Settings → Backups.
+5. Every few months, do a restore drill ([RESTORE.md](RESTORE.md#restoring-a-nightly-copy-app-hosting)).
+
 ## Everyday commands
 
 Run in `deploy/` on the server.

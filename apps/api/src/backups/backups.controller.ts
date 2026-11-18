@@ -2,6 +2,7 @@ import { Controller, Get } from '@nestjs/common';
 import type { BackupEvent, BackupEventKind } from '@hmis/db';
 import { Roles } from '../auth/auth.decorators.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { NIGHTLY } from './nightly.js';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -63,7 +64,10 @@ export class BackupsController {
       ]);
 
     const health = data(check);
-    const offsiteConfigured = health.offsite !== false;
+    // The nightly backup (backups/nightly.ts, app hosting): one encrypted copy a night, straight to
+    // off-site storage. Its own thresholds; no continuous archiving, disk or long-term archive.
+    const nightly = data(backupOk ?? backupAny).mode === NIGHTLY;
+    const offsiteConfigured = nightly || health.offsite !== false;
     const archiveConfigured = health.archive !== false;
     const checks: Check[] = [];
 
@@ -75,6 +79,23 @@ export class BackupsController {
         status: 'failing',
         detail: backupAny ? `No backup has succeeded yet: ${backupAny.message ?? 'see the server log'}` : 'No backup has been made on this server yet.',
         at: backupAny?.finishedAt.toISOString() ?? null,
+      });
+    } else if (nightly) {
+      // Due every night: a missed night is a warning, two a failure.
+      const a = age(backupOk);
+      const failedSince = backupAny && backupAny.status === 'FAILED' && backupAny.finishedAt > backupOk.finishedAt;
+      const d = data(backupOk);
+      checks.push({
+        key: 'backup',
+        label: 'Nightly backup',
+        status: a > 50 * HOUR ? 'failing' : a > 26 * HOUR || failedSince ? 'warning' : 'ok',
+        detail:
+          a > 26 * HOUR
+            ? `The last nightly copy was made ${hours(a)} ago.${failedSince ? ` The latest attempt failed: ${backupAny.message ?? 'see the app log'}` : ''}`
+            : failedSince
+              ? `The last attempt failed (${backupAny.message ?? 'see the app log'}); the previous copy is ${hours(a)} old.`
+              : `Last copy ${hours(a)} ago: ${num(d.totalRows) ?? '?'} rows, encrypted. ${num(d.copies) ?? '?'} copies kept (every night for ${num(d.keepDays) ?? '?'} days, one a month for ${num(d.keepMonths) ?? '?'} months).`,
+        at: backupOk.finishedAt.toISOString(),
       });
     } else {
       const a = age(backupOk);
@@ -123,6 +144,8 @@ export class BackupsController {
     // 3. The off-site copy (the "1" in 3-2-1).
     if (!offsiteConfigured) {
       checks.push({ key: 'offsite', label: 'Off-site copy', status: 'warning', detail: 'No off-site storage is configured, so a fire or theft would take the backups too.', at: null });
+    } else if (nightly) {
+      // Each nightly copy is written straight to the bucket: the backup check above covers it.
     } else {
       const a = age(syncOk);
       checks.push({
@@ -151,8 +174,23 @@ export class BackupsController {
         at: e?.finishedAt.toISOString() ?? null,
       });
     };
-    restoreTest(testLocal, 'Weekly restore test', 8, 'restore-test');
-    if (offsiteConfigured) restoreTest(testOffsite, 'Monthly restore test from the off-site copy', 35, 'restore-test-offsite');
+    if (nightly) {
+      // The server cannot read its own copies (only the offline key can), so the drill is done by
+      // hand, every few months: backups/cli.js restore --test into a scratch database.
+      const drill = testLocal ?? testOffsite;
+      if (drill) restoreTest(drill, 'Restore drill', 95, 'restore-test');
+      else
+        checks.push({
+          key: 'restore-test',
+          label: 'Restore drill',
+          status: 'warning',
+          detail: 'Not done yet: restore a nightly copy into a scratch database with the offline key, every few months (the backup guide).',
+          at: null,
+        });
+    } else {
+      restoreTest(testLocal, 'Weekly restore test', 8, 'restore-test');
+      if (offsiteConfigured) restoreTest(testOffsite, 'Monthly restore test from the off-site copy', 35, 'restore-test-offsite');
+    }
 
     // 5. Repository verification (bit rot, failing disk, tampering).
     checks.push({
@@ -163,8 +201,9 @@ export class BackupsController {
       at: verify?.finishedAt.toISOString() ?? null,
     });
 
-    // 6. The long-term archive (monthly, readable by future PostgreSQL versions).
-    checks.push({
+    // 6. The long-term archive (monthly, readable by future PostgreSQL versions). The nightly
+    // backup keeps a copy a month instead.
+    if (!nightly) checks.push({
       key: 'archive',
       label: 'Monthly long-term archive',
       status: !archiveConfigured ? 'warning' : archiveAny?.status === 'FAILED' ? 'warning' : !archiveOk ? 'warning' : age(archiveOk) > 35 * DAY ? 'warning' : 'ok',
@@ -188,6 +227,10 @@ export class BackupsController {
     const managedBy = !monitored ? process.env.HMIS_BACKUPS_MANAGED_BY?.trim() || null : null;
     return {
       monitored,
+      /** "continuous": the HMIS backup service (pgBackRest); "nightly": backups/nightly.ts. */
+      mode: nightly ? 'nightly' : 'continuous',
+      /** Nightly copies kept: every night for `days` days, one a month for `months` months. */
+      retention: nightly && backupOk ? { days: num(backupData.keepDays), months: num(backupData.keepMonths) } : null,
       overall,
       managedBy,
       // A banner across the app for admins, only when something needs action now.
@@ -204,7 +247,9 @@ export class BackupsController {
         from: epoch(backupData.oldestBackupAt),
         to: epoch(health.lastArchivedAt) ?? backupOk.finishedAt.toISOString(),
       },
-      offsite: { configured: offsiteConfigured, location: (health.offsiteLocation as string) || null, lastCopiedAt: syncOk?.finishedAt.toISOString() ?? null },
+      offsite: nightly
+        ? { configured: true, location: backupOk?.site ?? backupAny?.site ?? null, lastCopiedAt: backupOk?.finishedAt.toISOString() ?? null }
+        : { configured: offsiteConfigured, location: (health.offsiteLocation as string) || null, lastCopiedAt: syncOk?.finishedAt.toISOString() ?? null },
       lastRestoreTest: testLocal && { at: testLocal.finishedAt.toISOString(), ok: testLocal.status === 'OK', recoverySeconds: num(data(testLocal).recoverySeconds) },
       lastRestore: restore && { at: restore.finishedAt.toISOString(), message: restore.message },
       checks,

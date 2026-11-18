@@ -24,6 +24,15 @@ instead. Saving them rebuilds the app:
   operators yet, this one is created as owner. Its temporary password is in the app logs under
   "FIRST SIGN-IN". Until that owner has signed in, every start logs a new one (an older one stops
   working), so restart the app if you missed it. Sign in, then remove the variable.
+- Lost passwords (no shell to run `reset`): `HMIS_RESET_OPERATOR_EMAIL=<operator email>` or
+  `HMIS_RESET_CLINIC_ADMIN=<admin phone, or a clinic's name if it has one admin>`. Each start then
+  logs a temporary password under "PASSWORD RESET" (two-step sign-in is kept) until that person
+  signs in; with no single match, the log lists who there is. Remove the variable afterwards.
+  Changing variables during a deploy can start two copies of the app, each logging a password:
+  only the last one written works.
+- Backups: `HMIS_BACKUP_RECIPIENT` and a bucket turn on the nightly encrypted backup
+  ([docs/backup](../backup/README.md#app-hosting-aletcloud-the-nightly-backup)). Without it,
+  `HMIS_BACKUPS_MANAGED_BY` names the host's own database backups instead of a warning.
 - `HMIS_LICENCE_PRIVATE_KEY`: the whole key as `keygen` prints it, from `-----BEGIN PRIVATE KEY-----`
   to `-----END PRIVATE KEY-----`, with the `\n`s, without the quotes. See Licences.
 

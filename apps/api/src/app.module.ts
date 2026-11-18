@@ -54,6 +54,7 @@ import { PlatformGuard } from './platform/platform-auth.js';
 import { SubscriptionGuard } from './platform/subscription.guard.js';
 import { PaymentsController } from './platform/payments/payments.controller.js';
 import { SubscriptionScheduler } from './platform/payments/scheduler.js';
+import { NightlyBackupService } from './backups/nightly.js';
 import { LicenceAgent } from './licence/licence.agent.js';
 import { ExportsController } from './exports/exports.controller.js';
 
@@ -122,6 +123,7 @@ if (process.env.NODE_ENV === 'production' && (jwtSecret.length < 32 || WEAK_SECR
     { provide: APP_GUARD, useClass: SubscriptionGuard },
     PlatformGuard,
     SubscriptionScheduler,
+    NightlyBackupService,
     LicenceAgent,
     SyncAgent,
     // Outermost: stamps every reply with the server time (see the interceptor).
