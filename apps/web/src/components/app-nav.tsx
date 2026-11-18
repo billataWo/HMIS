@@ -30,6 +30,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { logout, setLanguage } from "@/app/actions";
+import { ThemeSwitch } from "./theme-switch";
 import { type Lang, tr } from "@/lib/i18n";
 import { useT } from "./lang-provider";
 import type { Me, Role } from "@/lib/api";
@@ -198,6 +199,10 @@ function UserCard({ me, lang }: { me: Me; lang: Lang }) {
     <>
     <OfflineChip />
     <LanguageSwitch lang={lang} />
+    <div className="mb-2 flex items-center justify-between px-1">
+      <span className="text-xs text-slate-500">{tr(lang, "Theme")}</span>
+      <ThemeSwitch label={tr(lang, "Theme")} day={tr(lang, "Day")} dark={tr(lang, "Dark")} />
+    </div>
     <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-2.5 dark:border-slate-800 dark:bg-slate-900">
       <span aria-hidden className="grid size-9 shrink-0 place-items-center rounded-full bg-slate-100 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
         {initials(me.fullName)}

@@ -1,8 +1,21 @@
 @import "tailwindcss";
 
 /* Dark mode is for the screen only: printed pages (receipts, labels, lab reports, registers) are
-   always dark ink on white paper, whatever the computer's setting. */
-@custom-variant dark (@media screen and (prefers-color-scheme: dark));
+   always dark ink on white paper, whatever the computer's setting. The person's choice (Day or
+   Dark: data-theme on <html>, set from the hmis_theme cookie before the first paint) wins; without
+   one, the device's setting decides. */
+@custom-variant dark {
+  @media screen {
+    &:where([data-theme="dark"], [data-theme="dark"] *) {
+      @slot;
+    }
+    @media (prefers-color-scheme: dark) {
+      &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+        @slot;
+      }
+    }
+  }
+}
 
 /*
  * Design tokens. Style: "Accessible & Ethical + Swiss minimal" for clinical software:
@@ -59,8 +72,8 @@
   color-scheme: light;
 }
 
-@media screen and (prefers-color-scheme: dark) {
-  :root {
+:root {
+  @variant dark {
     --canvas: #0b1120;
     --surface: #0f172a;
     --surface-border: #1e293b;
@@ -130,8 +143,8 @@
     white-space: nowrap;
   }
   /* Dark surfaces: slate-500 is too dim for header text (3.2:1); slate-400 reads at 5.7:1 or more. */
-  @media screen and (prefers-color-scheme: dark) {
-    thead th {
+  thead th {
+    @variant dark {
       color: var(--color-slate-400);
     }
   }
@@ -299,8 +312,8 @@
   --l-deep: #082f38;
   --l-shadow: 0 1px 1px rgb(11 18 32 / 0.04), 0 8px 24px -12px rgb(11 18 32 / 0.18);
 }
-@media screen and (prefers-color-scheme: dark) {
-  .land {
+.land {
+  @variant dark {
     --l-canvas: #0a0f17;
     --l-paper: #101826;
     --l-ink: #e8edf3;
@@ -361,8 +374,8 @@
  * Dark mode: muted text in slate-500 is too dim on the dark surfaces (about 3.8:1). Wherever an
  * element does not choose its own dark colour, it reads in slate-400 (5.7-7.3:1).
  */
-@media screen and (prefers-color-scheme: dark) {
-  .text-slate-500:not([class*="dark:text-"]) {
+.text-slate-500:not([class*="dark:text-"]) {
+  @variant dark {
     color: var(--color-slate-400);
   }
 }
@@ -381,8 +394,8 @@
   background-size: 400% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
 }
-@media screen and (prefers-color-scheme: dark) {
-  .shimmer {
+.shimmer {
+  @variant dark {
     background-image: linear-gradient(90deg, var(--color-slate-800) 25%, var(--color-slate-700) 37%, var(--color-slate-800) 63%);
   }
 }

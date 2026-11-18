@@ -6,6 +6,7 @@ import { buttonClass } from "@/components/ui";
 import type { Lang } from "@/lib/i18n";
 import { inLang, type PUBLIC_PAGES } from "@/lib/site-lang";
 import { LangSwitch } from "./lang-switch";
+import { ThemeSwitch } from "./theme-switch";
 
 /*
  * The public site's frame (front page, request, sign-in): the page tokens (`.land`, globals.css),
@@ -65,6 +66,9 @@ function Mark({ small }: { small?: boolean }) {
   );
 }
 
+/** The Day / Dark switch's words on the public site (its own copy, not the app's dictionary). */
+const themeLabels = (lang: Lang) => (lang === "am" ? { label: "ገጽታ", day: "ቀን", dark: "ጨለማ" } : { label: "Theme", day: "Day", dark: "Dark" });
+
 /**
  * A public page in the site's frame. `home`: the front page itself (its section links stay on the
  * page); elsewhere they lead back to it. `cta`: hide the header's "Request HMIS" (on the request
@@ -111,6 +115,7 @@ export function SiteFrame({
             ))}
           </div>
           <div className="ml-auto flex items-center gap-2">
+            <ThemeSwitch look="site" className="hidden sm:flex" {...themeLabels(lang)} />
             <LangSwitch lang={lang} en={inLang("en", page)} am={inLang("am", page)} className="hidden sm:flex" />
             <Link href="/login" className={`flex min-h-10 items-center rounded-lg px-3 text-sm font-medium text-(--l-ink-2) hover:bg-black/5 dark:hover:bg-white/10 ${FOCUS}`}>
               {t.signIn}
@@ -124,7 +129,8 @@ export function SiteFrame({
           </div>
         </nav>
         {/* Phones: the language switch gets its own thin row, so the header never crowds. */}
-        <div className="flex justify-end border-t border-(--l-line) px-4 py-1.5 sm:hidden">
+        <div className="flex justify-end gap-2 border-t border-(--l-line) px-4 py-1.5 sm:hidden">
+          <ThemeSwitch look="site" {...themeLabels(lang)} />
           <LangSwitch lang={lang} en={inLang("en", page)} am={inLang("am", page)} />
         </div>
       </header>

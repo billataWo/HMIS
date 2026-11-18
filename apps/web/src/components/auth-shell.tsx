@@ -1,8 +1,10 @@
 import { HeartPulse, ShieldCheck, Smartphone, Stethoscope } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { HeartbeatBackground } from "@/components/activity-field";
 import { FadeIn } from "@/components/enter";
 import { LangSwitch } from "@/components/lang-switch";
+import { ThemeSwitch } from "@/components/theme-switch";
 import { display } from "@/components/site";
 import { getT } from "@/lib/lang";
 
@@ -27,6 +29,7 @@ export async function AuthShell({ children, here = "/login" }: { children: React
           <div className="land-drift absolute -top-1/3 -left-1/3 size-[60vmax] rounded-full bg-[radial-gradient(circle,rgb(34_211_238/0.22),transparent_60%)]" />
         </div>
         <div aria-hidden className="pointer-events-none absolute inset-0 bg-[linear-gradient(white_1px,transparent_1px),linear-gradient(90deg,white_1px,transparent_1px)] bg-size-[32px_32px] opacity-[0.06]" />
+        <HeartbeatBackground />
         <div className="relative flex items-center gap-3">
           <span className="grid size-10 place-items-center rounded-xl bg-white/10 ring-1 ring-white/20">
             <HeartPulse aria-hidden className="size-5" />
@@ -68,7 +71,8 @@ export async function AuthShell({ children, here = "/login" }: { children: React
               <HeartPulse aria-hidden className="size-5" />
             </span>
             <span className="text-lg font-semibold text-(--l-ink) lg:hidden">HMIS</span>
-            <LangSwitch lang={t.lang} en={here} am={here} className="ml-auto" />
+            <ThemeSwitch look="site" label={t("Theme")} day={t("Day")} dark={t("Dark")} className="ml-auto" />
+            <LangSwitch lang={t.lang} en={here} am={here} />
           </div>
           {children}
           <p className="mt-8 text-center text-xs text-(--l-muted)">

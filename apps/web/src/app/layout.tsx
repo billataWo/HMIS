@@ -22,10 +22,19 @@ export const viewport: Viewport = {
   ],
 };
 
+/**
+ * Applies the Day / Dark choice (components/theme-switch.tsx) before the first paint, so the page
+ * never flashes the other theme. Without a choice, the CSS follows the device's setting.
+ */
+const THEME_SCRIPT = `try{var m=document.cookie.match(/(?:^|; )hmis_theme=(light|dark)/);if(m)document.documentElement.dataset.theme=m[1]}catch(e){}`;
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     // Browser extensions add attributes to <html> before React loads; ignore those (this level only).
     <html lang="en" suppressHydrationWarning className={`${inter.variable} ${ethiopic.variable} ${mono.variable} h-full antialiased`}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className="flex min-h-full flex-col">
         <MotionProvider>{children}</MotionProvider>
       </body>

@@ -240,4 +240,6 @@ export const SHELL: Record<string, string> = {
   "Stock, batches, expiry, deliveries and suppliers": "ክምችት፣ ባቾች፣ የማብቂያ ቀን፣ ገቢ ዕቃዎችና አቅራቢዎች",
   "Invoices, Telebirr, Chapa, receipts, cash closing": "ሂሳቦች፣ ቴሌብር፣ ቻፓ፣ ደረሰኞችና የቀን ገንዘብ መዝጊያ",
   "Revenue, patient counts, stock losses, monthly MoH report": "ገቢ፣ የታካሚ ቁጥር፣ የክምችት ብክነትና ወርሃዊ የጤና ሚኒስቴር ሪፖርት",
+  "Theme": "ገጽታ",
+  "Dark": "ጨለማ",
 };
