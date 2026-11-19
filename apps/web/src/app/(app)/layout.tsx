@@ -123,7 +123,6 @@ async function Announcements() {
           <section
             key={a.id}
             aria-label={t("Message from HMIS")}
-            lang={am && a.titleAm ? "am" : "en"}
             className={`flex gap-3 rounded-xl border px-4 py-3 text-sm ${
               a.tone === "WARNING"
                 ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100"
@@ -132,8 +131,14 @@ async function Announcements() {
           >
             <Icon aria-hidden className="mt-0.5 size-4 shrink-0" />
             <div className="min-w-0 flex-1">
-              <p className="font-semibold">{title}</p>
-              {body && <p className="mt-0.5 whitespace-pre-line opacity-90">{body}</p>}
+              <p lang={am && a.titleAm ? "am" : "en"} className="font-semibold">
+                {title}
+              </p>
+              {body && (
+                <p lang={am && a.bodyAm ? "am" : "en"} className="mt-0.5 whitespace-pre-line opacity-90">
+                  {body}
+                </p>
+              )}
             </div>
             {a.tone === "INFO" && <AnnouncementClose id={a.id} label={t("Close")} />}
           </section>

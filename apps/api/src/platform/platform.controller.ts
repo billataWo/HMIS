@@ -17,7 +17,7 @@ import { onlineMethods, publicUrl } from './payments/checkout.js';
 import { issueLicence, licenceSigningProblem } from '../licence/licence.js';
 import { deleteClinicData } from '../exports/clinic-data.js';
 import { monthlyCents } from './revenue.js';
-import { clinicDay, DAY_PATTERN, dayRange } from '../common/clinic-day.js';
+import { clinicDay, dayRange, isDay } from '../common/clinic-day.js';
 
 const DAY = 86_400_000;
 
@@ -94,7 +94,7 @@ const NoteSchema = z
   .object({
     kind: z.enum(['NOTE', 'CALL', 'PROMISE']).default('NOTE'),
     body: z.string().trim().min(2, 'Write what was said or agreed').max(2000),
-    followUpOn: z.string().regex(DAY_PATTERN).nullable().optional(),
+    followUpOn: z.string().refine(isDay, 'A day like 2026-11-19').nullable().optional(),
   })
   .refine((n) => n.kind !== 'PROMISE' || n.followUpOn, { message: 'A promise to pay needs the day they said they would pay', path: ['followUpOn'] });
 const DeleteSchema = z.object({ confirmName: z.string().trim().min(1).max(200) });
@@ -283,7 +283,7 @@ export class PlatformController {
       },
     });
     if (!t) throw new NotFoundException();
-    const [invoices, payments, request, history, checkouts, lastExport, notes] = await Promise.all([
+    const [invoices, payments, request, history, checkouts, lastExport, latestNotes, openNotes] = await Promise.all([
       this.db.platformInvoice.findMany({ where: { tenantId: id }, orderBy: { issuedAt: 'desc' }, take: 50 }),
       this.db.platformPayment.findMany({ where: { tenantId: id }, orderBy: { createdAt: 'desc' }, take: 50, include: { invoice: { select: { number: true } } } }),
       this.db.clinicRequest.findFirst({ where: { tenantId: id } }),
@@ -291,11 +291,13 @@ export class PlatformController {
       this.db.platformCheckout.findMany({ where: { tenantId: id }, orderBy: { createdAt: 'desc' }, take: 20 }),
       // When the clinic last took its data away (before its records may be deleted).
       this.db.auditLog.findFirst({ where: { tenantId: id, action: 'clinic.exported' }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
-      // Open follow-ups first (soonest first), then the latest notes.
-      this.db.platformNote.findMany({ where: { tenantId: id }, orderBy: [{ createdAt: 'desc' }], take: 100 }),
+      // The latest 100 notes; every open follow-up is added below, however old.
+      this.db.platformNote.findMany({ where: { tenantId: id }, orderBy: { createdAt: 'desc' }, take: 100 }),
+      this.db.platformNote.findMany({ where: { tenantId: id, doneAt: null, followUpOn: { not: null } }, orderBy: { createdAt: 'desc' } }),
     ]);
     const settings = await this.db.platformSetting.findUniqueOrThrow({ where: { id: 1 }, select: { dataRetentionDays: true } });
     const { subscription, users, _count, ...tenant } = t;
+    const notes = [...new Map([...latestNotes, ...openNotes].map((n) => [n.id, n])).values()].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     const opIds = [...history.map((h) => h.operatorId), ...notes.flatMap((n) => [n.operatorId, n.doneById])].filter((x): x is string => !!x);
     const ops = await this.db.platformUser.findMany({ where: { id: { in: [...new Set(opIds)] } }, select: { id: true, fullName: true } });
     const opNames = new Map(ops.map((o) => [o.id, o.fullName]));
@@ -652,8 +654,8 @@ export class PlatformController {
   }
 
   /**
-   * The console's history, newest first: 200 at a time, older ones with `before` (the oldest
-   * entry's time). Filtered by clinic, operator or kind (`area`: the part before the dot, e.g.
+   * The console's history, newest first: 200 at a time, older ones with `before` (the id of the
+   * oldest entry shown, so entries with the same time are not skipped). Filtered by clinic, operator or kind (`area`: the part before the dot, e.g.
    * "payment", "platform" for sign-ins).
    */
   @Get('audit')
@@ -662,9 +664,9 @@ export class PlatformController {
     if (tenantId && uuid.safeParse(tenantId).success) where.tenantId = tenantId;
     if (operatorId && uuid.safeParse(operatorId).success) where.operatorId = operatorId;
     if (area && /^[a-z_]{2,30}$/.test(area)) where.action = { startsWith: `${area}.` };
-    const until = before ? new Date(before) : null;
-    if (until && !Number.isNaN(until.getTime())) where.createdAt = { lt: until };
-    const entries = await this.db.platformAuditLog.findMany({ where, orderBy: { createdAt: 'desc' }, take: 200 });
+    const cursor = before && uuid.safeParse(before).success ? await this.db.platformAuditLog.findUnique({ where: { id: before }, select: { id: true, createdAt: true } }) : null;
+    if (cursor) where.AND = [{ OR: [{ createdAt: { lt: cursor.createdAt } }, { createdAt: cursor.createdAt, id: { lt: cursor.id } }] }];
+    const entries = await this.db.platformAuditLog.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 200 });
     const [ops, tenants] = await Promise.all([
       this.db.platformUser.findMany({ where: { id: { in: entries.map((e) => e.operatorId).filter((x): x is string => !!x) } }, select: { id: true, fullName: true } }),
       this.db.tenant.findMany({ where: { id: { in: [...new Set(entries.map((e) => e.tenantId).filter((x): x is string => !!x))] } }, select: { id: true, name: true } }),

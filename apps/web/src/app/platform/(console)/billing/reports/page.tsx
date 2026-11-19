@@ -218,9 +218,9 @@ async function Register({ searchParams }: { searchParams: Promise<Params> }) {
                 })}
               </tbody>
             </table>
-            {r.invoices.length > SHOWN && (
+            {(r.invoices.length > SHOWN || r.truncated) && (
               <p className="border-t border-slate-200 px-5 py-3 text-sm text-slate-500 dark:border-slate-800">
-                The first {SHOWN} of {r.invoices.length} are shown; the totals above count them all. Download the CSV for every line.
+                The first {SHOWN} of {r.totals.invoices + r.totals.voided} are shown; the totals above count them all. Download the CSV for every line.
               </p>
             )}
           </div>

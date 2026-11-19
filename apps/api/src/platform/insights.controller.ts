@@ -2,7 +2,7 @@ import { Controller, Get, NotFoundException, Param, Query, UseGuards } from '@ne
 import { z } from 'zod';
 import type { PlatformPaymentMethod, PlatformPaymentStatus, Prisma } from '@hmis/db';
 import { Public } from '../auth/auth.decorators.js';
-import { clinicDay, DAY_PATTERN, dayRange } from '../common/clinic-day.js';
+import { clinicDay, dayRange, isDay } from '../common/clinic-day.js';
 import { fromCents, toCents } from '../common/money.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CurrentOperator, type Operator, PlatformGuard } from './platform-auth.js';
@@ -154,7 +154,8 @@ export class PlatformInsightsController {
       }
       if (s.cancelledAt && s.cancelledAt.getTime() > now.getTime() - 90 * DAY) {
         churn.cancelled += 1;
-        churn.lostMrr += s.billingCycle === 'YEARLY' ? toCents(s.plan.priceYearly) / 12 : toCents(s.plan.priceMonthly);
+        // Revenue lost only from clinics that were paying (a paid period), not trials that lapsed.
+        if (s.paidUntil) churn.lostMrr += s.billingCycle === 'YEARLY' ? toCents(s.plan.priceYearly) / 12 : toCents(s.plan.priceMonthly);
       }
       const joined = series.get(monthOf(s.createdAt));
       if (joined) joined.newClinics += 1;
@@ -211,13 +212,15 @@ export class PlatformInsightsController {
   async invoices(@Query('status') status?: string, @Query('q') q?: string) {
     const now = new Date();
     const text = term(q);
-    const where: Prisma.PlatformInvoiceWhereInput = {};
-    if (status === 'OPEN' || status === 'PAID' || status === 'VOID') where.status = status;
-    if (status === 'OVERDUE') Object.assign(where, { status: 'OPEN', dueDate: { lt: lateBefore(now) } });
+    // The search narrows everything, the counts on the status filters included; the status only the list.
+    const searched: Prisma.PlatformInvoiceWhereInput = {};
     if (text) {
       const tenants = await this.db.tenant.findMany({ where: { name: { contains: text, mode: 'insensitive' } }, select: { id: true }, take: 200 });
-      where.OR = [{ number: { contains: text, mode: 'insensitive' } }, { tenantId: { in: tenants.map((t) => t.id) } }];
+      searched.OR = [{ number: { contains: text, mode: 'insensitive' } }, { tenantId: { in: tenants.map((t) => t.id) } }];
     }
+    const overdueWhere: Prisma.PlatformInvoiceWhereInput = { ...searched, status: 'OPEN', dueDate: { lt: lateBefore(now) } };
+    const where: Prisma.PlatformInvoiceWhereInput =
+      status === 'OPEN' || status === 'PAID' || status === 'VOID' ? { ...searched, status } : status === 'OVERDUE' ? overdueWhere : searched;
     const [invoices, groups, overdue] = await Promise.all([
       this.db.platformInvoice.findMany({
         where,
@@ -225,8 +228,8 @@ export class PlatformInsightsController {
         take: 500,
         include: { payments: { where: { status: 'CONFIRMED' }, select: { amount: true } } },
       }),
-      this.db.platformInvoice.groupBy({ by: ['status'], _count: true, _sum: { total: true } }),
-      this.db.platformInvoice.count({ where: { status: 'OPEN', dueDate: { lt: lateBefore(now) } } }),
+      this.db.platformInvoice.groupBy({ by: ['status'], where: searched, _count: true, _sum: { total: true } }),
+      this.db.platformInvoice.count({ where: overdueWhere }),
     ]);
     const open = invoices.filter((i) => i.status === 'OPEN').map((i) => i.tenantId);
     const [names, promises] = await Promise.all([
@@ -286,8 +289,8 @@ export class PlatformInsightsController {
     if (status === 'PENDING' || status === 'CONFIRMED' || status === 'REJECTED') where.status = status as PlatformPaymentStatus;
     if (method && (METHODS as readonly string[]).includes(method)) where.method = method as PlatformPaymentMethod;
     const paidAt: Prisma.DateTimeFilter = {};
-    if (from && DAY_PATTERN.test(from)) paidAt.gte = dayRange(from).start;
-    if (to && DAY_PATTERN.test(to)) paidAt.lt = dayRange(to).end;
+    if (isDay(from)) paidAt.gte = dayRange(from).start;
+    if (isDay(to)) paidAt.lt = dayRange(to).end;
     if (paidAt.gte || paidAt.lt) where.paidAt = paidAt;
     const text = term(q);
     if (text) {

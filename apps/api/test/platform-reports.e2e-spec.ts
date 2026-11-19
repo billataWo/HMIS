@@ -94,6 +94,12 @@ describe('the platform console: accounts and health', () => {
     await api.get(`/platform/clinics/${c.tenant.id}/statement?from=2026-13-45`).set(bearer(token)).expect(400);
     await api.get(`/platform/clinics/${c.tenant.id}/statement?from=${clinicDay()}&to=${dayAgo(5)}`).set(bearer(token)).expect(400);
     await api.get(`/platform/clinics/${randomUUID()}/statement`).set(bearer(token)).expect(404);
+    await api.get(`/platform/clinics/${c.tenant.id}/statement?from=2026-02-30`).set(bearer(token)).expect(400);
+
+    // A past period: the invoice issued after it is still among the unpaid ones today.
+    const past = (await api.get(`/platform/clinics/${c.tenant.id}/statement?from=${dayAgo(60)}&to=${dayAgo(30)}`).set(bearer(token)).expect(200)).body;
+    expect(past.lines).toHaveLength(2);
+    expect(past.open).toEqual([expect.objectContaining({ id: b.id, balance: '700.00' })]);
   });
 
   it('sales by month and the VAT register: voided invoices listed but not counted', async () => {

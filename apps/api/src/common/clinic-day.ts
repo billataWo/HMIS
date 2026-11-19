@@ -15,3 +15,6 @@ export function dayRange(day: string): { start: Date; end: Date } {
 }
 
 export const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A real calendar day as YYYY-MM-DD: not 2026-13-45, and not 2026-02-30 (which Date rolls over). */
+export const isDay = (day: string | undefined | null): day is string => !!day && DAY_PATTERN.test(day) && !Number.isNaN(Date.parse(day)) && clinicDay(dayRange(day).start) === day;

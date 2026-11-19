@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     const batch = await platformApi<HistoryEntry[]>(`/platform/audit?${q}`);
     rows.push(...batch);
     if (batch.length < 200) break;
-    before = batch[batch.length - 1].createdAt;
+    before = batch[batch.length - 1].id; // the API pages by entry, not by time
   }
   return csvResponse(
     `hmis-history-${today()}.csv`,

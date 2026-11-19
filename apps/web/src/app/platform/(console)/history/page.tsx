@@ -114,7 +114,7 @@ async function Content({ searchParams }: { searchParams: Promise<Params> }) {
             </Link>
           )}
           {entries.length === 200 ? (
-            <Link href={`/platform/history${query({ ...filters, before: entries[entries.length - 1].createdAt })}`} className={secondaryButtonClass}>
+            <Link href={`/platform/history${query({ ...filters, before: entries[entries.length - 1].id })}`} className={secondaryButtonClass}>
               Older
             </Link>
           ) : (

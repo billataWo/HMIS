@@ -74,6 +74,10 @@ describe('the platform console: follow-ups on clinics', () => {
     await api.post(`/platform/clinics/${tenant.id}/notes`).set(bearer(billing.token)).send({ kind: 'PROMISE', body: 'Will pay on Friday' }).expect(400);
     await api.post(`/platform/clinics/${tenant.id}/notes`).set(bearer(billing.token)).send({ kind: 'PROMISE', body: 'Will pay', followUpOn: dayFromNow(-2) }).expect(409);
     await api.post(`/platform/clinics/${randomUUID()}/notes`).set(bearer(billing.token)).send({ body: 'Nobody' }).expect(404);
+    // Days that do not exist are refused, not rolled over or a server error.
+    for (const bad of ['2026-13-45', '2027-02-30']) {
+      await api.post(`/platform/clinics/${tenant.id}/notes`).set(bearer(billing.token)).send({ body: 'Call back', followUpOn: bad }).expect(400);
+    }
 
     const call = await api.post(`/platform/clinics/${tenant.id}/notes`).set(bearer(support.token)).send({ kind: 'CALL', body: 'Spoke to the manager about the invoice' }).expect(201);
     const today = await api.post(`/platform/clinics/${tenant.id}/notes`).set(bearer(support.token)).send({ body: 'Call back about the trial', followUpOn: dayFromNow(0) }).expect(201);
@@ -109,6 +113,13 @@ describe('the platform console: follow-ups on clinics', () => {
     expect(after.notes.some((n: { id: string }) => n.id === today.body.id)).toBe(false);
     const done = (await api.get('/platform/follow-ups?scope=done').set(bearer(support.token)).expect(200)).body;
     expect(done.notes.find((n: { id: string }) => n.id === today.body.id)).toMatchObject({ doneBy: support.name });
+
+    // An old open follow-up stays on the clinic page however many notes came after it.
+    const old = await db.platformNote.create({ data: { tenantId: tenant.id, body: 'Old open follow-up', followUpOn: new Date(), createdAt: new Date(Date.now() - 30 * DAY) } });
+    await db.platformNote.createMany({ data: Array.from({ length: 101 }, (_, i) => ({ tenantId: tenant.id, body: `Note ${i}` })) });
+    const crowded = (await api.get(`/platform/clinics/${tenant.id}`).set(bearer(support.token)).expect(200)).body;
+    expect(crowded.notes.some((n: { id: string }) => n.id === old.id)).toBe(true);
+    await db.platformNote.deleteMany({ where: { tenantId: tenant.id, OR: [{ id: old.id }, { body: { startsWith: 'Note ' } }] } });
 
     // On the clinic page, with names; and in the history.
     const detail = (await api.get(`/platform/clinics/${tenant.id}`).set(bearer(support.token)).expect(200)).body;

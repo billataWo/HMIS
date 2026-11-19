@@ -75,6 +75,18 @@ describe('the platform console: numbers, ledgers and search', () => {
     support = await operator('SUPPORT');
   });
 
+  it('metrics: revenue lost counts only clinics that were paying, not lapsed trials', async () => {
+    const before = (await api.get('/platform/metrics').set(bearer(owner)).expect(200)).body;
+    const basic = await db.plan.findUniqueOrThrow({ where: { code: 'BASIC' } });
+    const trial = await makeClinic(`Lapsed trial ${randomUUID().slice(0, 8)}`);
+    await db.subscription.create({ data: { tenantId: trial.id, planId: basic.id, status: 'CANCELLED', trialEndsAt: new Date(Date.now() - 5 * DAY), cancelledAt: new Date() } });
+    const paid = await makeClinic(`Left paying ${randomUUID().slice(0, 8)}`);
+    await db.subscription.create({ data: { tenantId: paid.id, planId: basic.id, status: 'CANCELLED', paidUntil: new Date(Date.now() - 2 * DAY), cancelledAt: new Date() } });
+    const after = (await api.get('/platform/metrics').set(bearer(owner)).expect(200)).body;
+    expect(after.churn.cancelled - before.churn.cancelled).toBe(2);
+    expect(toCents(after.churn.lostMrr) - toCents(before.churn.lostMrr)).toBe(toCents(basic.priceMonthly));
+  });
+
   it('metrics: recurring revenue, money collected this month, and what is owed by how late', async () => {
     const before = (await api.get('/platform/metrics').set(bearer(owner)).expect(200)).body;
     const c = await payingClinic();
@@ -113,6 +125,8 @@ describe('the platform console: numbers, ledgers and search', () => {
     expect(byNumber.invoices.map((i: { id: string }) => i.id)).toEqual([c.invoice.id]);
     const paid = (await api.get(`/platform/invoices?status=PAID&q=${encodeURIComponent(c.name)}`).set(bearer(owner)).expect(200)).body;
     expect(paid.invoices).toHaveLength(0);
+    // The counts on the status filters follow the search: this clinic has one open, overdue invoice.
+    expect(paid.summary).toEqual({ OPEN: { count: 1, total: '1000' }, OVERDUE: { count: 1 } });
   });
 
   it('one invoice, ready to print: the seller (with TIN) from the settings, the clinic, payments and balance', async () => {
@@ -203,8 +217,18 @@ describe('the platform console: numbers, ledgers and search', () => {
     expect(signIns.length).toBeGreaterThan(0);
     expect(signIns.every((e: { action: string }) => e.action.startsWith('platform.'))).toBe(true);
     // Older than the entry: not it.
-    const older = (await api.get(`/platform/audit?tenantId=${c.tenant.id}&before=${encodeURIComponent(entries[0].createdAt)}`).set(bearer(owner)).expect(200)).body;
+    const older = (await api.get(`/platform/audit?tenantId=${c.tenant.id}&before=${entries[0].id}`).set(bearer(owner)).expect(200)).body;
     expect(older).toHaveLength(0);
+
+    // Entries written at the same instant are not skipped from one page to the next.
+    const at = new Date(Date.now() - DAY);
+    await db.platformAuditLog.createMany({
+      data: ['a', 'b', 'c'].map((x) => ({ id: randomUUID(), action: 'note.added', entity: 'PlatformNote', entityId: x, tenantId: c.tenant.id, createdAt: at })),
+    });
+    const all = (await api.get(`/platform/audit?tenantId=${c.tenant.id}&area=note`).set(bearer(owner)).expect(200)).body as { id: string }[];
+    expect(all).toHaveLength(3);
+    const rest = (await api.get(`/platform/audit?tenantId=${c.tenant.id}&area=note&before=${all[0].id}`).set(bearer(owner)).expect(200)).body as { id: string }[];
+    expect(rest.map((e) => e.id)).toEqual(all.slice(1).map((e) => e.id));
     // Nonsense filters are ignored, not errors.
     await api.get('/platform/audit?area=DROP%20TABLE&before=yesterday&tenantId=x').set(bearer(owner)).expect(200);
   });

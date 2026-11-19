@@ -401,6 +401,7 @@ export interface SalesReport {
 
 export interface VatRegister {
   period: { from: string; to: string };
+  truncated: boolean;
   invoices: { id: string; number: string; tenantId: string; issuedAt: string; status: "OPEN" | "PAID" | "VOID"; planName: string; subtotal: string; vat: string; total: string; voidReason: string | null; clinic: string; tin: string | null }[];
   totals: { invoices: number; voided: number; subtotal: string; vat: string; total: string; withoutTin: number };
 }

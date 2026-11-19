@@ -1,7 +1,7 @@
 import { BadRequestException, Controller, Get, NotFoundException, Param, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { Public } from '../auth/auth.decorators.js';
-import { clinicDay, DAY_PATTERN, dayRange } from '../common/clinic-day.js';
+import { clinicDay, dayRange, isDay } from '../common/clinic-day.js';
 import { fromCents, toCents } from '../common/money.js';
 import { licenceSigningProblem } from '../licence/licence.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -14,6 +14,8 @@ import { subscriptionState } from './subscription-state.js';
 const DAY = 86_400_000;
 const uuid = z.uuid();
 const money = (cents: number) => fromCents(Math.round(cents));
+/** Invoices listed in the VAT register at most (the totals always cover the whole period). */
+const REGISTER_ROWS = 20_000;
 /** A clinic server not heard from for a day is offline. */
 const OFFLINE_AFTER_MS = DAY;
 
@@ -21,7 +23,7 @@ const OFFLINE_AFTER_MS = DAY;
 function period(from: string | undefined, to: string | undefined, fallbackFrom: string) {
   const f = from || fallbackFrom;
   const t = to || clinicDay();
-  if (!DAY_PATTERN.test(f) || !DAY_PATTERN.test(t) || Number.isNaN(Date.parse(f)) || Number.isNaN(Date.parse(t))) throw new BadRequestException('Days look like 2026-11-19');
+  if (!isDay(f) || !isDay(t)) throw new BadRequestException('Days look like 2026-11-19');
   if (f > t) throw new BadRequestException('"From" is after "to"');
   if (Date.parse(t) - Date.parse(f) > 10 * 366 * DAY) throw new BadRequestException('Choose at most ten years');
   return { from: f, to: t, start: dayRange(f).start, end: dayRange(t).end };
@@ -54,7 +56,7 @@ export class PlatformReportsController {
     const tenant = await this.db.tenant.findUnique({ where: { id }, select: { id: true, name: true, nameAm: true, address: true, phone: true, tin: true, createdAt: true } });
     if (!tenant) throw new NotFoundException();
     const p = period(from, to, clinicDay(tenant.createdAt));
-    const [invoices, payments, settings] = await Promise.all([
+    const [invoices, payments, settings, unpaid] = await Promise.all([
       this.db.platformInvoice.findMany({
         where: { tenantId: id, status: { not: 'VOID' }, issuedAt: { lt: p.end } },
         orderBy: { issuedAt: 'asc' },
@@ -66,6 +68,12 @@ export class PlatformReportsController {
         include: { invoice: { select: { number: true } } },
       }),
       this.db.platformSetting.findUniqueOrThrow({ where: { id: 1 }, select: { bankDetails: true, supportPhone: true, supportEmail: true, companyName: true, companyTin: true, companyAddress: true } }),
+      // What is unpaid today, whatever period is shown (an invoice issued after it included).
+      this.db.platformInvoice.findMany({
+        where: { tenantId: id, status: 'OPEN' },
+        orderBy: { dueDate: 'asc' },
+        include: { payments: { where: { status: 'CONFIRMED' }, select: { amount: true } } },
+      }),
     ]);
     const opening =
       invoices.filter((i) => i.issuedAt < p.start).reduce((sum, i) => sum + toCents(i.total), 0) -
@@ -109,10 +117,7 @@ export class PlatformReportsController {
       }),
       totals: { invoiced: money(lines.reduce((s, l) => s + l.debit, 0)), paid: money(lines.reduce((s, l) => s + l.credit, 0)) },
       closing: money(balance),
-      // What is still unpaid today, whatever the period: the invoices to pay.
-      open: invoices
-        .filter((i) => i.status === 'OPEN')
-        .map((i) => ({ id: i.id, number: i.number, dueDate: i.dueDate, total: i.total, balance: money(Math.max(0, toCents(i.total) - i.payments.reduce((s, x) => s + toCents(x.amount), 0))), daysLate: daysLate(i.dueDate, now) })),
+      open: unpaid.map((i) => ({ id: i.id, number: i.number, dueDate: i.dueDate, total: i.total, balance: money(Math.max(0, toCents(i.total) - i.payments.reduce((s, x) => s + toCents(x.amount), 0))), daysLate: daysLate(i.dueDate, now) })),
     };
   }
 
@@ -159,20 +164,29 @@ export class PlatformReportsController {
   @Get('reports/vat-register')
   async vatRegister(@Query('from') from?: string, @Query('to') to?: string) {
     const p = period(from, to, `${clinicDay().slice(0, 7)}-01`);
-    const invoices = await this.db.platformInvoice.findMany({
-      where: { issuedAt: { gte: p.start, lt: p.end } },
-      orderBy: [{ issuedAt: 'asc' }, { number: 'asc' }],
-      take: 5000,
-      select: { id: true, number: true, tenantId: true, issuedAt: true, status: true, planName: true, subtotal: true, vat: true, total: true, voidReason: true },
-    });
+    const inPeriod = { issuedAt: { gte: p.start, lt: p.end } };
+    const noTin = (await this.db.tenant.findMany({ where: { OR: [{ tin: null }, { tin: '' }] }, select: { id: true } })).map((t) => t.id);
+    const [invoices, sums, voided, withoutTin] = await Promise.all([
+      this.db.platformInvoice.findMany({
+        where: inPeriod,
+        orderBy: [{ issuedAt: 'asc' }, { number: 'asc' }],
+        take: REGISTER_ROWS,
+        select: { id: true, number: true, tenantId: true, issuedAt: true, status: true, planName: true, subtotal: true, vat: true, total: true, voidReason: true },
+      }),
+      // The totals over the whole period, however many rows are listed.
+      this.db.platformInvoice.aggregate({ where: { ...inPeriod, status: { not: 'VOID' } }, _count: true, _sum: { subtotal: true, vat: true, total: true } }),
+      this.db.platformInvoice.count({ where: { ...inPeriod, status: 'VOID' } }),
+      this.db.platformInvoice.count({ where: { ...inPeriod, status: { not: 'VOID' }, tenantId: { in: noTin } } }),
+    ]);
     const tenants = await this.db.tenant.findMany({ where: { id: { in: [...new Set(invoices.map((i) => i.tenantId))] } }, select: { id: true, name: true, tin: true } });
     const clinic = new Map(tenants.map((t) => [t.id, t]));
-    const counted = invoices.filter((i) => i.status !== 'VOID');
-    const sum = (k: 'subtotal' | 'vat' | 'total') => money(counted.reduce((s, i) => s + toCents(i[k]), 0));
+    const sum = (v: { toString(): string } | null) => money(v ? toCents(v) : 0);
     return {
       period: { from: p.from, to: p.to },
-      invoices: invoices.map((i) => ({ ...i, clinic: clinic.get(i.tenantId)?.name ?? '', tin: clinic.get(i.tenantId)?.tin ?? null })),
-      totals: { invoices: counted.length, voided: invoices.length - counted.length, subtotal: sum('subtotal'), vat: sum('vat'), total: sum('total'), withoutTin: counted.filter((i) => !clinic.get(i.tenantId)?.tin).length },
+      invoices: invoices.map((i) => ({ ...i, clinic: clinic.get(i.tenantId)?.name ?? '', tin: clinic.get(i.tenantId)?.tin || null })),
+      // More invoices than listed: the totals still cover them all.
+      truncated: sums._count + voided > invoices.length,
+      totals: { invoices: sums._count, voided, subtotal: sum(sums._sum.subtotal), vat: sum(sums._sum.vat), total: sum(sums._sum.total), withoutTin },
     };
   }
 
