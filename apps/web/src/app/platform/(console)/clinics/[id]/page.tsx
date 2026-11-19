@@ -1,9 +1,9 @@
 import { connection } from "next/server";
-import { ArrowRight, ChevronRight, Phone, Printer, Server } from "lucide-react";
+import { ArrowRight, ChevronRight, Phone, Printer, ScrollText, Server } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { ColumnChart } from "@/components/charts";
-import { Badge, Card, EmptyState, Notice, Skeleton } from "@/components/ui";
+import { Badge, Card, EmptyState, Notice, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { clinicToday, etb, formatAgo } from "@/lib/format";
 import { type ClinicDetail, type ClinicUsage, DEPLOYMENT_LABEL, METHOD_LABEL, type Plan, platformApi } from "@/lib/platform";
 import { NoteForm } from "../../../followup-forms";
@@ -233,7 +233,17 @@ async function Content({ params }: { params: Promise<{ id: string }> }) {
       </div>
 
       {s && (
-        <Card title="Invoices" actions={<IssueInvoice tenantId={c.tenant.id} />}>
+        <Card
+          title="Invoices"
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <Link href={`/platform/statement/${c.tenant.id}`} className={`${secondaryButtonClass} gap-2`}>
+                <ScrollText aria-hidden className="size-4" /> Statement
+              </Link>
+              <IssueInvoice tenantId={c.tenant.id} />
+            </div>
+          }
+        >
           {c.invoices.length ? (
             <ul className="-my-4 divide-y divide-slate-100 dark:divide-slate-800">
               {c.invoices.map((i) => (

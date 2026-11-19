@@ -39,12 +39,16 @@ export class PlatformInsightsController {
   /** For the menu's badges: requests to decide, reported payments to confirm, follow-ups due. */
   @Get('counts')
   async counts() {
-    const [pendingRequests, pendingPayments, followUpsDue] = await Promise.all([
+    const [pendingRequests, pendingPayments, followUpsDue, serversOffline] = await Promise.all([
       this.db.clinicRequest.count({ where: { status: 'PENDING' } }),
       this.db.platformPayment.count({ where: { status: 'PENDING' } }),
       this.db.platformNote.count({ where: { doneAt: null, followUpOn: { lt: dayRange(clinicDay()).end } } }),
+      // Clinic servers not heard from for a day, or set up a day ago and never connected (as on the Health page).
+      this.db.syncClient.count({
+        where: { revokedAt: null, OR: [{ lastSeenAt: { lt: new Date(Date.now() - DAY) } }, { lastSeenAt: null, createdAt: { lt: new Date(Date.now() - DAY) } }] },
+      }),
     ]);
-    return { pendingRequests, pendingPayments, followUpsDue };
+    return { pendingRequests, pendingPayments, followUpsDue, serversOffline };
   }
 
   /**

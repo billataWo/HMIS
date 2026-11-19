@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, CreditCard, History, Inbox, LayoutDashboard, Megaphone, Mic, PhoneCall, Receipt, Settings, UserCog, Users } from "lucide-react";
+import { Activity, Building2, CreditCard, History, Inbox, LayoutDashboard, Megaphone, Mic, PhoneCall, Receipt, Settings, UserCog, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -11,6 +11,7 @@ const LINKS = [
   { href: "/platform/follow-ups", label: "Follow-ups", icon: PhoneCall, count: "followUps" },
   { href: "/platform/billing", label: "Billing", icon: Receipt, count: "payments" },
   { href: "/platform/announcements", label: "Announcements", icon: Megaphone },
+  { href: "/platform/health", label: "Health", icon: Activity, count: "servers" },
   { href: "/platform/plans", label: "Plans", icon: CreditCard },
   { href: "/platform/operators", label: "Operators", icon: Users, owner: true },
   { href: "/platform/voice", label: "Voice", icon: Mic },
@@ -24,7 +25,7 @@ const isCurrent = (path: string, href: string) => (href === "/platform" ? path =
  * The console's sections: a sidebar on wide screens, a row of tabs that scrolls sideways on
  * phones. The current section is marked (aria-current), and Requests shows how many are waiting.
  */
-export function ConsoleNav({ owner, counts, ready }: { owner: boolean; counts: { requests: number; payments: number; followUps: number }; ready: boolean }) {
+export function ConsoleNav({ owner, counts, ready }: { owner: boolean; counts: { requests: number; payments: number; followUps: number; servers: number }; ready: boolean }) {
   const path = usePathname();
   const links = ready ? LINKS.filter((l) => !("owner" in l) || owner) : [];
   const account = { href: "/platform/account", label: "Your account", icon: UserCog };
@@ -48,7 +49,7 @@ export function ConsoleNav({ owner, counts, ready }: { owner: boolean; counts: {
         {count > 0 && (
           <span className="ml-auto rounded-full bg-amber-700 px-1.5 py-0.5 text-[11px] leading-none font-semibold text-white tabular-nums">
             {count > 999 ? "999+" : count}
-            <span className="sr-only">{l.count === "payments" ? " to confirm" : l.count === "followUps" ? " due" : " waiting"}</span>
+            <span className="sr-only">{l.count === "payments" ? " to confirm" : l.count === "followUps" ? " due" : l.count === "servers" ? " servers offline" : " waiting"}</span>
           </span>
         )}
       </Link>

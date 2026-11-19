@@ -3,6 +3,7 @@ import Link from "next/link";
 const TABS = [
   { href: "/platform/billing", label: "Invoices" },
   { href: "/platform/billing/payments", label: "Payments" },
+  { href: "/platform/billing/reports", label: "Reports" },
 ] as const;
 
 /** Invoices and payments: two views of the same money. */

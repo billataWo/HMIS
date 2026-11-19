@@ -10,8 +10,8 @@ import { ConsoleSearch } from "./search";
 const loadFrame = cache(async () => {
   const me = await platformApi<OperatorMe>("/platform/auth/me");
   const ready = !me.mustChangePassword && me.twoStep.enabled;
-  const counts = ready ? await platformApi<ConsoleCounts>("/platform/counts") : { pendingRequests: 0, pendingPayments: 0, followUpsDue: 0 };
-  return { me, ready, counts: { requests: counts.pendingRequests, payments: counts.pendingPayments, followUps: counts.followUpsDue } };
+  const counts = ready ? await platformApi<ConsoleCounts>("/platform/counts") : { pendingRequests: 0, pendingPayments: 0, followUpsDue: 0, serversOffline: 0 };
+  return { me, ready, counts: { requests: counts.pendingRequests, payments: counts.pendingPayments, followUps: counts.followUpsDue, servers: counts.serversOffline } };
 });
 
 async function Operator() {

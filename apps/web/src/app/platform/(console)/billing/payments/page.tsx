@@ -5,24 +5,11 @@ import { Badge, EmptyState, Input, inputClass, PageHeader, secondaryButtonClass,
 import { clinicToday, etb } from "@/lib/format";
 import { METHOD_LABEL, type PaymentLedger, platformApi } from "@/lib/platform";
 import { PaymentReview } from "../../../forms";
-import { date, PAYMENT_STATUS, tdClass, thClass } from "../../bits";
+import { date, PAYMENT_STATUS, ranges, tdClass, thClass } from "../../bits";
 import { BillingTabs } from "../tabs";
 
 type Params = { status?: string; method?: string; from?: string; to?: string; q?: string };
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-
-/** This month, last month and this year, as from–to days in Addis Ababa. */
-function ranges(today: string) {
-  const [y, m] = today.split("-").map(Number);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const lastDay = (yy: number, mm: number) => new Date(Date.UTC(yy, mm, 0)).getUTCDate();
-  const prev = m === 1 ? { y: y - 1, m: 12 } : { y, m: m - 1 };
-  return [
-    { label: "This month", from: `${y}-${pad(m)}-01`, to: today },
-    { label: "Last month", from: `${prev.y}-${pad(prev.m)}-01`, to: `${prev.y}-${pad(prev.m)}-${pad(lastDay(prev.y, prev.m))}` },
-    { label: "This year", from: `${y}-01-01`, to: today },
-  ];
-}
 
 async function List({ searchParams }: { searchParams: Promise<Params> }) {
   const raw = await searchParams;

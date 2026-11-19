@@ -337,6 +337,7 @@ export interface ConsoleCounts {
   pendingRequests: number;
   pendingPayments: number;
   followUpsDue: number;
+  serversOffline: number;
 }
 
 export interface InvoiceLedger {
@@ -378,3 +379,42 @@ export const METHOD_LABEL: Record<string, string> = {
   CASH: "Cash",
   OTHER: "Other",
 };
+
+/** A clinic's statement of account: opening balance, each invoice and payment, closing balance. */
+export interface Statement {
+  clinic: { id: string; name: string; nameAm: string | null; address: string | null; phone: string | null; tin: string | null; createdAt: string };
+  issuer: Omit<InvoiceDocument["issuer"], "vatPercent">;
+  period: { from: string; to: string };
+  opening: string;
+  lines: { at: string; kind: "INVOICE" | "PAYMENT"; id: string; reference: string; description: string; method?: string; debit: string; credit: string; balance: string }[];
+  totals: { invoiced: string; paid: string };
+  closing: string;
+  open: { id: string; number: string; dueDate: string; total: string; balance: string; daysLate: number }[];
+}
+
+export interface SalesReport {
+  year: number;
+  years: number[];
+  months: { month: string; invoices: number; voided: number; subtotal: string; vat: string; total: string; collected: string }[];
+  totals: { invoices: number; voided: number; subtotal: string; vat: string; total: string; collected: string };
+}
+
+export interface VatRegister {
+  period: { from: string; to: string };
+  invoices: { id: string; number: string; tenantId: string; issuedAt: string; status: "OPEN" | "PAID" | "VOID"; planName: string; subtotal: string; vat: string; total: string; voidReason: string | null; clinic: string; tin: string | null }[];
+  totals: { invoices: number; voided: number; subtotal: string; vat: string; total: string; withoutTin: number };
+}
+
+export type ServerStatus = "ok" | "error" | "offline" | "never" | "new";
+
+export interface Health {
+  cloudVersion: string;
+  servers: { id: string; tenantId: string; clinic: string; name: string; lastSeenAt: string | null; lastError: string | null; edgeVersion: string | null; createdAt: string; status: ServerStatus; behind: boolean }[];
+  checkouts: {
+    byProvider: { provider: "CHAPA" | "TELEBIRR"; paid: number; failed: number; expired: number; waiting: number }[];
+    failed: { id: string; reference: string; provider: string; tenantId: string; clinic: string; amount: string; createdAt: string; lastError: string | null }[];
+    unapplied: number;
+  };
+  licences: { tenantId: string; clinic: string; deployment: Deployment; plan: string; state: SubscriptionState; endsAt: string; daysLeft: number }[];
+  setup: { key: string; ok: boolean; label: string; fix: string }[];
+}
