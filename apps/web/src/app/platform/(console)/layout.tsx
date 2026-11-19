@@ -1,10 +1,13 @@
 import { LogOut, ShieldCheck } from "lucide-react";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { cache, Suspense, type ReactNode } from "react";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { type ConsoleCounts, platformApi, type OperatorMe } from "@/lib/platform";
 import { ConsoleNav } from "./nav";
 import { ConsoleSearch } from "./search";
+
+export const metadata: Metadata = { title: { absolute: "HMIS platform", template: "%s · HMIS platform" } };
 
 /** Once per request, however many parts of the frame need it. */
 const loadFrame = cache(async () => {
@@ -40,9 +43,9 @@ async function Search() {
   return ready ? <ConsoleSearch /> : null;
 }
 
-async function Nav() {
+async function Nav({ variant }: { variant: "bar" | "side" }) {
   const { me, ready, counts } = await loadFrame();
-  return <ConsoleNav owner={me.role === "OWNER"} counts={counts} ready={ready} />;
+  return <ConsoleNav owner={me.role === "OWNER"} counts={counts} ready={ready} variant={variant} />;
 }
 
 /** The platform console: HMIS staff only, separate from every clinic's screens. */
@@ -87,8 +90,8 @@ export default function ConsoleLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
       <div className="lg:hidden">
-        <Suspense fallback={<div className="h-14 border-b border-slate-200 dark:border-slate-800" />}>
-          <Nav />
+        <Suspense fallback={<div className="h-[57px] border-b border-slate-200 dark:border-slate-800" />}>
+          <Nav variant="bar" />
         </Suspense>
         {/* Phones: the search box under the tabs. */}
         <div className="border-b border-slate-200 bg-white px-4 py-2 md:hidden dark:border-slate-800 dark:bg-slate-950">
@@ -101,7 +104,7 @@ export default function ConsoleLayout({ children }: { children: ReactNode }) {
         <aside className="hidden lg:block">
           <div className="sticky top-22">
             <Suspense fallback={<div className="w-56" />}>
-              <Nav />
+              <Nav variant="side" />
             </Suspense>
           </div>
         </aside>

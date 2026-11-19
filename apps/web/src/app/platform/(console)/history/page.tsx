@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { Download, X } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -5,6 +6,8 @@ import { Card, EmptyState, inputClass, PageHeader, secondaryButtonClass, Skeleto
 import { CLINIC_TZ } from "@/lib/format";
 import { type HistoryEntry, type OperatorMe, type OperatorRow, platformApi } from "@/lib/platform";
 import { ActivityList, AREAS } from "../activity";
+
+export const metadata: Metadata = { title: "History" };
 
 type Params = { area?: string; operatorId?: string; tenantId?: string; before?: string };
 

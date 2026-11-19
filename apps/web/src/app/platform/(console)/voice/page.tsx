@@ -1,7 +1,10 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { PageHeader, Skeleton } from "@/components/ui";
 import { type OperatorMe, platformApi } from "@/lib/platform";
 import { VoiceStudio } from "./studio";
+
+export const metadata: Metadata = { title: "Voice" };
 
 async function Content() {
   const me = await platformApi<OperatorMe>("/platform/auth/me");

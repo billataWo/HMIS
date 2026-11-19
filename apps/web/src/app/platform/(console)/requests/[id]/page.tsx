@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { ChevronRight, Mail, Phone, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
@@ -5,6 +6,8 @@ import { Badge, Card, Notice, Skeleton } from "@/components/ui";
 import { type ClinicRequest, DEPLOYMENT_LABEL, type Plan, platformApi, type PlatformSettings } from "@/lib/platform";
 import { ApproveForm, RejectRequest } from "../../../forms";
 import { dateTime } from "../../bits";
+
+export const metadata: Metadata = { title: "Request" };
 
 const STATUS = { PENDING: { label: "Waiting for a decision", tone: "warning" }, APPROVED: { label: "Approved", tone: "success" }, REJECTED: { label: "Rejected", tone: "neutral" } } as const;
 

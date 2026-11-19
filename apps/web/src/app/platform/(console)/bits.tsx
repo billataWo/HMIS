@@ -1,3 +1,5 @@
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import Link from "next/link";
 import { Badge, type BadgeTone } from "@/components/ui";
 import type { SubscriptionState } from "@/lib/api";
 import { CLINIC_TZ } from "@/lib/format";
@@ -50,6 +52,8 @@ export const monthName = (ym: string, withYear = false) => `${MONTHS[Number(ym.s
 export function change(now: number, before: number) {
   if (!before) return null;
   const pct = Math.round(((now - before) / before) * 100);
+  // A tenfold jump and more reads better as "12×" than "+1100%".
+  if (pct >= 1000) return { pct, text: `${Math.round(now / before)}×` };
   return { pct, text: `${pct > 0 ? "+" : pct < 0 ? "−" : "±"}${Math.abs(pct)}%` };
 }
 
@@ -64,4 +68,48 @@ export function ranges(today: string) {
     { label: "Last month", from: `${prev.y}-${pad(prev.m)}-01`, to: `${prev.y}-${pad(prev.m)}-${pad(lastDay(prev.y, prev.m))}` },
     { label: "This year", from: `${y}-01-01`, to: today },
   ];
+}
+
+/** Rows per page in the console's long lists. */
+export const PAGE_SIZE = 50;
+
+/** The page number from the address (1 when missing or out of range). */
+export const pageOf = (raw: string | undefined, total: number) => Math.min(Math.max(1, Math.floor(Number(raw)) || 1), Math.max(1, Math.ceil(total / PAGE_SIZE)));
+
+/** "51–100 of 500" with Previous and Next. Nothing when everything fits on one page. */
+export function Pager({ page, total, href }: { page: number; total: number; href: (page: number) => string }) {
+  const pages = Math.ceil(total / PAGE_SIZE);
+  if (pages <= 1) return null;
+  const link = "inline-flex min-h-10 items-center gap-1 rounded-lg px-3 text-sm font-medium ring-1 ring-slate-200 hover:bg-slate-50 dark:ring-slate-700 dark:hover:bg-slate-800";
+  const off = "inline-flex min-h-10 items-center gap-1 rounded-lg px-3 text-sm font-medium text-slate-300 ring-1 ring-slate-100 dark:text-slate-600 dark:ring-slate-800";
+  return (
+    <nav aria-label="Pages" className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+      <p className="text-slate-500 tabular-nums">
+        {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
+      </p>
+      <div className="flex gap-2">
+        {page > 1 ? (
+          <Link href={href(page - 1)} className={link} rel="prev">
+            <ChevronLeft aria-hidden className="size-4" /> Previous
+          </Link>
+        ) : (
+          <span aria-disabled="true" className={off}>
+            <ChevronLeft aria-hidden className="size-4" /> Previous
+          </span>
+        )}
+        <span className="inline-flex min-h-10 items-center px-1 text-slate-500 tabular-nums">
+          Page {page} of {pages}
+        </span>
+        {page < pages ? (
+          <Link href={href(page + 1)} className={link} rel="next">
+            Next <ChevronRight aria-hidden className="size-4" />
+          </Link>
+        ) : (
+          <span aria-disabled="true" className={off}>
+            Next <ChevronRight aria-hidden className="size-4" />
+          </span>
+        )}
+      </div>
+    </nav>
+  );
 }

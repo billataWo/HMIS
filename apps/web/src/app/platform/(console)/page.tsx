@@ -1,13 +1,18 @@
+import type { Metadata } from "next";
 import { AlertTriangle, ArrowRight, Banknote, Building2, Check, CircleDashed, FileText, Inbox, Receipt, TrendingUp, Wallet } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Suspense } from "react";
 import { BarList, ColumnChart } from "@/components/charts";
 import { Card, EmptyState, PageHeader, Skeleton } from "@/components/ui";
-import { etb } from "@/lib/format";
+import { connection } from "next/server";
+import { CLINIC_TZ, etb } from "@/lib/format";
 import { type ConsoleCounts, type HistoryEntry, METHOD_LABEL, type Metrics, type OperatorMe, type OperatorRow, type Overview, platformApi, type PlatformSettings } from "@/lib/platform";
 import { PaymentReview } from "../forms";
 import { birr, change, date, monthName, StateBadge } from "./bits";
+
+// The layout's title template does not reach a page in its own folder: the full title here.
+export const metadata: Metadata = { title: { absolute: "Overview · HMIS platform" } };
 
 function Stat({ href, label, value, hint, icon: Icon, tone = "default" }: { href: string; label: string; value: ReactNode; hint?: ReactNode; icon: typeof Inbox; tone?: "default" | "attention" }) {
   return (
@@ -82,7 +87,7 @@ async function SetupChecklist() {
       }
     >
       <ol className="-my-2 divide-y divide-slate-100 dark:divide-slate-800">
-        {steps.map((s) => (
+        {steps.filter((s) => !s.done).map((s) => (
           <li key={s.title}>
             <Link href={s.href} className="group flex items-start gap-3 rounded-lg py-3 hover:bg-slate-50 dark:hover:bg-slate-900/60">
               {s.done ? (
@@ -102,6 +107,18 @@ async function SetupChecklist() {
           </li>
         ))}
       </ol>
+      {done > 0 && (
+        <p className="mt-3 flex items-start gap-2 border-t border-slate-100 pt-3 text-sm text-slate-500 dark:border-slate-800">
+          <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+          <span>
+            <span className="font-medium text-slate-700 dark:text-slate-200">Done: </span>
+            {steps
+              .filter((s) => s.done)
+              .map((s) => s.title)
+              .join(" · ")}
+          </span>
+        </p>
+      )}
       {front && (
         <p className="mt-4 rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-600 dark:bg-slate-900 dark:text-slate-300">
           The front page clinics see:{" "}
@@ -153,7 +170,7 @@ async function Content() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           href="/platform/clinics?sort=mrr"
-          label="Monthly recurring revenue"
+          label="Monthly revenue"
           value={birr(m.mrr)}
           hint={`${birr(m.arr)} a year · ${m.paying} paying clinic${m.paying === 1 ? "" : "s"}`}
           icon={TrendingUp}
@@ -377,10 +394,25 @@ async function Content() {
   );
 }
 
+/** "Good morning, Selam" and today's date in Addis Ababa. */
+async function Greeting() {
+  const me = await platformApi<OperatorMe>("/platform/auth/me");
+  await connection();
+  const now = new Date();
+  const hour = Number(now.toLocaleString("en-GB", { hour: "numeric", hourCycle: "h23", timeZone: CLINIC_TZ }));
+  const part = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const today = now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: CLINIC_TZ });
+  return (
+    <PageHeader title={`${part}, ${me.fullName.split(/\s+/)[0]}`} subtitle={`${today}. What needs you today, and the business at a glance.`} />
+  );
+}
+
 export default function OverviewPage() {
   return (
     <>
-      <PageHeader title="Overview" subtitle="HMIS as a service: the business at a glance, and what needs you today." />
+      <Suspense fallback={<PageHeader title="Overview" subtitle="What needs you today, and the business at a glance." />}>
+        <Greeting />
+      </Suspense>
       <Suspense
         fallback={
           <div className="space-y-6">

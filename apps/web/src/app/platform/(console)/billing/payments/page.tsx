@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { Banknote, Download } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -7,6 +8,8 @@ import { METHOD_LABEL, type PaymentLedger, platformApi } from "@/lib/platform";
 import { PaymentReview } from "../../../forms";
 import { date, PAYMENT_STATUS, ranges, tdClass, thClass } from "../../bits";
 import { BillingTabs } from "../tabs";
+
+export const metadata: Metadata = { title: "Payments" };
 
 type Params = { status?: string; method?: string; from?: string; to?: string; q?: string };
 const DAY = /^\d{4}-\d{2}-\d{2}$/;

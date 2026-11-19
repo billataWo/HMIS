@@ -118,15 +118,18 @@ export function Card({
   title,
   description,
   actions,
+  id,
 }: {
   children: ReactNode;
   className?: string;
+  /** For jump links: the card scrolls into view below a sticky header. */
+  id?: string;
   title?: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
 }) {
   return (
-    <section className={`surface ${className}`}>
+    <section id={id} className={`surface ${id ? "scroll-mt-32" : ""} ${className}`}>
       {(title || actions) && (
         <header className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
           <div>

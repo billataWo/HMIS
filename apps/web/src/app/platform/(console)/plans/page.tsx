@@ -1,7 +1,10 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Card, Notice, PageHeader, Skeleton } from "@/components/ui";
 import { type OperatorMe, type Plan, platformApi } from "@/lib/platform";
 import { PlanForm } from "../../forms";
+
+export const metadata: Metadata = { title: "Plans" };
 
 async function Content() {
   const [{ plans, features }, me] = await Promise.all([platformApi<{ plans: Plan[]; features: Record<string, string> }>("/platform/plans"), platformApi<OperatorMe>("/platform/auth/me")]);

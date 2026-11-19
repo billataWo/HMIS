@@ -1,7 +1,10 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Card, Notice, PageHeader, Skeleton } from "@/components/ui";
 import { type OperatorMe, platformApi } from "@/lib/platform";
 import { PasswordForm, TwoStepSetup } from "../../forms";
+
+export const metadata: Metadata = { title: "Your account" };
 
 async function Content() {
   const me = await platformApi<OperatorMe>("/platform/auth/me");

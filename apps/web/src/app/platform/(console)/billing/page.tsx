@@ -1,11 +1,14 @@
+import type { Metadata } from "next";
 import { ChevronRight, Download, FileText, Printer, Search } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { Badge, EmptyState, Input, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { etb } from "@/lib/format";
 import { type InvoiceLedger, type LedgerInvoice, type Metrics, platformApi } from "@/lib/platform";
-import { AGE_BUCKETS, date, INVOICE_STATUS, thClass } from "../bits";
+import { AGE_BUCKETS, date, INVOICE_STATUS, Pager, PAGE_SIZE, pageOf, thClass } from "../bits";
 import { BillingTabs } from "./tabs";
+
+export const metadata: Metadata = { title: "Invoices" };
 
 const FILTERS = [
   { value: "ALL", label: "All" },
@@ -67,7 +70,7 @@ function PromiseToPay({ p }: { p: LedgerInvoice["promise"] }) {
   );
 }
 
-async function List({ searchParams }: { searchParams: Promise<{ status?: string; q?: string }> }) {
+async function List({ searchParams }: { searchParams: Promise<{ status?: string; q?: string; page?: string }> }) {
   const params = await searchParams;
   const status: Filter = FILTERS.some((f) => f.value === params.status) ? (params.status as Filter) : "ALL";
   const q = params.q?.trim() ?? "";
@@ -76,6 +79,9 @@ async function List({ searchParams }: { searchParams: Promise<{ status?: string;
   const count = (f: Filter) =>
     f === "ALL" ? (summary.OPEN?.count ?? 0) + (summary.PAID?.count ?? 0) + (summary.VOID?.count ?? 0) : f === "OVERDUE" ? summary.OVERDUE.count : (summary[f]?.count ?? 0);
   const href = (f: Filter) => `/platform/billing?${new URLSearchParams({ ...(f !== "ALL" && { status: f }), ...(q && { q }) })}`;
+  const page = pageOf(params.page, invoices.length);
+  const shown = invoices.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const pageHref = (p: number) => `/platform/billing?${new URLSearchParams({ ...(status !== "ALL" && { status }), ...(q && { q }), ...(p > 1 && { page: String(p) }) })}`;
   const totals = invoices.reduce((t, i) => ({ total: t.total + Number(i.total), balance: t.balance + Number(i.balance) }), { total: 0, balance: 0 });
 
   return (
@@ -125,7 +131,7 @@ async function List({ searchParams }: { searchParams: Promise<{ status?: string;
       ) : (
         <>
           <ul className="space-y-3 md:hidden">
-            {invoices.map((i) => (
+            {shown.map((i) => (
               <li key={i.id} className="surface p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -167,7 +173,7 @@ async function List({ searchParams }: { searchParams: Promise<{ status?: string;
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {invoices.map((i) => (
+                {shown.map((i) => (
                   <tr key={i.id} className="relative transition-colors hover:bg-slate-50 dark:hover:bg-slate-900/60">
                     <td className="px-3 py-3 align-top whitespace-nowrap">
                       <Link
@@ -219,13 +225,14 @@ async function List({ searchParams }: { searchParams: Promise<{ status?: string;
               </tfoot>
             </table>
           </div>
+          <Pager page={page} total={invoices.length} href={pageHref} />
         </>
       )}
     </>
   );
 }
 
-export default function InvoicesPage({ searchParams }: { searchParams: Promise<{ status?: string; q?: string }> }) {
+export default function InvoicesPage({ searchParams }: { searchParams: Promise<{ status?: string; q?: string; page?: string }> }) {
   return (
     <>
       <PageHeader title="Billing" subtitle="Every invoice HMIS has issued and every payment received, across all clinics." />

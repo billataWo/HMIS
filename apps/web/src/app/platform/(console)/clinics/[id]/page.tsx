@@ -1,5 +1,6 @@
+import type { Metadata } from "next";
 import { connection } from "next/server";
-import { ArrowRight, ChevronRight, Phone, Printer, ScrollText, Server } from "lucide-react";
+import { ArrowRight, ChevronRight, NotebookPen, Phone, Printer, ScrollText, Server } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { ColumnChart } from "@/components/charts";
@@ -8,9 +9,12 @@ import { clinicToday, etb, formatAgo } from "@/lib/format";
 import { type ClinicDetail, type ClinicUsage, DEPLOYMENT_LABEL, METHOD_LABEL, type Plan, platformApi } from "@/lib/platform";
 import { NoteForm } from "../../../followup-forms";
 import { ActivityList } from "../../activity";
+import { SectionNav } from "../../section-nav";
 import { lateBy, NoteItem } from "../../notes";
 import { ClinicActions, DeleteClinicData, DownloadLicence, InvoiceActions, IssueInvoice, PaymentReview, SubscriptionForm } from "../../../forms";
 import { change, date, dateTime, INVOICE_STATUS as INVOICE, PAYMENT_STATUS as PAYMENT, StateBadge, tdClass, thClass } from "../../bits";
+
+export const metadata: Metadata = { title: "Clinic" };
 
 /** A clinic server is offline when it has not been heard from for a day. */
 const offline = (iso: string | null) => !iso || Date.now() - new Date(iso).getTime() > 86_400_000;
@@ -19,7 +23,7 @@ const offline = (iso: string | null) => !iso || Date.now() - new Date(iso).getTi
 function Usage({ u, activeStaff }: { u: ClinicUsage; activeStaff: number }) {
   const c = change(u.visits30, u.visitsPrevious30);
   return (
-    <Card title="Use of HMIS" description="The last 30 days.">
+    <Card id="usage" title="Use of HMIS" description="The last 30 days.">
       <div className="grid gap-6 lg:grid-cols-[1fr_16rem]">
         <ColumnChart title="Visits a day" points={u.days.map((d) => ({ label: d.day, value: d.visits, display: String(d.visits) }))} ariaLabel="Visits each day over the last 30 days" tick={(d) => String(Number(d.slice(8)))} />
         <dl className="grid grid-cols-2 content-start gap-4 text-sm lg:grid-cols-1">
@@ -71,19 +75,8 @@ function Usage({ u, activeStaff }: { u: ClinicUsage; activeStaff: number }) {
 function Notes({ c, today }: { c: ClinicDetail; today: string }) {
   const open = c.notes.filter((n) => n.followUpOn && !n.doneAt).sort((a, b) => a.followUpOn!.localeCompare(b.followUpOn!));
   const rest = c.notes.filter((n) => !open.includes(n));
-  const phone = c.tenant.phone ?? c.admins.find((a) => a.active)?.phone;
   return (
-    <Card
-      title="Follow-up"
-      description="Calls, promises to pay and notes, for whoever deals with this clinic next."
-      actions={
-        phone && (
-          <a href={`tel:${phone}`} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-brand-700 tabular-nums hover:underline dark:text-brand-400">
-            <Phone aria-hidden className="size-4" /> {phone}
-          </a>
-        )
-      }
-    >
+    <Card id="follow-up" title="Follow-up" description="Calls, promises to pay and notes, for whoever deals with this clinic next.">
       <div className="grid gap-6 lg:grid-cols-[22rem_1fr]">
         <NoteForm tenantId={c.tenant.id} today={today} />
         <div className="min-w-0">
@@ -125,6 +118,9 @@ async function Content({ params }: { params: Promise<{ id: string }> }) {
   const s = c.subscription;
   await connection(); // "today" is the request's, not a prerender's
   const today = clinicToday();
+  const phone = c.tenant.phone ?? c.admins.find((a) => a.active)?.phone;
+  const dueNotes = c.notes.filter((n) => n.followUpOn && !n.doneAt && clinicToday(new Date(n.followUpOn)) <= today).length;
+  const openInvoices = c.invoices.filter((i) => i.status === "OPEN").length;
   const paidOn = (invoiceId: string) => c.payments.filter((p) => p.invoiceId === invoiceId && p.status === "CONFIRMED").reduce((sum, p) => sum + Number(p.amount), 0);
   return (
     <div className="space-y-6">
@@ -136,9 +132,24 @@ async function Content({ params }: { params: Promise<{ id: string }> }) {
           <ChevronRight aria-hidden className="size-4" />
           <span className="truncate">{c.tenant.name}</span>
         </nav>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">{c.tenant.name}</h1>
-          {s && <StateBadge state={s.state} />}
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">{c.tenant.name}</h1>
+            {s && <StateBadge state={s.state} />}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {phone && (
+              <a href={`tel:${phone}`} className={`${secondaryButtonClass} gap-2`}>
+                <Phone aria-hidden className="size-4" /> <span className="tabular-nums">{phone}</span>
+              </a>
+            )}
+            <a href="#follow-up" className={`${secondaryButtonClass} gap-2`}>
+              <NotebookPen aria-hidden className="size-4" /> Write a note
+            </a>
+            <Link href={`/platform/statement/${c.tenant.id}`} className={`${secondaryButtonClass} gap-2`}>
+              <ScrollText aria-hidden className="size-4" /> Statement
+            </Link>
+          </div>
         </div>
         <p className="mt-1 text-sm text-slate-500">{[c.tenant.nameAm, c.tenant.address, `with HMIS since ${date(c.tenant.createdAt)}`].filter(Boolean).join(" · ")}</p>
         <dl className="mt-5 grid grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-white sm:grid-cols-3 lg:grid-cols-5 dark:border-slate-800 dark:bg-slate-900">
@@ -160,12 +171,24 @@ async function Content({ params }: { params: Promise<{ id: string }> }) {
         </dl>
       </div>
 
+      <SectionNav
+        sections={[
+          { id: "usage", label: "Use" },
+          { id: "follow-up", label: "Follow-up", count: dueNotes },
+          { id: "subscription", label: "Subscription" },
+          ...(s ? [{ id: "invoices", label: "Invoices", count: openInvoices }] : []),
+          ...(c.payments.length ? [{ id: "payments", label: "Payments" }] : []),
+          { id: "history", label: "History" },
+        ]}
+      />
+
       <Usage u={c.usage} activeStaff={c.counts.staff} />
 
       <Notes c={c} today={today} />
 
       <div className="grid items-start gap-6 lg:grid-cols-[1fr_20rem]">
         <Card
+          id="subscription"
           title="Subscription"
           actions={s && <StateBadge state={s.state} />}
           description={
@@ -234,6 +257,7 @@ async function Content({ params }: { params: Promise<{ id: string }> }) {
 
       {s && (
         <Card
+          id="invoices"
           title="Invoices"
           actions={
             <div className="flex flex-wrap items-center gap-2">
@@ -271,7 +295,7 @@ async function Content({ params }: { params: Promise<{ id: string }> }) {
       )}
 
       {c.payments.length > 0 && (
-        <Card title="Payments" className="overflow-x-auto">
+        <Card id="payments" title="Payments" className="overflow-x-auto">
           <table className="-m-5 w-[calc(100%+2.5rem)] text-sm">
             <thead>
               <tr className="border-b border-slate-100 dark:border-slate-800">
@@ -356,6 +380,7 @@ async function Content({ params }: { params: Promise<{ id: string }> }) {
       )}
 
       <Card
+        id="history"
         title="History"
         description="What the HMIS team did for this clinic."
         actions={

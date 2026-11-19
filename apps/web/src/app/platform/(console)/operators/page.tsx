@@ -1,8 +1,11 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Badge, Card, PageHeader, Skeleton } from "@/components/ui";
 import { formatAgo } from "@/lib/format";
 import { type OperatorMe, type OperatorRow, platformApi } from "@/lib/platform";
 import { AddOperatorForm, OperatorActions } from "../../forms";
+
+export const metadata: Metadata = { title: "Operators" };
 
 async function Content() {
   const me = await platformApi<OperatorMe>("/platform/auth/me");

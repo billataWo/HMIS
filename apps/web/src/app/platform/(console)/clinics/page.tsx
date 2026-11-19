@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { Building2, ChevronRight, Download, Moon, Search, Users } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -5,7 +6,9 @@ import { secondaryButtonClass, EmptyState, Input, inputClass, PageHeader, Skelet
 import type { SubscriptionState } from "@/lib/api";
 import { etb, formatAgo } from "@/lib/format";
 import { type ClinicRow, DEPLOYMENT_LABEL, platformApi } from "@/lib/platform";
-import { date, StateBadge, thClass } from "../bits";
+import { date, StateBadge, thClass, Pager, PAGE_SIZE, pageOf } from "../bits";
+
+export const metadata: Metadata = { title: "Clinics" };
 
 const FILTERS: { value: SubscriptionState | "all"; label: string }[] = [
   { value: "all", label: "All" },
@@ -40,7 +43,7 @@ const quiet = (c: ClinicRow) => c.subscription?.state !== "cancelled" && Date.no
 
 const until = (c: ClinicRow) => (c.subscription?.endsAt ? date(c.subscription.endsAt) : c.subscription ? "No end date" : "Not billed");
 
-async function List({ searchParams }: { searchParams: Promise<{ q?: string; state?: string; sort?: string }> }) {
+async function List({ searchParams }: { searchParams: Promise<{ q?: string; state?: string; sort?: string; page?: string }> }) {
   const params = await searchParams;
   const q = params.q?.trim() ?? "";
   const state = FILTERS.some((f) => f.value === params.state) ? (params.state as SubscriptionState | "all") : "all";
@@ -50,6 +53,9 @@ async function List({ searchParams }: { searchParams: Promise<{ q?: string; stat
   const clinics = (state === "all" ? all : all.filter((c) => c.subscription?.state === state)).toSorted(ORDER[sort]);
   const href = (s: string) => `/platform/clinics?${new URLSearchParams({ ...(q && { q }), ...(s !== "all" && { state: s }), ...(sort !== "newest" && { sort }) })}`;
   const mrr = clinics.reduce((sum, c) => sum + Number(c.mrr), 0);
+  const page = pageOf(params.page, clinics.length);
+  const shown = clinics.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const pageHref = (p: number) => `/platform/clinics?${new URLSearchParams({ ...(q && { q }), ...(state !== "all" && { state }), ...(sort !== "newest" && { sort }), ...(p > 1 && { page: String(p) }) })}`;
 
   return (
     <>
@@ -73,7 +79,7 @@ async function List({ searchParams }: { searchParams: Promise<{ q?: string; stat
             <span className="sr-only sm:not-sr-only">CSV</span>
           </a>
         </form>
-        <nav aria-label="Filter by status" className="flex gap-1 overflow-x-auto">
+        <nav aria-label="Filter by status" className="flex flex-wrap gap-1">
           {FILTERS.map((f) => {
             const on = state === f.value;
             const n = count(f.value);
@@ -110,7 +116,7 @@ async function List({ searchParams }: { searchParams: Promise<{ q?: string; stat
       ) : (
         <>
           <ul className="space-y-3 md:hidden">
-            {clinics.map((c) => (
+            {shown.map((c) => (
               <li key={c.id}>
                 <Link href={`/platform/clinics/${c.id}`} className="surface block p-4 hover:border-brand-300 dark:hover:border-brand-700">
                   <div className="flex items-start justify-between gap-3">
@@ -154,7 +160,7 @@ async function List({ searchParams }: { searchParams: Promise<{ q?: string; stat
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {clinics.map((c) => (
+                {shown.map((c) => (
                   <tr key={c.id} className="relative transition-colors hover:bg-slate-50 dark:hover:bg-slate-900/60">
                     <td className="px-3 py-3 align-top">
                       <Link
@@ -210,7 +216,7 @@ async function List({ searchParams }: { searchParams: Promise<{ q?: string; stat
               <tfoot className="border-t border-slate-200 bg-slate-50 text-sm font-medium dark:border-slate-800 dark:bg-slate-900/60">
                 <tr>
                   <td className="px-3 py-2.5" colSpan={4}>
-                    {clinics.length} clinic{clinics.length === 1 ? "" : "s"}
+                    {clinics.length} clinic{clinics.length === 1 ? "" : "s"}{clinics.length > shown.length ? ", in all" : ""}
                   </td>
                   <td className="px-3 py-2.5 text-right whitespace-nowrap tabular-nums">{etb(mrr)}</td>
                   <td colSpan={4} />
@@ -218,13 +224,14 @@ async function List({ searchParams }: { searchParams: Promise<{ q?: string; stat
               </tfoot>
             </table>
           </div>
+          <Pager page={page} total={clinics.length} href={pageHref} />
         </>
       )}
     </>
   );
 }
 
-export default function ClinicsPage({ searchParams }: { searchParams: Promise<{ q?: string; state?: string; sort?: string }> }) {
+export default function ClinicsPage({ searchParams }: { searchParams: Promise<{ q?: string; state?: string; sort?: string; page?: string }> }) {
   return (
     <>
       <PageHeader title="Clinics" subtitle="Every clinic on the HMIS cloud, with its plan and where its subscription stands." />
