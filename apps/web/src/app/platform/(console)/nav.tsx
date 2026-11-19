@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, CreditCard, History, Inbox, LayoutDashboard, Mic, Settings, UserCog, Users } from "lucide-react";
+import { Building2, CreditCard, History, Inbox, LayoutDashboard, Mic, Receipt, Settings, UserCog, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/platform", label: "Overview", icon: LayoutDashboard },
   { href: "/platform/requests", label: "Requests", icon: Inbox, count: "requests" },
   { href: "/platform/clinics", label: "Clinics", icon: Building2 },
+  { href: "/platform/billing", label: "Billing", icon: Receipt, count: "payments" },
   { href: "/platform/plans", label: "Plans", icon: CreditCard },
   { href: "/platform/operators", label: "Operators", icon: Users, owner: true },
   { href: "/platform/voice", label: "Voice", icon: Mic },
@@ -21,14 +22,14 @@ const isCurrent = (path: string, href: string) => (href === "/platform" ? path =
  * The console's sections: a sidebar on wide screens, a row of tabs that scrolls sideways on
  * phones. The current section is marked (aria-current), and Requests shows how many are waiting.
  */
-export function ConsoleNav({ owner, waiting, ready }: { owner: boolean; waiting: number; ready: boolean }) {
+export function ConsoleNav({ owner, waiting, toConfirm, ready }: { owner: boolean; waiting: number; toConfirm: number; ready: boolean }) {
   const path = usePathname();
   const links = ready ? LINKS.filter((l) => !("owner" in l) || owner) : [];
   const account = { href: "/platform/account", label: "Your account", icon: UserCog };
 
   const item = (l: { href: string; label: string; icon: typeof Inbox; count?: string }, compact: boolean) => {
     const current = isCurrent(path, l.href);
-    const count = l.count === "requests" && waiting > 0 ? waiting : 0;
+    const count = l.count === "requests" ? waiting : l.count === "payments" ? toConfirm : 0;
     return (
       <Link
         key={l.href}
@@ -44,8 +45,8 @@ export function ConsoleNav({ owner, waiting, ready }: { owner: boolean; waiting:
         {l.label}
         {count > 0 && (
           <span className="ml-auto rounded-full bg-amber-700 px-1.5 py-0.5 text-[11px] leading-none font-semibold text-white tabular-nums">
-            {count}
-            <span className="sr-only"> waiting</span>
+            {count > 999 ? "999+" : count}
+            <span className="sr-only">{l.count === "payments" ? " to confirm" : " waiting"}</span>
           </span>
         )}
       </Link>

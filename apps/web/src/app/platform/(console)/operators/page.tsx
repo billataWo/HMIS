@@ -16,7 +16,7 @@ async function Content() {
             <li key={o.id} className="space-y-2 py-3">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
                 <span aria-hidden className="grid size-9 place-items-center rounded-full bg-brand-100 text-xs font-semibold text-brand-800 dark:bg-brand-900 dark:text-brand-100">
-                  {o.fullName.split(/s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("")}
+                  {o.fullName.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("")}
                 </span>
                 <span className="min-w-0">
                   <span className="block font-medium text-slate-900 dark:text-white">

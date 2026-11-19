@@ -1,15 +1,17 @@
 import { LogOut, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { cache, Suspense, type ReactNode } from "react";
-import { type ClinicRequest, platformApi, type OperatorMe } from "@/lib/platform";
+import { ThemeSwitch } from "@/components/theme-switch";
+import { platformApi, type OperatorMe } from "@/lib/platform";
 import { ConsoleNav } from "./nav";
+import { ConsoleSearch } from "./search";
 
 /** Once per request, however many parts of the frame need it. */
 const loadFrame = cache(async () => {
   const me = await platformApi<OperatorMe>("/platform/auth/me");
   const ready = !me.mustChangePassword && me.twoStep.enabled;
-  const waiting = ready ? (await platformApi<ClinicRequest[]>("/platform/requests?status=PENDING")).length : 0;
-  return { me, ready, waiting };
+  const counts = ready ? await platformApi<{ pendingRequests: number; pendingPayments: number }>("/platform/counts") : { pendingRequests: 0, pendingPayments: 0 };
+  return { me, ready, waiting: counts.pendingRequests, toConfirm: counts.pendingPayments };
 });
 
 async function Operator() {
@@ -32,9 +34,15 @@ async function Operator() {
   );
 }
 
+/** The search box, once the operator has finished setting up their sign-in. */
+async function Search() {
+  const { ready } = await loadFrame();
+  return ready ? <ConsoleSearch /> : null;
+}
+
 async function Nav() {
-  const { me, ready, waiting } = await loadFrame();
-  return <ConsoleNav owner={me.role === "OWNER"} waiting={waiting} ready={ready} />;
+  const { me, ready, waiting, toConfirm } = await loadFrame();
+  return <ConsoleNav owner={me.role === "OWNER"} waiting={waiting} toConfirm={toConfirm} ready={ready} />;
 }
 
 /** The platform console: HMIS staff only, separate from every clinic's screens. */
@@ -58,7 +66,13 @@ export default function ConsoleLayout({ children }: { children: ReactNode }) {
               HMIS team only
             </span>
           </Link>
-          <div className="ml-auto flex items-center justify-end gap-1 text-sm sm:min-w-56">
+          <div className="hidden flex-1 justify-center px-2 md:flex">
+            <Suspense fallback={null}>
+              <Search />
+            </Suspense>
+          </div>
+          <div className="ml-auto flex items-center justify-end gap-1 text-sm sm:min-w-56 md:ml-0">
+            <ThemeSwitch label="Theme" day="Day" dark="Dark" className="mr-1" />
             <Suspense fallback={<span aria-hidden className="h-10 w-10 rounded-lg sm:w-44" />}>
               <Operator />
             </Suspense>
@@ -76,6 +90,12 @@ export default function ConsoleLayout({ children }: { children: ReactNode }) {
         <Suspense fallback={<div className="h-14 border-b border-slate-200 dark:border-slate-800" />}>
           <Nav />
         </Suspense>
+        {/* Phones: the search box under the tabs. */}
+        <div className="border-b border-slate-200 bg-white px-4 py-2 md:hidden dark:border-slate-800 dark:bg-slate-950">
+          <Suspense fallback={null}>
+            <Search />
+          </Suspense>
+        </div>
       </div>
       <div className="mx-auto flex w-full max-w-7xl flex-1 gap-8 px-4 py-6 sm:px-6 lg:py-8">
         <aside className="hidden lg:block">

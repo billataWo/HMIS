@@ -6,7 +6,7 @@ import { clientAddress } from "@/lib/client-address";
 import { redirect } from "next/navigation";
 import QRCode from "qrcode";
 import { API_URL, ApiError } from "@/lib/api";
-import { PLATFORM_CHALLENGE_COOKIE, PLATFORM_COOKIE, platformApi } from "@/lib/platform";
+import { PLATFORM_CHALLENGE_COOKIE, PLATFORM_COOKIE, platformApi, type SearchResults } from "@/lib/platform";
 
 const cookieBase = { httpOnly: true, sameSite: "strict" as const, secure: process.env.NODE_ENV === "production", path: "/platform" };
 
@@ -277,6 +277,9 @@ export async function saveSettings(_: FormState, form: FormData): Promise<FormSt
         bankDetails: text(form, "bankDetails") || null,
         supportPhone: text(form, "supportPhone") || null,
         supportEmail: text(form, "supportEmail") || null,
+        companyName: text(form, "companyName") || null,
+        companyTin: text(form, "companyTin") || null,
+        companyAddress: text(form, "companyAddress") || null,
         autoInvoice: form.get("autoInvoice") === "on",
         invoiceDaysBefore: Number(text(form, "invoiceDaysBefore")),
         dataRetentionDays: Number(text(form, "dataRetentionDays")),
@@ -329,5 +332,20 @@ export async function removeVoiceClip(lang: string, key: string): Promise<FormSt
     return { ok: true };
   } catch (e) {
     return failure(e);
+  }
+}
+
+// ─── The search box ─────────────────────────────────────────────────────────────────────────────
+const NO_RESULTS: SearchResults = { clinics: [], invoices: [], requests: [], payments: [] };
+
+/** Clinics, invoices, requests and payments matching what the operator typed. */
+export async function platformSearch(q: string): Promise<SearchResults> {
+  const text = q.trim().slice(0, 100);
+  if (text.length < 2) return NO_RESULTS;
+  try {
+    return await platformApi<SearchResults>(`/platform/search?q=${encodeURIComponent(text)}`);
+  } catch (e) {
+    if (e instanceof ApiError) return NO_RESULTS;
+    throw e;
   }
 }

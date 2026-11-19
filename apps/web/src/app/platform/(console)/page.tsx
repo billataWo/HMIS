@@ -1,12 +1,13 @@
-import { AlertTriangle, ArrowRight, Banknote, Building2, Check, CircleDashed, FileText, Inbox, Receipt, TrendingUp } from "lucide-react";
+import { AlertTriangle, ArrowRight, Banknote, Building2, Check, CircleDashed, FileText, Inbox, Receipt, TrendingUp, Wallet } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Suspense } from "react";
+import { BarList, ColumnChart } from "@/components/charts";
 import { Card, EmptyState, PageHeader, Skeleton } from "@/components/ui";
 import { etb } from "@/lib/format";
-import { type HistoryEntry, type OperatorMe, type OperatorRow, type Overview, platformApi, type PlatformSettings } from "@/lib/platform";
+import { type HistoryEntry, METHOD_LABEL, type Metrics, type OperatorMe, type OperatorRow, type Overview, platformApi, type PlatformSettings } from "@/lib/platform";
 import { PaymentReview } from "../forms";
-import { date, StateBadge } from "./bits";
+import { birr, change, date, monthName, StateBadge } from "./bits";
 
 function Stat({ href, label, value, hint, icon: Icon, tone = "default" }: { href: string; label: string; value: ReactNode; hint?: ReactNode; icon: typeof Inbox; tone?: "default" | "attention" }) {
   return (
@@ -27,8 +28,19 @@ function Stat({ href, label, value, hint, icon: Icon, tone = "default" }: { href
         </span>
       </div>
       <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 tabular-nums dark:text-white">{value}</p>
-      {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
+      {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
     </Link>
+  );
+}
+
+/** "+12% on October" in green, "−8%" in red. */
+function Trend({ now, before, against }: { now: number; before: number; against: string }) {
+  const c = change(now, before);
+  if (!c) return <>nothing in {against} to compare</>;
+  return (
+    <>
+      <span className={`font-semibold ${c.pct > 0 ? "text-emerald-700 dark:text-emerald-400" : c.pct < 0 ? "text-red-700 dark:text-red-400" : ""}`}>{c.text}</span> on {against}
+    </>
   );
 }
 
@@ -39,10 +51,11 @@ async function SetupChecklist() {
   const [settings, operators, history] = await Promise.all([
     platformApi<PlatformSettings>("/platform/settings"),
     platformApi<OperatorRow[]>("/platform/operators"),
-    platformApi<HistoryEntry[]>("/platform/audit"),
+    platformApi<HistoryEntry[]>("/platform/audit?area=plan"),
   ]);
   const steps = [
-    { done: history.some((h) => h.action.startsWith("plan.")), title: "Set your plans and prices", text: "The three sample plans are shown on the front page until you change them.", href: "/platform/plans" },
+    { done: history.length > 0, title: "Set your plans and prices", text: "The three sample plans are shown on the front page until you change them.", href: "/platform/plans" },
+    { done: !!(settings.companyName && settings.companyTin), title: "Add your company name and TIN", text: "Printed on every invoice: a tax invoice needs them.", href: "/platform/settings" },
     { done: !!settings.bankDetails, title: "Add the bank account clinics pay into", text: "Shown on every open invoice.", href: "/platform/settings" },
     { done: !!(settings.supportPhone || settings.supportEmail), title: "Add a support phone or email", text: "Shown on the front page and to clinics.", href: "/platform/settings" },
     {
@@ -105,43 +118,119 @@ async function SetupChecklist() {
 const ATTENTION_SHOWN = 8;
 
 async function Content() {
-  const o = await platformApi<Overview>("/platform/overview");
+  const [o, m] = await Promise.all([platformApi<Overview>("/platform/overview"), platformApi<Metrics>("/platform/metrics")]);
   const clinics = o.counts.active + o.counts.trial + o.counts.overdue;
-  const toDo = o.pendingRequests + o.pendingPayments.length;
+  const late = Object.entries(m.receivables.ageing)
+    .filter(([k]) => k !== "current")
+    .reduce((t, [, v]) => ({ count: t.count + v.count, amount: t.amount + Number(v.amount) }), { count: 0, amount: 0 });
+  const toDo = [
+    o.pendingRequests > 0 && { href: "/platform/requests", text: `${o.pendingRequests} request${o.pendingRequests === 1 ? "" : "s"} to decide` },
+    o.pendingPayments.length > 0 && { href: "#confirm", text: `${o.pendingPayments.length} payment${o.pendingPayments.length === 1 ? "" : "s"} to confirm` },
+    late.count > 0 && { href: "/platform/billing?status=OVERDUE", text: `${late.count} overdue invoice${late.count === 1 ? "" : "s"}` },
+    o.unappliedCheckouts.length > 0 && { href: "#unapplied", text: `${o.unappliedCheckouts.length} online payment${o.unappliedCheckouts.length === 1 ? "" : "s"} not applied` },
+  ].filter((x): x is { href: string; text: string } => !!x);
+  const lastMonth = m.months[m.months.length - 2];
+  const recent = m.months.slice(-6);
+
   return (
     <div className="space-y-6">
+      {toDo.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900/60 dark:bg-amber-950/40">
+          <AlertTriangle aria-hidden className="size-4 shrink-0 text-amber-700 dark:text-amber-300" />
+          <span className="font-medium text-amber-900 dark:text-amber-100">To do:</span>
+          {toDo.map((t, n) => (
+            <span key={t.href} className="flex items-center gap-3">
+              {n > 0 && <span aria-hidden className="text-amber-400">·</span>}
+              <Link href={t.href} className="font-medium text-amber-900 underline-offset-4 hover:underline dark:text-amber-100">
+                {t.text}
+              </Link>
+            </span>
+          ))}
+        </div>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
-          href="/platform/requests"
-          label="Requests waiting"
-          value={o.pendingRequests}
-          hint={o.pendingRequests ? "Call each clinic, then decide" : "Nothing to decide"}
-          icon={Inbox}
+          href="/platform/clinics?sort=mrr"
+          label="Monthly recurring revenue"
+          value={birr(m.mrr)}
+          hint={`${birr(m.arr)} a year · ${m.paying} paying clinic${m.paying === 1 ? "" : "s"}`}
+          icon={TrendingUp}
+        />
+        <Stat
+          href="/platform/billing/payments"
+          label={`Collected in ${monthName(m.months[m.months.length - 1].month)}`}
+          value={birr(m.collectedThisMonth)}
+          hint={<Trend now={Number(m.collectedThisMonth)} before={Number(m.collectedLastMonth)} against={monthName(lastMonth.month)} />}
+          icon={Wallet}
+        />
+        <Stat
+          href="/platform/billing?status=OPEN"
+          label="Clinics owe"
+          value={birr(m.receivables.total)}
+          hint={late.count ? <span className="font-medium text-red-700 dark:text-red-400">{birr(late.amount)} overdue</span> : "Nothing overdue"}
+          icon={FileText}
+          tone={late.count ? "attention" : "default"}
+        />
+        <Stat
+          href="/platform/clinics"
+          label="Clinics"
+          value={clinics}
+          hint={`${o.counts.trial} on trial · ${o.counts.overdue} overdue · ${o.counts.suspended} suspended`}
+          icon={Building2}
           tone={o.pendingRequests ? "attention" : "default"}
         />
-        <Stat href="/platform/clinics" label="Clinics" value={clinics} hint={`${o.counts.trial} on trial · ${o.counts.overdue} overdue · ${o.counts.suspended} suspended`} icon={Building2} />
-        <Stat href="/platform/clinics" label="Monthly recurring" value={etb(o.monthlyRecurring)} hint="Paying clinics, before VAT" icon={TrendingUp} />
-        <Stat href="/platform/clinics" label="Open invoices" value={o.openInvoices.count} hint={etb(o.openInvoices.total)} icon={FileText} />
       </div>
 
       <Suspense fallback={null}>
         <SetupChecklist />
       </Suspense>
 
-      {toDo > 0 && (
-        <p className="flex items-center gap-2 text-sm font-medium text-amber-800 dark:text-amber-200">
-          <AlertTriangle aria-hidden className="size-4" />
-          {[
-            o.pendingRequests && `${o.pendingRequests} request${o.pendingRequests === 1 ? "" : "s"} to decide`,
-            o.pendingPayments.length && `${o.pendingPayments.length} payment${o.pendingPayments.length === 1 ? "" : "s"} to confirm`,
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </p>
-      )}
+      <div className="grid items-start gap-6 xl:grid-cols-3">
+        <Card title="Money collected" description={`Confirmed payments, month by month: ${etb(m.collected12Months)} over 12 months.`} className="xl:col-span-2">
+          <ColumnChart
+            title="Collected"
+            points={m.months.map((x) => ({ label: x.month, value: Number(x.collected), display: etb(x.collected) }))}
+            tick={(ym) => monthName(ym)}
+            ariaLabel="Money collected in each of the last 12 months"
+          />
+          <details className="mt-3 text-sm">
+            <summary className="cursor-pointer text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">As a table</summary>
+            <table className="mt-2 w-full">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {m.months.map((x) => (
+                  <tr key={x.month}>
+                    <td className="py-1">{monthName(x.month, true)}</td>
+                    <td className="py-1 text-right tabular-nums">{etb(x.collected)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </details>
+        </Card>
+        <Card title="Recurring revenue by plan" description="What each plan brings in a month; paying clinics in brackets.">
+          {m.byPlan.length ? (
+            <BarList
+              items={m.byPlan.map((p) => ({
+                key: p.code,
+                label: (
+                  <span title={`${p.paying} paying of ${p.clinics} clinics`}>
+                    {p.plan} <span className="text-slate-500 tabular-nums">({p.paying})</span>
+                  </span>
+                ),
+                value: Number(p.mrr),
+                display: etb(p.mrr),
+              }))}
+            />
+          ) : (
+            <p className="text-sm text-slate-500">No clinics on a plan yet.</p>
+          )}
+        </Card>
+      </div>
 
       <div className="grid items-start gap-6 xl:grid-cols-2">
         <Card title="Payments to confirm" description="Bank transfers the clinics reported: check the statement, then confirm.">
+          <div id="confirm" className="scroll-mt-24" />
           {o.pendingPayments.length ? (
             <ul className="-my-3 divide-y divide-slate-100 dark:divide-slate-800">
               {o.pendingPayments.map((p) => (
@@ -153,7 +242,11 @@ async function Content() {
                     <span className="font-semibold text-slate-900 tabular-nums dark:text-white">{etb(p.amount)}</span>
                   </div>
                   <p className="text-slate-500">
-                    Invoice {p.invoice.number} · transaction <span className="font-mono text-slate-700 dark:text-slate-300">{p.reference}</span> · paid {date(p.paidAt)}
+                    Invoice{" "}
+                    <Link href={`/platform/invoice/${p.invoiceId}`} className="font-mono hover:underline">
+                      {p.invoice.number}
+                    </Link>{" "}
+                    · transaction <span className="font-mono text-slate-700 dark:text-slate-300">{p.reference}</span> · paid {date(p.paidAt)}
                   </p>
                   <PaymentReview paymentId={p.id} />
                 </li>
@@ -182,24 +275,87 @@ async function Content() {
                 </li>
               ))}
             </ul>
-          ) : null}
-          {o.attention.length > ATTENTION_SHOWN && (
-            <Link href="/platform/clinics" className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-brand-700 hover:underline dark:text-brand-400">
-              {o.attention.length - ATTENTION_SHOWN} more: see the clinics <ArrowRight aria-hidden className="size-4" />
-            </Link>
-          )}
-          {o.attention.length ? null : (
+          ) : (
             <EmptyState icon={Check} title="All clinics are in order">
               Nothing ends in the next 7 days.
             </EmptyState>
+          )}
+          {o.attention.length > ATTENTION_SHOWN && (
+            <Link href="/platform/clinics?sort=ends" className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-brand-700 hover:underline dark:text-brand-400">
+              {o.attention.length - ATTENTION_SHOWN} more: see the clinics <ArrowRight aria-hidden className="size-4" />
+            </Link>
+          )}
+        </Card>
+      </div>
+
+      <div className="grid items-start gap-6 xl:grid-cols-3">
+        <Card title="Growth" description="The last 90 days.">
+          <dl className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <dt className="text-slate-500">Trials that became paying</dt>
+              <dd className="mt-0.5 text-xl font-semibold tabular-nums">{m.conversion.rate === null ? "—" : `${Math.round(m.conversion.rate * 100)}%`}</dd>
+              <dd className="text-xs text-slate-500">
+                {m.conversion.converted} of {m.conversion.ended} ended trials
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Trials ending in 30 days</dt>
+              <dd className="mt-0.5 text-xl font-semibold tabular-nums">{m.trialsEndingSoon}</dd>
+              <dd className="text-xs text-slate-500">invoice them in time</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Clinics that left</dt>
+              <dd className="mt-0.5 text-xl font-semibold tabular-nums">{m.churn.cancelled}</dd>
+              <dd className="text-xs text-slate-500">{Number(m.churn.lostMrr) ? `${birr(m.churn.lostMrr)} a month lost` : "no revenue lost"}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Average per paying clinic</dt>
+              <dd className="mt-0.5 text-xl font-semibold tabular-nums">{birr(m.arpa)}</dd>
+              <dd className="text-xs text-slate-500">a month</dd>
+            </div>
+          </dl>
+        </Card>
+        <Card title="Joining and leaving" description="New clinics and cancellations, the last 6 months.">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-slate-500">
+                <th className="pb-2 font-medium">Month</th>
+                <th className="pb-2 text-right font-medium">Joined</th>
+                <th className="pb-2 text-right font-medium">Left</th>
+                <th className="pb-2 text-right font-medium">Net</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {recent.map((x) => {
+                const net = x.newClinics - x.cancelled;
+                return (
+                  <tr key={x.month}>
+                    <td className="py-1.5">{monthName(x.month, true)}</td>
+                    <td className="py-1.5 text-right tabular-nums">{x.newClinics}</td>
+                    <td className="py-1.5 text-right tabular-nums">{x.cancelled}</td>
+                    <td className={`py-1.5 text-right font-medium tabular-nums ${net > 0 ? "text-emerald-700 dark:text-emerald-400" : net < 0 ? "text-red-700 dark:text-red-400" : "text-slate-500"}`}>
+                      {net > 0 ? `+${net}` : net < 0 ? `−${-net}` : "0"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Card>
+        <Card title="How clinics pay" description="Confirmed payments over 12 months.">
+          {m.byMethod.length ? (
+            <BarList items={m.byMethod.map((x) => ({ key: x.method, label: METHOD_LABEL[x.method] ?? x.method, value: Number(x.amount), display: etb(x.amount) }))} />
+          ) : (
+            <p className="text-sm text-slate-500">No payments yet.</p>
           )}
         </Card>
       </div>
 
       {o.unappliedCheckouts.length > 0 && (
         <Card title="Paid online, not applied" description="The clinic paid, but the invoice was meanwhile paid another way or voided: refund it, or record it on another invoice.">
+          <div id="unapplied" className="scroll-mt-24" />
           <ul className="-my-3 divide-y divide-slate-100 dark:divide-slate-800">
-            {o.unappliedCheckouts.map((c) => (
+            {o.unappliedCheckouts.slice(0, 5).map((c) => (
               <li key={c.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3 text-sm">
                 <Receipt aria-hidden className="size-4 text-amber-600" />
                 <Link href={`/platform/clinics/${c.tenantId}`} className="font-medium text-slate-900 hover:underline dark:text-white">
@@ -213,6 +369,7 @@ async function Content() {
               </li>
             ))}
           </ul>
+          {o.unappliedCheckouts.length > 5 && <p className="mt-3 text-sm text-slate-500">And {o.unappliedCheckouts.length - 5} more: each is on its clinic&apos;s page, under Online payments.</p>}
         </Card>
       )}
     </div>
@@ -222,7 +379,7 @@ async function Content() {
 export default function OverviewPage() {
   return (
     <>
-      <PageHeader title="Overview" subtitle="HMIS as a service: what needs you today" />
+      <PageHeader title="Overview" subtitle="HMIS as a service: the business at a glance, and what needs you today." />
       <Suspense
         fallback={
           <div className="space-y-6">

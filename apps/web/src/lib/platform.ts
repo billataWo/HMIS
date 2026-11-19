@@ -101,8 +101,12 @@ export interface ClinicRow {
   createdAt: string;
   staff: number;
   patients: number;
+  /** Visits checked in over the last 30 days. */
+  visits30: number;
   lastActivityAt: string | null;
-  subscription: (StateFields & { plan: { name: string; code: string }; deployment: Deployment; billingCycle: "MONTHLY" | "YEARLY" }) | null;
+  /** What the clinic brings in a month now (0 on trial, free, suspended or cancelled). */
+  mrr: string;
+  subscription: (StateFields & { plan: { name: string; code: string; maxStaff: number | null }; deployment: Deployment; billingCycle: "MONTHLY" | "YEARLY" }) | null;
 }
 
 export interface PlatformInvoiceRow {
@@ -147,12 +151,14 @@ export interface HistoryEntry {
   data: Record<string, unknown> | null;
   ip: string | null;
   createdAt: string;
+  clinic?: string | null;
 }
 
 export interface ClinicDetail {
   tenant: { id: string; name: string; nameAm: string | null; type: string; phone: string | null; address: string | null; createdAt: string };
   admins: { id: string; fullName: string; phone: string; active: boolean; totpEnabledAt: string | null }[];
   counts: { staff: number; patients: number; visits: number };
+  usage: ClinicUsage;
   subscription:
     | (StateFields & {
         id: string;
@@ -222,6 +228,9 @@ export interface PlatformSettings {
   bankDetails: string | null;
   supportPhone: string | null;
   supportEmail: string | null;
+  companyName: string | null;
+  companyTin: string | null;
+  companyAddress: string | null;
 }
 
 export interface OperatorRow {
@@ -239,4 +248,83 @@ export const DEPLOYMENT_LABEL: Record<Deployment, string> = {
   CLOUD: "HMIS cloud",
   CLINIC_SERVER: "Clinic server + cloud",
   ON_PREMISE: "Own server only",
+};
+
+export interface ClinicUsage {
+  days: { day: string; visits: number }[];
+  visits30: number;
+  visitsPrevious30: number;
+  signIns30: number;
+  staffSignedIn30: number;
+  lastSignInAt: string | null;
+  servers: { id: string; name: string; lastSeenAt: string | null; lastError: string | null; edgeVersion: string | null; createdAt: string }[];
+}
+
+export type AgeBucket = "current" | "d1_30" | "d31_60" | "d61_90" | "d90_plus";
+
+export interface Metrics {
+  asOf: string;
+  counts: Record<SubscriptionState, number>;
+  mrr: string;
+  arr: string;
+  paying: number;
+  arpa: string;
+  collectedThisMonth: string;
+  collectedLastMonth: string;
+  collected12Months: string;
+  months: { month: string; collected: string; newClinics: number; cancelled: number }[];
+  byPlan: { plan: string; code: string; clinics: number; paying: number; mrr: string }[];
+  byMethod: { method: string; amount: string }[];
+  receivables: { total: string; ageing: Record<AgeBucket, { count: number; amount: string }> };
+  trialsEndingSoon: number;
+  conversion: { ended: number; converted: number; rate: number | null };
+  churn: { cancelled: number; lostMrr: string };
+}
+
+export interface LedgerInvoice extends PlatformInvoiceRow {
+  tenantId: string;
+  clinic: string;
+  paid: string;
+  balance: string;
+  daysLate: number;
+}
+
+export interface InvoiceLedger {
+  summary: Partial<Record<"OPEN" | "PAID" | "VOID", { count: number; total: string }>> & { OVERDUE: { count: number } };
+  invoices: LedgerInvoice[];
+}
+
+export interface PaymentLedger {
+  summary: { count: number; confirmed: string; pending: number };
+  payments: (PlatformPaymentRow & { reviewedBy: string | null; clinic: string })[];
+}
+
+export interface InvoiceDocument {
+  invoice: PlatformInvoiceRow & { tenantId: string; deployment: Deployment; paid: string; balance: string; voidedAt: string | null; payments: PlatformPaymentRow[] };
+  clinic: { id: string; name: string; nameAm: string | null; address: string | null; phone: string | null; tin: string | null };
+  issuer: {
+    vatPercent: string;
+    bankDetails: string | null;
+    supportPhone: string | null;
+    supportEmail: string | null;
+    companyName: string | null;
+    companyTin: string | null;
+    companyAddress: string | null;
+    publicUrl: string | null;
+  };
+}
+
+export interface SearchResults {
+  clinics: { id: string; name: string; nameAm: string | null; address: string | null; state: SubscriptionState | null }[];
+  invoices: { id: string; number: string; tenantId: string; total: string; status: "OPEN" | "PAID" | "VOID"; clinic: string }[];
+  requests: { id: string; reference: string; clinicName: string; status: "PENDING" | "APPROVED" | "REJECTED"; contactPhone: string }[];
+  payments: { id: string; reference: string | null; tenantId: string; amount: string; status: string; method: string; clinic: string }[];
+}
+
+export const METHOD_LABEL: Record<string, string> = {
+  CHAPA: "Chapa",
+  TELEBIRR: "telebirr",
+  BANK_TRANSFER: "Bank transfer",
+  CASH: "Cash",
+  OTHER: "Other",
 };

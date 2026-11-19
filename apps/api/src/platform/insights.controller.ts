@@ -1,0 +1,275 @@
+import { Controller, Get, NotFoundException, Param, Query, UseGuards } from '@nestjs/common';
+import { z } from 'zod';
+import type { PlatformPaymentMethod, PlatformPaymentStatus, Prisma } from '@hmis/db';
+import { Public } from '../auth/auth.decorators.js';
+import { DAY_PATTERN, dayRange } from '../common/clinic-day.js';
+import { fromCents, toCents } from '../common/money.js';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { PlatformGuard } from './platform-auth.js';
+import { type AgeBucket, ageBucket, daysLate, lastMonths, lateBefore, monthlyCents, monthOf, monthStart } from './revenue.js';
+import { type SubState, subscriptionState } from './subscription-state.js';
+
+const DAY = 86_400_000;
+const uuid = z.uuid();
+const METHODS = ['CHAPA', 'TELEBIRR', 'BANK_TRANSFER', 'CASH', 'OTHER'] as const;
+const money = (cents: number) => fromCents(Math.round(cents));
+/** Left as typed, apart from the spaces around it; never a pattern (Prisma escapes it). */
+const term = (q?: string) => (q ?? '').trim().slice(0, 100);
+
+/**
+ * The console's numbers and ledgers: the business at a glance (recurring revenue, money collected,
+ * what is owed and how late), every invoice and payment across clinics, one invoice to print, and
+ * the search box. Read-only: every change stays in the PlatformController, with its audit entry.
+ */
+@Controller('platform')
+@Public()
+@UseGuards(PlatformGuard)
+export class PlatformInsightsController {
+  constructor(private readonly prisma: PrismaService) {}
+
+  private get db() {
+    return this.prisma.system;
+  }
+
+  private async clinicNames(ids: string[]) {
+    const tenants = await this.db.tenant.findMany({ where: { id: { in: [...new Set(ids)] } }, select: { id: true, name: true } });
+    return new Map(tenants.map((t) => [t.id, t.name]));
+  }
+
+  /** For the menu's badges: requests to decide and reported payments to confirm. */
+  @Get('counts')
+  async counts() {
+    const [pendingRequests, pendingPayments] = await Promise.all([
+      this.db.clinicRequest.count({ where: { status: 'PENDING' } }),
+      this.db.platformPayment.count({ where: { status: 'PENDING' } }),
+    ]);
+    return { pendingRequests, pendingPayments };
+  }
+
+  // ─── The business at a glance ────────────────────────────────────────────────────────────────
+  @Get('metrics')
+  async metrics() {
+    const now = new Date();
+    const months = lastMonths(12, now);
+    const since = monthStart(months[0]);
+    const [subs, payments, open] = await Promise.all([
+      this.db.subscription.findMany({ include: { plan: { select: { id: true, name: true, code: true, priceMonthly: true, priceYearly: true } } } }),
+      this.db.platformPayment.findMany({ where: { status: 'CONFIRMED', paidAt: { gte: since } }, select: { amount: true, paidAt: true, method: true } }),
+      this.db.platformInvoice.findMany({
+        where: { status: 'OPEN' },
+        select: { total: true, dueDate: true, payments: { where: { status: 'CONFIRMED' }, select: { amount: true } } },
+      }),
+    ]);
+
+    // Month by month: money in, clinics joining and leaving.
+    const series = new Map(months.map((m) => [m, { month: m, collected: 0, newClinics: 0, cancelled: 0 }]));
+    for (const p of payments) {
+      const row = series.get(monthOf(p.paidAt));
+      if (row) row.collected += toCents(p.amount);
+    }
+    const byMethod = new Map<PlatformPaymentMethod, number>();
+    for (const p of payments) byMethod.set(p.method, (byMethod.get(p.method) ?? 0) + toCents(p.amount));
+
+    const counts: Record<SubState, number> = { trial: 0, active: 0, overdue: 0, suspended: 0, cancelled: 0 };
+    const byPlan = new Map<string, { plan: string; code: string; clinics: number; paying: number; mrr: number }>();
+    let mrr = 0;
+    let paying = 0;
+    let trialsEndingSoon = 0;
+    const conversion = { ended: 0, converted: 0 };
+    const churn = { cancelled: 0, lostMrr: 0 };
+    for (const s of subs) {
+      const st = subscriptionState(s, now);
+      counts[st.state] += 1;
+      const cents = monthlyCents(s, st.state);
+      mrr += cents;
+      if (cents) paying += 1;
+      const plan = byPlan.get(s.planId) ?? { plan: s.plan.name, code: s.plan.code, clinics: 0, paying: 0, mrr: 0 };
+      if (st.state !== 'cancelled') plan.clinics += 1;
+      if (cents) plan.paying += 1;
+      plan.mrr += cents;
+      byPlan.set(s.planId, plan);
+
+      if (st.state === 'trial' && st.daysLeft !== null && st.daysLeft <= 30) trialsEndingSoon += 1;
+      // Trials that ended in the last 90 days, and how many became paying clinics.
+      if (s.trialEndsAt && s.trialEndsAt <= now && s.trialEndsAt.getTime() > now.getTime() - 90 * DAY) {
+        conversion.ended += 1;
+        if (s.status === 'ACTIVE' && !s.cancelledAt) conversion.converted += 1;
+      }
+      if (s.cancelledAt && s.cancelledAt.getTime() > now.getTime() - 90 * DAY) {
+        churn.cancelled += 1;
+        churn.lostMrr += s.billingCycle === 'YEARLY' ? toCents(s.plan.priceYearly) / 12 : toCents(s.plan.priceMonthly);
+      }
+      const joined = series.get(monthOf(s.createdAt));
+      if (joined) joined.newClinics += 1;
+      const left = s.cancelledAt && series.get(monthOf(s.cancelledAt));
+      if (left) left.cancelled += 1;
+    }
+
+    // What clinics owe, by how late it is.
+    const ageing: Record<AgeBucket, { count: number; amount: number }> = {
+      current: { count: 0, amount: 0 },
+      d1_30: { count: 0, amount: 0 },
+      d31_60: { count: 0, amount: 0 },
+      d61_90: { count: 0, amount: 0 },
+      d90_plus: { count: 0, amount: 0 },
+    };
+    let owed = 0;
+    for (const i of open) {
+      const balance = toCents(i.total) - i.payments.reduce((sum, p) => sum + toCents(p.amount), 0);
+      if (balance <= 0) continue;
+      const b = ageing[ageBucket(i.dueDate, now)];
+      b.count += 1;
+      b.amount += balance;
+      owed += balance;
+    }
+
+    const rows = [...series.values()];
+    const thisMonth = rows[rows.length - 1];
+    const lastMonth = rows[rows.length - 2];
+    return {
+      asOf: now,
+      counts,
+      mrr: money(mrr),
+      arr: money(mrr * 12),
+      paying,
+      arpa: money(paying ? mrr / paying : 0),
+      collectedThisMonth: money(thisMonth.collected),
+      collectedLastMonth: money(lastMonth.collected),
+      collected12Months: money(rows.reduce((sum, r) => sum + r.collected, 0)),
+      months: rows.map((r) => ({ ...r, collected: money(r.collected) })),
+      byPlan: [...byPlan.values()].sort((a, b) => b.mrr - a.mrr || b.clinics - a.clinics).map((p) => ({ ...p, mrr: money(p.mrr) })),
+      byMethod: METHODS.filter((m) => byMethod.has(m)).map((m) => ({ method: m, amount: money(byMethod.get(m)!) })),
+      receivables: {
+        total: money(owed),
+        ageing: Object.fromEntries(Object.entries(ageing).map(([k, v]) => [k, { count: v.count, amount: money(v.amount) }])) as Record<AgeBucket, { count: number; amount: string }>,
+      },
+      trialsEndingSoon,
+      conversion: { ...conversion, rate: conversion.ended ? conversion.converted / conversion.ended : null },
+      churn: { cancelled: churn.cancelled, lostMrr: money(churn.lostMrr) },
+    };
+  }
+
+  // ─── Every invoice ───────────────────────────────────────────────────────────────────────────
+  @Get('invoices')
+  async invoices(@Query('status') status?: string, @Query('q') q?: string) {
+    const now = new Date();
+    const text = term(q);
+    const where: Prisma.PlatformInvoiceWhereInput = {};
+    if (status === 'OPEN' || status === 'PAID' || status === 'VOID') where.status = status;
+    if (status === 'OVERDUE') Object.assign(where, { status: 'OPEN', dueDate: { lt: lateBefore(now) } });
+    if (text) {
+      const tenants = await this.db.tenant.findMany({ where: { name: { contains: text, mode: 'insensitive' } }, select: { id: true }, take: 200 });
+      where.OR = [{ number: { contains: text, mode: 'insensitive' } }, { tenantId: { in: tenants.map((t) => t.id) } }];
+    }
+    const [invoices, groups, overdue] = await Promise.all([
+      this.db.platformInvoice.findMany({
+        where,
+        orderBy: { issuedAt: 'desc' },
+        take: 500,
+        include: { payments: { where: { status: 'CONFIRMED' }, select: { amount: true } } },
+      }),
+      this.db.platformInvoice.groupBy({ by: ['status'], _count: true, _sum: { total: true } }),
+      this.db.platformInvoice.count({ where: { status: 'OPEN', dueDate: { lt: lateBefore(now) } } }),
+    ]);
+    const names = await this.clinicNames(invoices.map((i) => i.tenantId));
+    const summary = Object.fromEntries(groups.map((g) => [g.status, { count: g._count, total: g._sum.total?.toString() ?? '0' }]));
+    return {
+      summary: { ...summary, OVERDUE: { count: overdue } },
+      invoices: invoices.map(({ payments, ...i }) => {
+        const paid = payments.reduce((sum, p) => sum + toCents(p.amount), 0);
+        const balance = i.status === 'OPEN' ? Math.max(0, toCents(i.total) - paid) : 0;
+        return { ...i, clinic: names.get(i.tenantId) ?? '', paid: money(paid), balance: money(balance), daysLate: i.status === 'OPEN' ? daysLate(i.dueDate, now) : 0 };
+      }),
+    };
+  }
+
+  /** One invoice, with what is needed to print it: the clinic, HMIS's details, the payments. */
+  @Get('invoices/:id')
+  async invoice(@Param('id') id: string) {
+    if (!uuid.safeParse(id).success) throw new NotFoundException();
+    const invoice = await this.db.platformInvoice.findUnique({
+      where: { id },
+      include: { payments: { orderBy: { paidAt: 'asc' } }, subscription: { select: { deployment: true } } },
+    });
+    if (!invoice) throw new NotFoundException();
+    const [tenant, settings] = await Promise.all([
+      this.db.tenant.findUniqueOrThrow({ where: { id: invoice.tenantId }, select: { id: true, name: true, nameAm: true, address: true, phone: true, tin: true } }),
+      this.db.platformSetting.findUniqueOrThrow({ where: { id: 1 }, select: { vatPercent: true, bankDetails: true, supportPhone: true, supportEmail: true, companyName: true, companyTin: true, companyAddress: true } }),
+    ]);
+    const paid = invoice.payments.filter((p) => p.status === 'CONFIRMED').reduce((sum, p) => sum + toCents(p.amount), 0);
+    const { subscription, ...rest } = invoice;
+    return {
+      invoice: { ...rest, deployment: subscription.deployment, paid: money(paid), balance: money(invoice.status === 'OPEN' ? Math.max(0, toCents(invoice.total) - paid) : 0) },
+      clinic: tenant,
+      issuer: { ...settings, publicUrl: process.env.HMIS_PUBLIC_URL?.replace(/\/+$/, '') || null },
+    };
+  }
+
+  // ─── Every payment ───────────────────────────────────────────────────────────────────────────
+  @Get('payments')
+  async payments(@Query('status') status?: string, @Query('method') method?: string, @Query('from') from?: string, @Query('to') to?: string, @Query('q') q?: string) {
+    const where: Prisma.PlatformPaymentWhereInput = {};
+    if (status === 'PENDING' || status === 'CONFIRMED' || status === 'REJECTED') where.status = status as PlatformPaymentStatus;
+    if (method && (METHODS as readonly string[]).includes(method)) where.method = method as PlatformPaymentMethod;
+    const paidAt: Prisma.DateTimeFilter = {};
+    if (from && DAY_PATTERN.test(from)) paidAt.gte = dayRange(from).start;
+    if (to && DAY_PATTERN.test(to)) paidAt.lt = dayRange(to).end;
+    if (paidAt.gte || paidAt.lt) where.paidAt = paidAt;
+    const text = term(q);
+    if (text) {
+      const tenants = await this.db.tenant.findMany({ where: { name: { contains: text, mode: 'insensitive' } }, select: { id: true }, take: 200 });
+      where.OR = [
+        { reference: { contains: text, mode: 'insensitive' } },
+        { invoice: { number: { contains: text, mode: 'insensitive' } } },
+        { tenantId: { in: tenants.map((t) => t.id) } },
+      ];
+    }
+    const payments = await this.db.platformPayment.findMany({ where, orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }], take: 1000, include: { invoice: { select: { number: true } } } });
+    const [names, operators] = await Promise.all([
+      this.clinicNames(payments.map((p) => p.tenantId)),
+      this.db.platformUser.findMany({ where: { id: { in: payments.map((p) => p.reviewedById).filter((x): x is string => !!x) } }, select: { id: true, fullName: true } }),
+    ]);
+    const who = new Map(operators.map((o) => [o.id, o.fullName]));
+    const confirmed = payments.filter((p) => p.status === 'CONFIRMED');
+    return {
+      summary: {
+        count: payments.length,
+        confirmed: money(confirmed.reduce((sum, p) => sum + toCents(p.amount), 0)),
+        pending: payments.filter((p) => p.status === 'PENDING').length,
+      },
+      payments: payments.map(({ provider: _provider, ...p }) => ({ ...p, clinic: names.get(p.tenantId) ?? '', reviewedBy: p.reviewedById ? (who.get(p.reviewedById) ?? null) : null })),
+    };
+  }
+
+  // ─── The search box ──────────────────────────────────────────────────────────────────────────
+  /** Clinics (by name, phone or an admin's phone), invoices, requests and payments, a few of each. */
+  @Get('search')
+  async search(@Query('q') q?: string) {
+    const text = term(q);
+    if (text.length < 2) return { clinics: [], invoices: [], requests: [], payments: [] };
+    const like = { contains: text, mode: 'insensitive' as const };
+    const [clinics, invoices, requests, payments] = await Promise.all([
+      this.db.tenant.findMany({
+        where: { OR: [{ name: like }, { nameAm: like }, { phone: { contains: text } }, { users: { some: { phone: { contains: text } } } }] },
+        select: { id: true, name: true, nameAm: true, address: true, subscription: { select: { status: true, trialEndsAt: true, paidUntil: true, graceDays: true, suspendedAt: true, cancelledAt: true } } },
+        orderBy: { name: 'asc' },
+        take: 6,
+      }),
+      this.db.platformInvoice.findMany({ where: { number: like }, orderBy: { issuedAt: 'desc' }, take: 5, select: { id: true, number: true, tenantId: true, total: true, status: true } }),
+      this.db.clinicRequest.findMany({
+        where: { OR: [{ reference: like }, { clinicName: like }, { contactPhone: { contains: text } }, { contactName: like }] },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: { id: true, reference: true, clinicName: true, status: true, contactPhone: true },
+      }),
+      this.db.platformPayment.findMany({ where: { reference: like }, orderBy: { paidAt: 'desc' }, take: 5, select: { id: true, reference: true, tenantId: true, amount: true, status: true, method: true } }),
+    ]);
+    const names = await this.clinicNames([...invoices, ...payments].map((x) => x.tenantId));
+    return {
+      clinics: clinics.map(({ subscription, ...c }) => ({ ...c, state: subscription ? subscriptionState(subscription).state : null })),
+      invoices: invoices.map((i) => ({ ...i, clinic: names.get(i.tenantId) ?? '' })),
+      requests,
+      payments: payments.map((p) => ({ ...p, clinic: names.get(p.tenantId) ?? '' })),
+    };
+  }
+}

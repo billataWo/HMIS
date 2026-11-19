@@ -596,6 +596,20 @@ export function SettingsForm({ settings }: { settings: PlatformSettings }) {
       <Field label="Days a cancelled clinic has to export its records" hint="Its records can be deleted after that (at least 30)">
         <Input name="dataRetentionDays" type="number" min={30} max={3650} required defaultValue={settings.dataRetentionDays} />
       </Field>
+      <fieldset className="space-y-3 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+        <legend className="px-1 text-sm font-medium text-slate-900 dark:text-white">On every invoice (the seller)</legend>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Company name" hint="The registered name, e.g. HMIS Technologies PLC">
+            <Input name="companyName" maxLength={200} defaultValue={settings.companyName ?? ""} />
+          </Field>
+          <Field label="TIN" hint="Taxpayer identification number">
+            <Input name="companyTin" maxLength={30} inputMode="numeric" defaultValue={settings.companyTin ?? ""} />
+          </Field>
+        </div>
+        <Field label="Address">
+          <Input name="companyAddress" maxLength={500} defaultValue={settings.companyAddress ?? ""} />
+        </Field>
+      </fieldset>
       <Field label="Bank details for clinics" hint="Bank, account name and number, shown on every open invoice">
         <textarea name="bankDetails" rows={4} maxLength={2000} className={inputClass} defaultValue={settings.bankDetails ?? ""} />
       </Field>

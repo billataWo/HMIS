@@ -1644,6 +1644,10 @@ model PlatformSetting {
   bankDetails       String?
   supportPhone      String?
   supportEmail      String?
+  /// The seller printed on invoices to clinics: legal name, taxpayer number (TIN) and address.
+  companyName       String?
+  companyTin        String?
+  companyAddress    String?
   nextInvoice       Int      @default(1)
   /// Issue each clinic's next invoice by itself, this many days before its trial or paid period ends.
   autoInvoice       Boolean  @default(true)

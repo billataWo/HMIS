@@ -16,6 +16,10 @@ import { forgetSubscription } from './subscription.guard.js';
 import { onlineMethods, publicUrl } from './payments/checkout.js';
 import { issueLicence, licenceSigningProblem } from '../licence/licence.js';
 import { deleteClinicData } from '../exports/clinic-data.js';
+import { monthlyCents } from './revenue.js';
+import { clinicDay } from '../common/clinic-day.js';
+
+const DAY = 86_400_000;
 
 const uuid = z.uuid();
 const money = z.union([z.string(), z.number()]).transform(String).refine((v) => /^\d{1,10}(\.\d{1,2})?$/.test(v), 'An amount like 2500 or 2500.50');
@@ -79,6 +83,9 @@ const SettingsSchema = z.object({
   bankDetails: z.string().max(2000).nullable().optional(),
   supportPhone: z.string().max(40).nullable().optional(),
   supportEmail: z.string().max(200).nullable().optional(),
+  companyName: z.string().trim().max(200).nullable().optional(),
+  companyTin: z.string().trim().max(30).nullable().optional(),
+  companyAddress: z.string().trim().max(500).nullable().optional(),
   autoInvoice: z.boolean().optional(),
   invoiceDaysBefore: z.number().int().min(1).max(60).optional(),
   dataRetentionDays: z.number().int().min(30).max(3650).optional(),
@@ -125,10 +132,7 @@ export class PlatformController {
     for (const s of subs) {
       const st = subscriptionState(s);
       counts[st.state] += 1;
-      // Recurring revenue: paying clinics (active or overdue), per month.
-      if ((st.state === 'active' || st.state === 'overdue') && s.paidUntil) {
-        monthly += s.billingCycle === 'YEARLY' ? toCents(s.plan.priceYearly) / 12 : toCents(s.plan.priceMonthly);
-      }
+      monthly += monthlyCents(s, st.state);
       const soon = st.daysLeft !== null && st.daysLeft <= 7 && (st.state === 'trial' || st.state === 'active');
       if (soon || st.state === 'overdue' || (st.state === 'suspended' && !st.manual)) {
         attention.push({ tenantId: s.tenantId, name: s.tenant.name, state: st.state, endsAt: st.endsAt, daysLeft: st.daysLeft });
@@ -220,29 +224,44 @@ export class PlatformController {
   // ─── Clinics and their subscriptions ─────────────────────────────────────────────────────────
   @Get('clinics')
   async clinics(@Query('q') q?: string) {
+    const text = (q ?? '').trim().slice(0, 100);
+    const like = { contains: text, mode: 'insensitive' as const };
     const tenants = await this.db.tenant.findMany({
-      where: q ? { name: { contains: q, mode: 'insensitive' } } : {},
+      // By name, or by the clinic's or an admin's phone.
+      where: text ? { OR: [{ name: like }, { nameAm: like }, { phone: { contains: text } }, { users: { some: { phone: { contains: text } } } }] } : {},
       include: {
-        subscription: { include: { plan: { select: { name: true, code: true } } } },
+        subscription: { include: { plan: { select: { name: true, code: true, maxStaff: true, priceMonthly: true, priceYearly: true } } } },
         _count: { select: { users: { where: { active: true } }, patients: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: 500,
     });
-    // Last activity: the newest audit entry (sign-ins included).
-    const last = await this.db.auditLog.groupBy({ by: ['tenantId'], where: { tenantId: { in: tenants.map((t) => t.id) } }, _max: { createdAt: true } });
+    const ids = tenants.map((t) => t.id);
+    const since = new Date(Date.now() - 30 * DAY);
+    const [last, visits] = await Promise.all([
+      // Last activity: the newest audit entry (sign-ins included).
+      this.db.auditLog.groupBy({ by: ['tenantId'], where: { tenantId: { in: ids } }, _max: { createdAt: true } }),
+      this.db.visit.groupBy({ by: ['tenantId'], where: { tenantId: { in: ids }, checkedInAt: { gte: since } }, _count: true }),
+    ]);
     const lastAt = new Map(last.map((l) => [l.tenantId, l._max.createdAt]));
-    return tenants.map((t) => ({
-      id: t.id,
-      name: t.name,
-      nameAm: t.nameAm,
-      type: t.type,
-      createdAt: t.createdAt,
-      staff: t._count.users,
-      patients: t._count.patients,
-      lastActivityAt: lastAt.get(t.id) ?? null,
-      subscription: t.subscription && { plan: t.subscription.plan, deployment: t.subscription.deployment, billingCycle: t.subscription.billingCycle, ...stateOf(t.subscription)! },
-    }));
+    const visits30 = new Map(visits.map((v) => [v.tenantId, v._count]));
+    return tenants.map((t) => {
+      const st = stateOf(t.subscription);
+      const { priceMonthly: _m, priceYearly: _y, ...plan } = t.subscription?.plan ?? ({} as { priceMonthly?: unknown; priceYearly?: unknown; name: string; code: string; maxStaff: number | null });
+      return {
+        id: t.id,
+        name: t.name,
+        nameAm: t.nameAm,
+        type: t.type,
+        createdAt: t.createdAt,
+        staff: t._count.users,
+        patients: t._count.patients,
+        visits30: visits30.get(t.id) ?? 0,
+        lastActivityAt: lastAt.get(t.id) ?? null,
+        mrr: t.subscription && st ? (Math.round(monthlyCents(t.subscription, st.state)) / 100).toFixed(2) : '0.00',
+        subscription: t.subscription && { plan, deployment: t.subscription.deployment, billingCycle: t.subscription.billingCycle, ...st! },
+      };
+    });
   }
 
   @Get('clinics/:id')
@@ -268,18 +287,60 @@ export class PlatformController {
     ]);
     const settings = await this.db.platformSetting.findUniqueOrThrow({ where: { id: 1 }, select: { dataRetentionDays: true } });
     const { subscription, users, _count, ...tenant } = t;
+    const ops = await this.db.platformUser.findMany({ where: { id: { in: history.map((h) => h.operatorId).filter((x): x is string => !!x) } }, select: { id: true, fullName: true } });
+    const opNames = new Map(ops.map((o) => [o.id, o.fullName]));
     return {
       tenant,
       admins: users,
       counts: { staff: _count.users, patients: _count.patients, visits: _count.visits },
+      usage: await this.usage(id),
       subscription: subscription && { ...subscription, ...stateOf(subscription)! },
       invoices,
       payments,
       request,
-      history,
+      history: history.map((h) => ({ ...h, operator: h.operatorId ? (opNames.get(h.operatorId) ?? null) : null })),
       checkouts,
       lastExportAt: lastExport?.createdAt ?? null,
       deletableFrom: subscription?.cancelledAt && !subscription.dataDeletedAt ? new Date(subscription.cancelledAt.getTime() + settings.dataRetentionDays * 86_400_000) : null,
+    };
+  }
+
+  /**
+   * Is the clinic using HMIS? Visits a day over the last 30 days (against the 30 before), staff who
+   * signed in, and its clinic servers. A clinic that stops using it is about to leave.
+   */
+  private async usage(tenantId: string) {
+    const now = Date.now();
+    const since = new Date(now - 30 * DAY);
+    const before = new Date(now - 60 * DAY);
+    const [daily, previous, signIns, users, lastSignIn, servers] = await Promise.all([
+      this.db.$queryRaw<{ day: string; n: number }[]>`
+        SELECT to_char(("checkedInAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Addis_Ababa')::date, 'YYYY-MM-DD') AS day, count(*)::int AS n
+        FROM "Visit" WHERE "tenantId" = ${tenantId} AND "checkedInAt" >= ${since}
+        GROUP BY 1`,
+      this.db.visit.count({ where: { tenantId, checkedInAt: { gte: before, lt: since } } }),
+      this.db.auditLog.count({ where: { tenantId, action: 'auth.login', createdAt: { gte: since } } }),
+      this.db.auditLog.groupBy({ by: ['userId'], where: { tenantId, action: 'auth.login', createdAt: { gte: since } } }),
+      this.db.auditLog.findFirst({ where: { tenantId, action: 'auth.login' }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
+      this.db.syncClient.findMany({
+        where: { tenantId, revokedAt: null },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, name: true, lastSeenAt: true, lastError: true, edgeVersion: true, createdAt: true },
+      }),
+    ]);
+    const counts = new Map(daily.map((d) => [d.day, d.n]));
+    const days = Array.from({ length: 30 }, (_, i) => {
+      const day = clinicDay(new Date(now - (29 - i) * DAY));
+      return { day, visits: counts.get(day) ?? 0 };
+    });
+    return {
+      days,
+      visits30: days.reduce((sum, d) => sum + d.visits, 0),
+      visitsPrevious30: previous,
+      signIns30: signIns,
+      staffSignedIn30: users.filter((u) => u.userId).length,
+      lastSignInAt: lastSignIn?.createdAt ?? null,
+      servers,
     };
   }
 
@@ -546,12 +607,27 @@ export class PlatformController {
     return updated;
   }
 
+  /**
+   * The console's history, newest first: 200 at a time, older ones with `before` (the oldest
+   * entry's time). Filtered by clinic, operator or kind (`area`: the part before the dot, e.g.
+   * "payment", "platform" for sign-ins).
+   */
   @Get('audit')
-  async history(@Query('tenantId') tenantId?: string) {
-    const entries = await this.db.platformAuditLog.findMany({ where: tenantId ? { tenantId } : {}, orderBy: { createdAt: 'desc' }, take: 200 });
-    const ops = await this.db.platformUser.findMany({ where: { id: { in: entries.map((e) => e.operatorId).filter((x): x is string => !!x) } }, select: { id: true, fullName: true } });
+  async history(@Query('tenantId') tenantId?: string, @Query('operatorId') operatorId?: string, @Query('area') area?: string, @Query('before') before?: string) {
+    const where: Prisma.PlatformAuditLogWhereInput = {};
+    if (tenantId && uuid.safeParse(tenantId).success) where.tenantId = tenantId;
+    if (operatorId && uuid.safeParse(operatorId).success) where.operatorId = operatorId;
+    if (area && /^[a-z_]{2,30}$/.test(area)) where.action = { startsWith: `${area}.` };
+    const until = before ? new Date(before) : null;
+    if (until && !Number.isNaN(until.getTime())) where.createdAt = { lt: until };
+    const entries = await this.db.platformAuditLog.findMany({ where, orderBy: { createdAt: 'desc' }, take: 200 });
+    const [ops, tenants] = await Promise.all([
+      this.db.platformUser.findMany({ where: { id: { in: entries.map((e) => e.operatorId).filter((x): x is string => !!x) } }, select: { id: true, fullName: true } }),
+      this.db.tenant.findMany({ where: { id: { in: [...new Set(entries.map((e) => e.tenantId).filter((x): x is string => !!x))] } }, select: { id: true, name: true } }),
+    ]);
     const names = new Map(ops.map((o) => [o.id, o.fullName]));
-    return entries.map((e) => ({ ...e, operator: e.operatorId ? (names.get(e.operatorId) ?? null) : null }));
+    const clinics = new Map(tenants.map((t) => [t.id, t.name]));
+    return entries.map((e) => ({ ...e, operator: e.operatorId ? (names.get(e.operatorId) ?? null) : null, clinic: e.tenantId ? (clinics.get(e.tenantId) ?? null) : null }));
   }
 }
 

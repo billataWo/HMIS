@@ -1,15 +1,69 @@
 import { connection } from "next/server";
-import { ChevronRight } from "lucide-react";
+import { ArrowRight, ChevronRight, Printer, Server } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
+import { ColumnChart } from "@/components/charts";
 import { Badge, Card, EmptyState, Notice, Skeleton } from "@/components/ui";
-import { clinicToday, etb } from "@/lib/format";
-import { type ClinicDetail, DEPLOYMENT_LABEL, type Plan, platformApi } from "@/lib/platform";
+import { clinicToday, etb, formatAgo } from "@/lib/format";
+import { type ClinicDetail, type ClinicUsage, DEPLOYMENT_LABEL, METHOD_LABEL, type Plan, platformApi } from "@/lib/platform";
+import { ActivityList } from "../../activity";
 import { ClinicActions, DeleteClinicData, DownloadLicence, InvoiceActions, IssueInvoice, PaymentReview, SubscriptionForm } from "../../../forms";
-import { date, dateTime, StateBadge, tdClass, thClass } from "../../bits";
+import { change, date, dateTime, INVOICE_STATUS as INVOICE, PAYMENT_STATUS as PAYMENT, StateBadge, tdClass, thClass } from "../../bits";
 
-const INVOICE = { OPEN: { label: "Open", tone: "warning" }, PAID: { label: "Paid", tone: "success" }, VOID: { label: "Void", tone: "neutral" } } as const;
-const PAYMENT = { PENDING: { label: "To confirm", tone: "warning" }, CONFIRMED: { label: "Confirmed", tone: "success" }, REJECTED: { label: "Rejected", tone: "neutral" } } as const;
+/** A clinic server is offline when it has not been heard from for a day. */
+const offline = (iso: string | null) => !iso || Date.now() - new Date(iso).getTime() > 86_400_000;
+
+/** Is the clinic using HMIS? Visits a day, sign-ins, and its servers: a quiet clinic is about to leave. */
+function Usage({ u, activeStaff }: { u: ClinicUsage; activeStaff: number }) {
+  const c = change(u.visits30, u.visitsPrevious30);
+  return (
+    <Card title="Use of HMIS" description="The last 30 days.">
+      <div className="grid gap-6 lg:grid-cols-[1fr_16rem]">
+        <ColumnChart title="Visits a day" points={u.days.map((d) => ({ label: d.day, value: d.visits, display: String(d.visits) }))} ariaLabel="Visits each day over the last 30 days" tick={(d) => String(Number(d.slice(8)))} />
+        <dl className="grid grid-cols-2 content-start gap-4 text-sm lg:grid-cols-1">
+          <div>
+            <dt className="text-slate-500">Visits</dt>
+            <dd className="text-xl font-semibold tabular-nums">{u.visits30}</dd>
+            <dd className="text-xs text-slate-500">
+              {c ? (
+                <>
+                  <span className={c.pct > 0 ? "font-semibold text-emerald-700 dark:text-emerald-400" : c.pct < 0 ? "font-semibold text-red-700 dark:text-red-400" : ""}>{c.text}</span> on the 30 days before
+                </>
+              ) : (
+                "none in the 30 days before"
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">Staff who signed in</dt>
+            <dd className="text-xl font-semibold tabular-nums">
+              {u.staffSignedIn30} <span className="text-sm font-normal text-slate-500">of {activeStaff}</span>
+            </dd>
+            <dd className="text-xs text-slate-500">
+              {u.signIns30} sign-in{u.signIns30 === 1 ? "" : "s"} · last {formatAgo(u.lastSignInAt)}
+            </dd>
+          </div>
+        </dl>
+      </div>
+      {u.servers.length > 0 && (
+        <ul className="mt-5 space-y-2 border-t border-slate-100 pt-4 text-sm dark:border-slate-800">
+          {u.servers.map((x) => (
+            <li key={x.id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <Server aria-hidden className={`size-4 ${offline(x.lastSeenAt) ? "text-red-600" : "text-emerald-600"}`} />
+              <span className="font-medium">{x.name}</span>
+              <Badge tone={offline(x.lastSeenAt) ? "danger" : "success"}>{offline(x.lastSeenAt) ? "Not syncing" : "Syncing"}</Badge>
+              <span className="text-slate-500">
+                last seen {formatAgo(x.lastSeenAt)}
+                {x.edgeVersion ? ` · version ${x.edgeVersion}` : ""}
+              </span>
+              {x.lastError && <span className="w-full text-xs text-red-700 dark:text-red-400">{x.lastError}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
 
 async function Content({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -51,6 +105,8 @@ async function Content({ params }: { params: Promise<{ id: string }> }) {
           ))}
         </dl>
       </div>
+
+      <Usage u={c.usage} activeStaff={c.counts.staff} />
 
       <div className="grid items-start gap-6 lg:grid-cols-[1fr_20rem]">
         <Card
@@ -127,7 +183,10 @@ async function Content({ params }: { params: Promise<{ id: string }> }) {
               {c.invoices.map((i) => (
                 <li key={i.id} className="space-y-3 py-4">
                   <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
-                    <span className="font-mono font-medium">{i.number}</span>
+                    <Link href={`/platform/invoice/${i.id}`} className="inline-flex items-center gap-1.5 font-mono font-medium text-brand-700 hover:underline dark:text-brand-400">
+                      <Printer aria-hidden className="size-3.5" />
+                      {i.number}
+                    </Link>
                     <span className="text-slate-500">
                       {i.planName}, {date(i.periodStart)} – {date(i.periodEnd)} · due {date(i.dueDate)}
                     </span>
@@ -163,7 +222,7 @@ async function Content({ params }: { params: Promise<{ id: string }> }) {
                 <tr key={p.id}>
                   <td className={`${tdClass} font-mono`}>{p.invoice.number}</td>
                   <td className={`${tdClass} tabular-nums`}>{etb(p.amount)}</td>
-                  <td className={tdClass}>{p.method.replace("_", " ").toLowerCase()}</td>
+                  <td className={tdClass}>{METHOD_LABEL[p.method] ?? p.method}</td>
                   <td className={`${tdClass} font-mono`}>{p.reference ?? "—"}</td>
                   <td className={tdClass}>{date(p.paidAt)}</td>
                   <td className={tdClass}>
@@ -230,18 +289,18 @@ async function Content({ params }: { params: Promise<{ id: string }> }) {
         </Card>
       )}
 
-      <Card title="History">
-        {c.history.length ? (
-          <ul className="space-y-1.5 text-sm">
-            {c.history.map((h) => (
-              <li key={h.id}>
-                <span className="text-slate-500">{dateTime(h.createdAt)}</span> {h.action}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-slate-500">Nothing yet.</p>
-        )}
+      <Card
+        title="History"
+        description="What the HMIS team did for this clinic."
+        actions={
+          c.history.length > 0 && (
+            <Link href={`/platform/history?tenantId=${c.tenant.id}`} className="inline-flex items-center gap-1 text-sm font-medium text-brand-700 hover:underline dark:text-brand-400">
+              All of it <ArrowRight aria-hidden className="size-4" />
+            </Link>
+          )
+        }
+      >
+        {c.history.length ? <ActivityList entries={c.history} withDate withClinic={false} /> : <p className="text-sm text-slate-500">Nothing yet.</p>}
       </Card>
     </div>
   );

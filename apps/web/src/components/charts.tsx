@@ -14,7 +14,23 @@ export interface Point {
 }
 
 /** Vertical bars over time. Labels the first, last and a few in-between days. */
-export function ColumnChart({ title, points, unit, t = EN }: { title: string; points: Point[]; unit?: string; t?: T }) {
+export function ColumnChart({
+  title,
+  points,
+  unit,
+  t = EN,
+  tick = (label) => label.slice(5),
+  ariaLabel,
+}: {
+  title: string;
+  points: Point[];
+  unit?: string;
+  t?: T;
+  /** The axis text for a label (default: a YYYY-MM-DD day without its year). */
+  tick?: (label: string) => string;
+  /** What the chart shows, for screen readers (default: "{title}, {n} days"). */
+  ariaLabel?: string;
+}) {
   const max = Math.max(...points.map((p) => p.value), 0);
   const every = Math.max(1, Math.ceil(points.length / 6));
   return (
@@ -23,7 +39,7 @@ export function ColumnChart({ title, points, unit, t = EN }: { title: string; po
         <span className="font-medium">{title}</span>
         <span className="text-xs text-slate-500">{t("peak {value}", { value: points.find((p) => p.value === max)?.display ?? "0" })}</span>
       </figcaption>
-      <div className="flex h-40 items-end gap-[2px] border-b border-slate-300 dark:border-slate-700" role="img" aria-label={t("{title}, {n} days", { title, n: points.length })}>
+      <div className="flex h-40 items-end gap-[2px] border-b border-slate-300 dark:border-slate-700" role="img" aria-label={ariaLabel ?? t("{title}, {n} days", { title, n: points.length })}>
         {points.map((p, i) => (
           <div key={p.label} className="group relative flex h-full min-w-[3px] flex-1 items-end justify-center">
             <div
@@ -43,7 +59,7 @@ export function ColumnChart({ title, points, unit, t = EN }: { title: string; po
       <div className="flex gap-[2px] text-[10px] text-slate-500">
         {points.map((p, i) => (
           <span key={p.label} className="min-w-[3px] flex-1 text-center">
-            {i === 0 || i === points.length - 1 || i % every === 0 ? p.label.slice(5) : ""}
+            {i === 0 || i === points.length - 1 || i % every === 0 ? tick(p.label) : ""}
           </span>
         ))}
       </div>
