@@ -1,5 +1,7 @@
 /** Navigation, home, queue and visit statuses. */
 export const SHELL: Record<string, string> = {
+  // Messages from HMIS at the top of every page (the text itself is HMIS's own Amharic)
+  "Message from HMIS": "ከHMIS የመጣ መልዕክት",
   // Navigation
   Home: "መነሻ",
   Queue: "ወረፋ",

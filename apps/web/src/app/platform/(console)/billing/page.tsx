@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { Badge, EmptyState, Input, PageHeader, secondaryButtonClass, Skeleton } from "@/components/ui";
 import { etb } from "@/lib/format";
-import { type InvoiceLedger, type Metrics, platformApi } from "@/lib/platform";
+import { type InvoiceLedger, type LedgerInvoice, type Metrics, platformApi } from "@/lib/platform";
 import { AGE_BUCKETS, date, INVOICE_STATUS, thClass } from "../bits";
 import { BillingTabs } from "./tabs";
 
@@ -54,6 +54,16 @@ async function Ageing() {
         })}
       </dl>
     </section>
+  );
+}
+
+/** The clinic said it would pay by a day: kept to, or broken once the day has passed. */
+function PromiseToPay({ p }: { p: LedgerInvoice["promise"] }) {
+  if (!p) return null;
+  return (
+    <p className={`text-xs font-medium ${p.broken ? "text-red-700 dark:text-red-400" : "text-emerald-700 dark:text-emerald-400"}`}>
+      {p.broken ? "promise broken" : "promised"} {date(p.on)}
+    </p>
   );
 }
 
@@ -132,6 +142,7 @@ async function List({ searchParams }: { searchParams: Promise<{ status?: string;
                   </span>
                   <span className="font-semibold tabular-nums">{etb(i.status === "OPEN" ? i.balance : i.total)}</span>
                 </p>
+                <PromiseToPay p={i.promise} />
                 <Link href={`/platform/invoice/${i.id}`} className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-brand-700 hover:underline dark:text-brand-400">
                   <Printer aria-hidden className="size-4" /> View and print
                 </Link>
@@ -182,6 +193,7 @@ async function List({ searchParams }: { searchParams: Promise<{ status?: string;
                       {date(i.dueDate)}
                       {i.status === "OPEN" && i.daysLate > 0 && <p className="text-xs font-medium text-red-700 dark:text-red-400">{i.daysLate} days late</p>}
                       {i.status === "PAID" && i.paidAt && <p className="text-xs text-slate-500">paid {date(i.paidAt)}</p>}
+                      <PromiseToPay p={i.promise} />
                     </td>
                     <td className="px-3 py-3 text-right align-top tabular-nums">{etb(i.total)}</td>
                     <td className="px-3 py-3 text-right align-top font-medium tabular-nums">{i.status === "OPEN" ? etb(i.balance) : "—"}</td>

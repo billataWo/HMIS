@@ -349,3 +349,62 @@ export async function platformSearch(q: string): Promise<SearchResults> {
     throw e;
   }
 }
+
+// ─── Follow-ups and announcements ───────────────────────────────────────────────────────────────
+export async function addNote(tenantId: string, _: FormState, form: FormData): Promise<FormState> {
+  try {
+    await platformApi(`/platform/clinics/${tenantId}/notes`, {
+      method: "POST",
+      body: JSON.stringify({ kind: text(form, "kind") || "NOTE", body: text(form, "body"), followUpOn: text(form, "followUpOn") || null }),
+    });
+  } catch (e) {
+    return failure(e);
+  }
+  refresh();
+  return { ok: true, message: "Saved." };
+}
+
+export async function markNoteDone(noteId: string): Promise<FormState> {
+  try {
+    await platformApi(`/platform/notes/${noteId}/done`, { method: "POST" });
+  } catch (e) {
+    return failure(e);
+  }
+  refresh();
+  return { ok: true };
+}
+
+/** A date and time typed in the console is Addis Ababa time. */
+const addisTime = (v: string) => (v ? new Date(`${v}:00+03:00`).toISOString() : undefined);
+
+export async function publishAnnouncement(_: FormState, form: FormData): Promise<FormState> {
+  try {
+    await platformApi("/platform/announcements", {
+      method: "POST",
+      body: JSON.stringify({
+        tone: text(form, "tone") || "INFO",
+        title: text(form, "title"),
+        titleAm: text(form, "titleAm") || null,
+        body: text(form, "body") || null,
+        bodyAm: text(form, "bodyAm") || null,
+        tenantId: text(form, "tenantId") || null,
+        startsAt: addisTime(text(form, "startsAt")),
+        endsAt: addisTime(text(form, "endsAt")) ?? null,
+      }),
+    });
+  } catch (e) {
+    return failure(e);
+  }
+  refresh();
+  return { ok: true, message: "Published." };
+}
+
+export async function withdrawAnnouncement(id: string): Promise<FormState> {
+  try {
+    await platformApi(`/platform/announcements/${id}/withdraw`, { method: "POST" });
+  } catch (e) {
+    return failure(e);
+  }
+  refresh();
+  return { ok: true };
+}

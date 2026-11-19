@@ -2,7 +2,7 @@ import { LogOut, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { cache, Suspense, type ReactNode } from "react";
 import { ThemeSwitch } from "@/components/theme-switch";
-import { platformApi, type OperatorMe } from "@/lib/platform";
+import { type ConsoleCounts, platformApi, type OperatorMe } from "@/lib/platform";
 import { ConsoleNav } from "./nav";
 import { ConsoleSearch } from "./search";
 
@@ -10,8 +10,8 @@ import { ConsoleSearch } from "./search";
 const loadFrame = cache(async () => {
   const me = await platformApi<OperatorMe>("/platform/auth/me");
   const ready = !me.mustChangePassword && me.twoStep.enabled;
-  const counts = ready ? await platformApi<{ pendingRequests: number; pendingPayments: number }>("/platform/counts") : { pendingRequests: 0, pendingPayments: 0 };
-  return { me, ready, waiting: counts.pendingRequests, toConfirm: counts.pendingPayments };
+  const counts = ready ? await platformApi<ConsoleCounts>("/platform/counts") : { pendingRequests: 0, pendingPayments: 0, followUpsDue: 0 };
+  return { me, ready, counts: { requests: counts.pendingRequests, payments: counts.pendingPayments, followUps: counts.followUpsDue } };
 });
 
 async function Operator() {
@@ -41,8 +41,8 @@ async function Search() {
 }
 
 async function Nav() {
-  const { me, ready, waiting, toConfirm } = await loadFrame();
-  return <ConsoleNav owner={me.role === "OWNER"} waiting={waiting} toConfirm={toConfirm} ready={ready} />;
+  const { me, ready, counts } = await loadFrame();
+  return <ConsoleNav owner={me.role === "OWNER"} counts={counts} ready={ready} />;
 }
 
 /** The platform console: HMIS staff only, separate from every clinic's screens. */

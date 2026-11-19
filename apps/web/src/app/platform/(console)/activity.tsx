@@ -1,4 +1,4 @@
-import { Banknote, Building2, CreditCard, FileText, KeyRound, LogIn, Settings, ShieldAlert, Trash2, UserCog } from "lucide-react";
+import { Banknote, Building2, CreditCard, FileText, KeyRound, LogIn, Megaphone, NotebookPen, Settings, ShieldAlert, Trash2, UserCog } from "lucide-react";
 import Link from "next/link";
 import { CLINIC_TZ } from "@/lib/format";
 import type { HistoryEntry } from "@/lib/platform";
@@ -36,6 +36,10 @@ export const ACTIONS: Record<string, Kind> = {
   "operator.reset": { label: "Reset an operator's sign-in", icon: UserCog, tone: "warn" },
   "settings.updated": { label: "Changed the settings", icon: Settings, tone: "neutral" },
   "clinic.data_deleted": { label: "Deleted a clinic's records", icon: Trash2, tone: "danger" },
+  "note.added": { label: "Wrote a note", icon: NotebookPen, tone: "neutral" },
+  "note.done": { label: "Finished a follow-up", icon: NotebookPen, tone: "good" },
+  "announcement.published": { label: "Published an announcement", icon: Megaphone, tone: "neutral" },
+  "announcement.withdrawn": { label: "Withdrew an announcement", icon: Megaphone, tone: "warn" },
 };
 
 /** The kinds of action the history can be narrowed to (the part of the action before the dot). */
@@ -50,6 +54,8 @@ export const AREAS = [
   { value: "operator", label: "Operators" },
   { value: "settings", label: "Settings" },
   { value: "clinic", label: "Clinic records" },
+  { value: "note", label: "Notes and follow-ups" },
+  { value: "announcement", label: "Announcements" },
 ] as const;
 
 const TONE: Record<Kind["tone"], string> = {

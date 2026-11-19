@@ -1,12 +1,14 @@
 import { connection } from "next/server";
-import { ArrowRight, ChevronRight, Printer, Server } from "lucide-react";
+import { ArrowRight, ChevronRight, Phone, Printer, Server } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { ColumnChart } from "@/components/charts";
 import { Badge, Card, EmptyState, Notice, Skeleton } from "@/components/ui";
 import { clinicToday, etb, formatAgo } from "@/lib/format";
 import { type ClinicDetail, type ClinicUsage, DEPLOYMENT_LABEL, METHOD_LABEL, type Plan, platformApi } from "@/lib/platform";
+import { NoteForm } from "../../../followup-forms";
 import { ActivityList } from "../../activity";
+import { lateBy, NoteItem } from "../../notes";
 import { ClinicActions, DeleteClinicData, DownloadLicence, InvoiceActions, IssueInvoice, PaymentReview, SubscriptionForm } from "../../../forms";
 import { change, date, dateTime, INVOICE_STATUS as INVOICE, PAYMENT_STATUS as PAYMENT, StateBadge, tdClass, thClass } from "../../bits";
 
@@ -65,6 +67,58 @@ function Usage({ u, activeStaff }: { u: ClinicUsage; activeStaff: number }) {
   );
 }
 
+/** Calls, promises to pay and notes: open follow-ups first (soonest first), then the rest, newest first. */
+function Notes({ c, today }: { c: ClinicDetail; today: string }) {
+  const open = c.notes.filter((n) => n.followUpOn && !n.doneAt).sort((a, b) => a.followUpOn!.localeCompare(b.followUpOn!));
+  const rest = c.notes.filter((n) => !open.includes(n));
+  const phone = c.tenant.phone ?? c.admins.find((a) => a.active)?.phone;
+  return (
+    <Card
+      title="Follow-up"
+      description="Calls, promises to pay and notes, for whoever deals with this clinic next."
+      actions={
+        phone && (
+          <a href={`tel:${phone}`} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-brand-700 tabular-nums hover:underline dark:text-brand-400">
+            <Phone aria-hidden className="size-4" /> {phone}
+          </a>
+        )
+      }
+    >
+      <div className="grid gap-6 lg:grid-cols-[22rem_1fr]">
+        <NoteForm tenantId={c.tenant.id} today={today} />
+        <div className="min-w-0">
+          {!c.notes.length ? (
+            <p className="text-sm text-slate-500">No notes yet. After a call, write down what was agreed: the next person will see it here.</p>
+          ) : (
+            <>
+              {open.length > 0 && (
+                <>
+                  <h3 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">To follow up</h3>
+                  <ul className="mb-3 divide-y divide-slate-100 dark:divide-slate-800">
+                    {open.map((n) => (
+                      <NoteItem key={n.id} note={n} daysLate={lateBy(n.followUpOn, today)} today={today} />
+                    ))}
+                  </ul>
+                </>
+              )}
+              {rest.length > 0 && (
+                <>
+                  {open.length > 0 && <h3 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Earlier</h3>}
+                  <ul className="max-h-[28rem] divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
+                    {rest.map((n) => (
+                      <NoteItem key={n.id} note={n} daysLate={0} today={today} />
+                    ))}
+                  </ul>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 async function Content({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const [c, { plans }] = await Promise.all([platformApi<ClinicDetail>(`/platform/clinics/${id}`), platformApi<{ plans: Plan[] }>("/platform/plans")]);
@@ -107,6 +161,8 @@ async function Content({ params }: { params: Promise<{ id: string }> }) {
       </div>
 
       <Usage u={c.usage} activeStaff={c.counts.staff} />
+
+      <Notes c={c} today={today} />
 
       <div className="grid items-start gap-6 lg:grid-cols-[1fr_20rem]">
         <Card

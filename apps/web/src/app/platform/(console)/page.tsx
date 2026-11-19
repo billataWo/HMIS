@@ -5,7 +5,7 @@ import { Suspense } from "react";
 import { BarList, ColumnChart } from "@/components/charts";
 import { Card, EmptyState, PageHeader, Skeleton } from "@/components/ui";
 import { etb } from "@/lib/format";
-import { type HistoryEntry, METHOD_LABEL, type Metrics, type OperatorMe, type OperatorRow, type Overview, platformApi, type PlatformSettings } from "@/lib/platform";
+import { type ConsoleCounts, type HistoryEntry, METHOD_LABEL, type Metrics, type OperatorMe, type OperatorRow, type Overview, platformApi, type PlatformSettings } from "@/lib/platform";
 import { PaymentReview } from "../forms";
 import { birr, change, date, monthName, StateBadge } from "./bits";
 
@@ -118,7 +118,7 @@ async function SetupChecklist() {
 const ATTENTION_SHOWN = 8;
 
 async function Content() {
-  const [o, m] = await Promise.all([platformApi<Overview>("/platform/overview"), platformApi<Metrics>("/platform/metrics")]);
+  const [o, m, c] = await Promise.all([platformApi<Overview>("/platform/overview"), platformApi<Metrics>("/platform/metrics"), platformApi<ConsoleCounts>("/platform/counts")]);
   const clinics = o.counts.active + o.counts.trial + o.counts.overdue;
   const late = Object.entries(m.receivables.ageing)
     .filter(([k]) => k !== "current")
@@ -126,6 +126,7 @@ async function Content() {
   const toDo = [
     o.pendingRequests > 0 && { href: "/platform/requests", text: `${o.pendingRequests} request${o.pendingRequests === 1 ? "" : "s"} to decide` },
     o.pendingPayments.length > 0 && { href: "#confirm", text: `${o.pendingPayments.length} payment${o.pendingPayments.length === 1 ? "" : "s"} to confirm` },
+    c.followUpsDue > 0 && { href: "/platform/follow-ups", text: `${c.followUpsDue} follow-up${c.followUpsDue === 1 ? "" : "s"} due` },
     late.count > 0 && { href: "/platform/billing?status=OVERDUE", text: `${late.count} overdue invoice${late.count === 1 ? "" : "s"}` },
     o.unappliedCheckouts.length > 0 && { href: "#unapplied", text: `${o.unappliedCheckouts.length} online payment${o.unappliedCheckouts.length === 1 ? "" : "s"} not applied` },
   ].filter((x): x is { href: string; text: string } => !!x);

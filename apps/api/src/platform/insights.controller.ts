@@ -2,10 +2,10 @@ import { Controller, Get, NotFoundException, Param, Query, UseGuards } from '@ne
 import { z } from 'zod';
 import type { PlatformPaymentMethod, PlatformPaymentStatus, Prisma } from '@hmis/db';
 import { Public } from '../auth/auth.decorators.js';
-import { DAY_PATTERN, dayRange } from '../common/clinic-day.js';
+import { clinicDay, DAY_PATTERN, dayRange } from '../common/clinic-day.js';
 import { fromCents, toCents } from '../common/money.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { PlatformGuard } from './platform-auth.js';
+import { CurrentOperator, type Operator, PlatformGuard } from './platform-auth.js';
 import { type AgeBucket, ageBucket, daysLate, lastMonths, lateBefore, monthlyCents, monthOf, monthStart } from './revenue.js';
 import { type SubState, subscriptionState } from './subscription-state.js';
 
@@ -36,14 +36,67 @@ export class PlatformInsightsController {
     return new Map(tenants.map((t) => [t.id, t.name]));
   }
 
-  /** For the menu's badges: requests to decide and reported payments to confirm. */
+  /** For the menu's badges: requests to decide, reported payments to confirm, follow-ups due. */
   @Get('counts')
   async counts() {
-    const [pendingRequests, pendingPayments] = await Promise.all([
+    const [pendingRequests, pendingPayments, followUpsDue] = await Promise.all([
       this.db.clinicRequest.count({ where: { status: 'PENDING' } }),
       this.db.platformPayment.count({ where: { status: 'PENDING' } }),
+      this.db.platformNote.count({ where: { doneAt: null, followUpOn: { lt: dayRange(clinicDay()).end } } }),
     ]);
-    return { pendingRequests, pendingPayments };
+    return { pendingRequests, pendingPayments, followUpsDue };
+  }
+
+  /**
+   * Follow-ups: calls to make and promises to pay to check, from the notes on each clinic. "due" is
+   * today and anything missed; "upcoming" is later; "done" the last ones finished.
+   */
+  @Get('follow-ups')
+  async followUps(@CurrentOperator() op: Operator, @Query('scope') scope?: string, @Query('mine') mine?: string) {
+    const endOfToday = dayRange(clinicDay()).end;
+    const show = scope === 'upcoming' || scope === 'done' ? scope : 'due';
+    const own = mine === '1' ? { operatorId: op.sub } : {};
+    const open = { doneAt: null, followUpOn: { not: null } };
+    const where: Prisma.PlatformNoteWhereInput =
+      show === 'done'
+        ? { ...own, doneAt: { not: null } }
+        : { ...own, doneAt: null, followUpOn: show === 'due' ? { lt: endOfToday } : { gte: endOfToday } };
+    const [notes, due, upcoming, dueMine] = await Promise.all([
+      this.db.platformNote.findMany({ where, orderBy: show === 'done' ? { doneAt: 'desc' } : { followUpOn: 'asc' }, take: 300 }),
+      this.db.platformNote.count({ where: { ...open, followUpOn: { lt: endOfToday } } }),
+      this.db.platformNote.count({ where: { ...open, followUpOn: { gte: endOfToday } } }),
+      this.db.platformNote.count({ where: { ...open, operatorId: op.sub, followUpOn: { lt: endOfToday } } }),
+    ]);
+    const tenantIds = [...new Set(notes.map((n) => n.tenantId))];
+    const [tenants, owed, ops] = await Promise.all([
+      // The clinic's phone, or else its first active admin's: someone to call.
+      this.db.tenant.findMany({
+        where: { id: { in: tenantIds } },
+        select: { id: true, name: true, phone: true, users: { where: { role: 'ADMIN', active: true }, orderBy: { createdAt: 'asc' }, take: 1, select: { phone: true } } },
+      }),
+      this.db.platformInvoice.findMany({
+        where: { tenantId: { in: tenantIds }, status: 'OPEN' },
+        select: { tenantId: true, total: true, dueDate: true, payments: { where: { status: 'CONFIRMED' }, select: { amount: true } } },
+      }),
+      this.db.platformUser.findMany({ where: { id: { in: [...new Set(notes.flatMap((n) => [n.operatorId, n.doneById]).filter((x): x is string => !!x))] } }, select: { id: true, fullName: true } }),
+    ]);
+    const clinics = new Map(tenants.map(({ users, ...t }) => [t.id, { ...t, phone: t.phone ?? users[0]?.phone ?? null }]));
+    const names = new Map(ops.map((o) => [o.id, o.fullName]));
+    // What each clinic owes now, so the caller knows the amount before dialling.
+    const balance = new Map<string, number>();
+    for (const i of owed) balance.set(i.tenantId, (balance.get(i.tenantId) ?? 0) + Math.max(0, toCents(i.total) - i.payments.reduce((sum, p) => sum + toCents(p.amount), 0)));
+    const now = new Date();
+    return {
+      summary: { due, upcoming, dueMine },
+      notes: notes.map((n) => ({
+        ...n,
+        clinic: clinics.get(n.tenantId) ?? { id: n.tenantId, name: '', phone: null },
+        owes: money(balance.get(n.tenantId) ?? 0),
+        daysLate: n.followUpOn && !n.doneAt ? daysLate(n.followUpOn, now) : 0,
+        operator: n.operatorId ? (names.get(n.operatorId) ?? null) : null,
+        doneBy: n.doneById ? (names.get(n.doneById) ?? null) : null,
+      })),
+    };
   }
 
   // ─── The business at a glance ────────────────────────────────────────────────────────────────
@@ -171,14 +224,31 @@ export class PlatformInsightsController {
       this.db.platformInvoice.groupBy({ by: ['status'], _count: true, _sum: { total: true } }),
       this.db.platformInvoice.count({ where: { status: 'OPEN', dueDate: { lt: lateBefore(now) } } }),
     ]);
-    const names = await this.clinicNames(invoices.map((i) => i.tenantId));
+    const open = invoices.filter((i) => i.status === 'OPEN').map((i) => i.tenantId);
+    const [names, promises] = await Promise.all([
+      this.clinicNames(invoices.map((i) => i.tenantId)),
+      open.length
+        ? this.db.platformNote.findMany({ where: { tenantId: { in: [...new Set(open)] }, kind: 'PROMISE', doneAt: null }, orderBy: { followUpOn: 'asc' }, select: { tenantId: true, followUpOn: true } })
+        : [],
+    ]);
+    // The clinic's earliest open promise to pay; "broken" once its day has passed.
+    const promise = new Map<string, Date>();
+    for (const p of promises) if (p.followUpOn && !promise.has(p.tenantId)) promise.set(p.tenantId, p.followUpOn);
     const summary = Object.fromEntries(groups.map((g) => [g.status, { count: g._count, total: g._sum.total?.toString() ?? '0' }]));
     return {
       summary: { ...summary, OVERDUE: { count: overdue } },
       invoices: invoices.map(({ payments, ...i }) => {
         const paid = payments.reduce((sum, p) => sum + toCents(p.amount), 0);
         const balance = i.status === 'OPEN' ? Math.max(0, toCents(i.total) - paid) : 0;
-        return { ...i, clinic: names.get(i.tenantId) ?? '', paid: money(paid), balance: money(balance), daysLate: i.status === 'OPEN' ? daysLate(i.dueDate, now) : 0 };
+        const promised = i.status === 'OPEN' ? promise.get(i.tenantId) : undefined;
+        return {
+          ...i,
+          clinic: names.get(i.tenantId) ?? '',
+          paid: money(paid),
+          balance: money(balance),
+          daysLate: i.status === 'OPEN' ? daysLate(i.dueDate, now) : 0,
+          promise: promised ? { on: promised, broken: daysLate(promised, now) > 0 } : null,
+        };
       }),
     };
   }

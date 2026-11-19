@@ -1,4 +1,7 @@
+import { Info, TriangleAlert } from "lucide-react";
+import { cookies } from "next/headers";
 import { Suspense, type ReactNode } from "react";
+import { AnnouncementClose } from "@/components/announcement-close";
 import { AppNav, AppNavSkeleton } from "@/components/app-nav";
 import Link from "next/link";
 import { Notice, Skeleton } from "@/components/ui";
@@ -97,6 +100,49 @@ async function SubscriptionBanner() {
   return null;
 }
 
+type Announcement = { id: string; tone: "INFO" | "WARNING"; title: string; titleAm: string | null; body: string | null; bodyAm: string | null };
+
+/**
+ * Messages from HMIS (maintenance, new features, price changes), written in the platform console.
+ * In Amharic when HMIS wrote an Amharic version. Information can be closed (remembered in this
+ * browser: components/announcement-close.tsx); a warning stays until HMIS ends it.
+ */
+async function Announcements() {
+  const [list, lang, t, jar] = await Promise.all([api<Announcement[]>("/announcements").catch(() => []), getLang(), getT(), cookies()]);
+  const closed = new Set(decodeURIComponent(jar.get("hmis_announcements_closed")?.value ?? "").split(","));
+  const shown = list.filter((a) => a.tone === "WARNING" || !closed.has(a.id));
+  if (!shown.length) return null;
+  return (
+    <div className="mb-6 space-y-3 print:hidden">
+      {shown.map((a) => {
+        const am = lang === "am";
+        const title = (am && a.titleAm) || a.title;
+        const body = (am && a.bodyAm) || a.body;
+        const Icon = a.tone === "WARNING" ? TriangleAlert : Info;
+        return (
+          <section
+            key={a.id}
+            aria-label={t("Message from HMIS")}
+            lang={am && a.titleAm ? "am" : "en"}
+            className={`flex gap-3 rounded-xl border px-4 py-3 text-sm ${
+              a.tone === "WARNING"
+                ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100"
+                : "border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-100"
+            }`}
+          >
+            <Icon aria-hidden className="mt-0.5 size-4 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">{title}</p>
+              {body && <p className="mt-0.5 whitespace-pre-line opacity-90">{body}</p>}
+            </div>
+            {a.tone === "INFO" && <AnnouncementClose id={a.id} label={t("Close")} />}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 /**
  * Clinic server ↔ cloud: everyone on a read-only cloud copy is told so (and how fresh it is);
  * admins on a clinic server are told when changes have been waiting for the internet a while.
@@ -143,6 +189,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       <main className="mx-auto w-full max-w-6xl min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8 print:max-w-none print:p-0">
         <Suspense fallback={null}>
           <SubscriptionBanner />
+        </Suspense>
+        <Suspense fallback={null}>
+          <Announcements />
         </Suspense>
         <Suspense fallback={null}>
           <BackupBanner />

@@ -17,7 +17,7 @@ import { onlineMethods, publicUrl } from './payments/checkout.js';
 import { issueLicence, licenceSigningProblem } from '../licence/licence.js';
 import { deleteClinicData } from '../exports/clinic-data.js';
 import { monthlyCents } from './revenue.js';
-import { clinicDay } from '../common/clinic-day.js';
+import { clinicDay, DAY_PATTERN, dayRange } from '../common/clinic-day.js';
 
 const DAY = 86_400_000;
 
@@ -90,6 +90,13 @@ const SettingsSchema = z.object({
   invoiceDaysBefore: z.number().int().min(1).max(60).optional(),
   dataRetentionDays: z.number().int().min(30).max(3650).optional(),
 });
+const NoteSchema = z
+  .object({
+    kind: z.enum(['NOTE', 'CALL', 'PROMISE']).default('NOTE'),
+    body: z.string().trim().min(2, 'Write what was said or agreed').max(2000),
+    followUpOn: z.string().regex(DAY_PATTERN).nullable().optional(),
+  })
+  .refine((n) => n.kind !== 'PROMISE' || n.followUpOn, { message: 'A promise to pay needs the day they said they would pay', path: ['followUpOn'] });
 const DeleteSchema = z.object({ confirmName: z.string().trim().min(1).max(200) });
 
 type Sub = { status: SubscriptionStatus; trialEndsAt: Date | null; paidUntil: Date | null; graceDays: number; suspendedAt: Date | null; cancelledAt: Date | null };
@@ -276,7 +283,7 @@ export class PlatformController {
       },
     });
     if (!t) throw new NotFoundException();
-    const [invoices, payments, request, history, checkouts, lastExport] = await Promise.all([
+    const [invoices, payments, request, history, checkouts, lastExport, notes] = await Promise.all([
       this.db.platformInvoice.findMany({ where: { tenantId: id }, orderBy: { issuedAt: 'desc' }, take: 50 }),
       this.db.platformPayment.findMany({ where: { tenantId: id }, orderBy: { createdAt: 'desc' }, take: 50, include: { invoice: { select: { number: true } } } }),
       this.db.clinicRequest.findFirst({ where: { tenantId: id } }),
@@ -284,10 +291,13 @@ export class PlatformController {
       this.db.platformCheckout.findMany({ where: { tenantId: id }, orderBy: { createdAt: 'desc' }, take: 20 }),
       // When the clinic last took its data away (before its records may be deleted).
       this.db.auditLog.findFirst({ where: { tenantId: id, action: 'clinic.exported' }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
+      // Open follow-ups first (soonest first), then the latest notes.
+      this.db.platformNote.findMany({ where: { tenantId: id }, orderBy: [{ createdAt: 'desc' }], take: 100 }),
     ]);
     const settings = await this.db.platformSetting.findUniqueOrThrow({ where: { id: 1 }, select: { dataRetentionDays: true } });
     const { subscription, users, _count, ...tenant } = t;
-    const ops = await this.db.platformUser.findMany({ where: { id: { in: history.map((h) => h.operatorId).filter((x): x is string => !!x) } }, select: { id: true, fullName: true } });
+    const opIds = [...history.map((h) => h.operatorId), ...notes.flatMap((n) => [n.operatorId, n.doneById])].filter((x): x is string => !!x);
+    const ops = await this.db.platformUser.findMany({ where: { id: { in: [...new Set(opIds)] } }, select: { id: true, fullName: true } });
     const opNames = new Map(ops.map((o) => [o.id, o.fullName]));
     return {
       tenant,
@@ -300,6 +310,7 @@ export class PlatformController {
       request,
       history: history.map((h) => ({ ...h, operator: h.operatorId ? (opNames.get(h.operatorId) ?? null) : null })),
       checkouts,
+      notes: notes.map((n) => ({ ...n, operator: n.operatorId ? (opNames.get(n.operatorId) ?? null) : null, doneBy: n.doneById ? (opNames.get(n.doneById) ?? null) : null })),
       lastExportAt: lastExport?.createdAt ?? null,
       deletableFrom: subscription?.cancelledAt && !subscription.dataDeletedAt ? new Date(subscription.cancelledAt.getTime() + settings.dataRetentionDays * 86_400_000) : null,
     };
@@ -459,6 +470,39 @@ export class PlatformController {
     const invoice = await issueInvoice(this.db, id, op.sub);
     await this.audit(req, op, 'invoice.issued', 'PlatformInvoice', invoice.id, id, { number: invoice.number, total: invoice.total.toString() });
     return invoice;
+  }
+
+  // ─── Follow-up: calls, promises to pay, notes for the next operator ─────────────────────────────
+  @Post('clinics/:id/notes')
+  @PlatformRoles('SUPPORT', 'BILLING')
+  async addNote(@Req() req: Request, @CurrentOperator() op: Operator, @Param('id') id: string, @Body(new ZodPipe(NoteSchema)) body: z.infer<typeof NoteSchema>) {
+    if (!uuid.safeParse(id).success) throw new NotFoundException();
+    if (!(await this.db.tenant.count({ where: { id } }))) throw new NotFoundException();
+    let followUpOn: Date | null = null;
+    if (body.followUpOn) {
+      const today = clinicDay();
+      const latest = clinicDay(new Date(Date.now() + 366 * DAY));
+      if (body.followUpOn < today) throw new ConflictException('The follow-up day has already passed');
+      if (body.followUpOn > latest) throw new ConflictException('Choose a follow-up day within a year');
+      followUpOn = dayRange(body.followUpOn).start;
+    }
+    const note = await this.db.platformNote.create({ data: { tenantId: id, kind: body.kind, body: body.body, followUpOn, operatorId: op.sub } });
+    await this.audit(req, op, 'note.added', 'PlatformNote', note.id, id, { kind: body.kind, followUpOn: body.followUpOn ?? null });
+    return note;
+  }
+
+  /** The follow-up is done: the call was made, the promised payment came (or did not). */
+  @Post('notes/:id/done')
+  @HttpCode(200)
+  @PlatformRoles('SUPPORT', 'BILLING')
+  async noteDone(@Req() req: Request, @CurrentOperator() op: Operator, @Param('id') id: string) {
+    if (!uuid.safeParse(id).success) throw new NotFoundException();
+    const note = await this.db.platformNote.findUnique({ where: { id } });
+    if (!note) throw new NotFoundException();
+    const done = await this.db.platformNote.updateMany({ where: { id, doneAt: null, followUpOn: { not: null } }, data: { doneAt: new Date(), doneById: op.sub } });
+    if (!done.count) throw new ConflictException(note.doneAt ? 'This follow-up is already done' : 'This note has no follow-up');
+    await this.audit(req, op, 'note.done', 'PlatformNote', id, note.tenantId, { kind: note.kind });
+    return { ok: true };
   }
 
   @Post('invoices/:id/void')

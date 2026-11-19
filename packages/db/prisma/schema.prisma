@@ -1657,6 +1657,46 @@ model PlatformSetting {
   updatedAt         DateTime @updatedAt
 }
 
+/// HMIS's own notes on a clinic: a call made, a promise to pay, anything the next operator should
+/// know. With a follow-up day, it is on the console's to-do list until marked done.
+model PlatformNote {
+  id         String    @id @default(uuid())
+  tenantId   String
+  /// NOTE, CALL (a call to or from the clinic) or PROMISE (the clinic said it would pay by followUpOn).
+  kind       String    @default("NOTE")
+  body       String
+  /// The start of the Addis Ababa day to come back to it.
+  followUpOn DateTime?
+  doneAt     DateTime?
+  doneById   String?
+  operatorId String?
+  createdAt  DateTime  @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([followUpOn])
+}
+
+/// A message from HMIS shown at the top of the clinic app: maintenance, a new feature, a price change.
+/// To every clinic (tenantId null) or one; between startsAt and endsAt; in English and Amharic.
+model PlatformAnnouncement {
+  id            String    @id @default(uuid())
+  tenantId      String?
+  /// INFO (can be dismissed) or WARNING (stays until it ends).
+  tone          String    @default("INFO")
+  title         String
+  titleAm       String?
+  body          String?
+  bodyAm        String?
+  startsAt      DateTime  @default(now())
+  endsAt        DateTime?
+  withdrawnAt   DateTime?
+  withdrawnById String?
+  createdById   String?
+  createdAt     DateTime  @default(now())
+
+  @@index([startsAt])
+}
+
 /// The voice that calls patients on the waiting-room TVs: one short recording per word or phrase,
 /// per language ("am", "en"), the same for every clinic. Recorded or uploaded in the platform
 /// console; the TV joins them ("ተራ ቁጥር" + "አስራ ሁለት" + ...). Stored as trimmed mono WAV.

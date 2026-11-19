@@ -182,6 +182,7 @@ export interface ClinicDetail {
   request: ClinicRequest | null;
   history: HistoryEntry[];
   checkouts: Checkout[];
+  notes: ClinicNote[];
   /** When the clinic last downloaded all its data. */
   lastExportAt: string | null;
   /** A cancelled clinic's records may be deleted from then on. */
@@ -287,6 +288,55 @@ export interface LedgerInvoice extends PlatformInvoiceRow {
   paid: string;
   balance: string;
   daysLate: number;
+  /** The clinic's earliest open promise to pay (OPEN invoices only); broken once its day has passed. */
+  promise: { on: string; broken: boolean } | null;
+}
+
+export type NoteKind = "NOTE" | "CALL" | "PROMISE";
+
+/** HMIS's own note on a clinic; with followUpOn, a follow-up until done. */
+export interface ClinicNote {
+  id: string;
+  tenantId: string;
+  kind: NoteKind;
+  body: string;
+  followUpOn: string | null;
+  doneAt: string | null;
+  operator: string | null;
+  doneBy: string | null;
+  createdAt: string;
+}
+
+export interface FollowUps {
+  summary: { due: number; upcoming: number; dueMine: number };
+  notes: (ClinicNote & { clinic: { id: string; name: string; phone: string | null }; owes: string; daysLate: number })[];
+}
+
+export type AnnouncementState = "scheduled" | "live" | "ended" | "withdrawn";
+
+export interface Announcement {
+  id: string;
+  tenantId: string | null;
+  tone: "INFO" | "WARNING";
+  title: string;
+  titleAm: string | null;
+  body: string | null;
+  bodyAm: string | null;
+  startsAt: string;
+  endsAt: string | null;
+  withdrawnAt: string | null;
+  createdAt: string;
+  state: AnnouncementState;
+  /** The one clinic it is for; null for every clinic. */
+  clinic: string | null;
+  createdBy: string | null;
+  withdrawnBy: string | null;
+}
+
+export interface ConsoleCounts {
+  pendingRequests: number;
+  pendingPayments: number;
+  followUpsDue: number;
 }
 
 export interface InvoiceLedger {

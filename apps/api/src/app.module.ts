@@ -48,6 +48,7 @@ import { StoresController } from './inventory/stores.controller.js';
 import { PlatformAuthController } from './platform/platform-auth.controller.js';
 import { PlatformController } from './platform/platform.controller.js';
 import { PlatformInsightsController } from './platform/insights.controller.js';
+import { AnnouncementsController, PlatformAnnouncementsController } from './platform/announcements.controller.js';
 import { PlatformVoiceController } from './platform/voice.controller.js';
 import { PublicController } from './platform/public.controller.js';
 import { SubscriptionController } from './platform/subscription.controller.js';
@@ -112,6 +113,8 @@ if (process.env.NODE_ENV === 'production' && (jwtSecret.length < 32 || WEAK_SECR
     PlatformAuthController,
     PlatformController,
     PlatformInsightsController,
+    PlatformAnnouncementsController,
+    AnnouncementsController,
     PlatformVoiceController,
     PaymentsController,
     ExportsController,
