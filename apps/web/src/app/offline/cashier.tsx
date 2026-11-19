@@ -5,13 +5,18 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "@/components/lang-provider";
 import { Badge, buttonClass, Card, EmptyState, inputClass } from "@/components/ui";
-import { payVisit } from "@/lib/offline/actions";
+import { type OfflineMethod, payVisit } from "@/lib/offline/actions";
+import { PAYMENT_METHODS } from "@/lib/format";
 import type { OfflineBill, OfflinePayment } from "@/lib/offline/view";
 import { fullName, money, PatientLine, type TabProps, useBusy } from "./shared";
 
 export function Cashier({ view, userId }: TabProps) {
   const [receipt, setReceipt] = useState<OfflinePayment | null>(null);
   const t = useT();
+  // What this PC took, by method: what the drawer should hold for the money taken offline.
+  const totals = Object.entries(
+    view.payments.reduce<Record<string, number>>((s, p) => ({ ...s, [p.method]: (s[p.method] ?? 0) + Math.round(p.amount * 100) }), {}),
+  );
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
       <div className="space-y-4">
@@ -45,6 +50,16 @@ export function Cashier({ view, userId }: TabProps) {
           ))}
           {!view.payments.length && <li className="py-3 text-sm text-slate-500">{t("None yet.")}</li>}
         </ul>
+        {totals.length > 0 && (
+          <dl className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-sm dark:border-slate-800">
+            {totals.map(([method, cents]) => (
+              <div key={method} className="flex justify-between gap-3">
+                <dt className="text-slate-500">{t(PAYMENT_METHODS[method] ?? method)}</dt>
+                <dd className="font-medium text-slate-900 tabular-nums dark:text-white">{money(cents / 100, t)}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
       </Card>
       {/* Printed on its own: the workspace itself is hidden when printing. Printed in English, like the official receipt. */}
       {/* i18n-ignore-start */}
@@ -55,7 +70,7 @@ export function Cashier({ view, userId }: TabProps) {
             <p className="mt-1 text-sm">PROVISIONAL RECEIPT (recorded offline)</p>
             <p className="mt-4">Patient: {fullName(receipt.patient)}</p>
             <p>
-              Amount: {money(receipt.amount)} ({receipt.method === "CASH" ? "cash" : "Telebirr"})
+              Amount: {money(receipt.amount)} ({PAYMENT_METHODS[receipt.method] ?? receipt.method})
             </p>
             <p>Date: {new Date(receipt.at).toLocaleString("en-GB", { timeZone: "Africa/Addis_Ababa" })}</p>
             <p>Cashier: {view.snap.me.fullName}</p>
@@ -73,7 +88,7 @@ const cents = (s: string) => Math.round(Number(s) * 100);
 function Bill({ bill, userId }: { bill: OfflineBill; userId: string }) {
   const owed = cents(bill.subtotal);
   const [amount, setAmount] = useState(bill.subtotal);
-  const [method, setMethod] = useState<"CASH" | "TELEBIRR">("CASH");
+  const [method, setMethod] = useState<OfflineMethod>("CASH");
   const [reference, setReference] = useState("");
   const [busy, run] = useBusy();
   const t = useT();
@@ -107,18 +122,25 @@ function Bill({ bill, userId }: { bill: OfflineBill; userId: string }) {
       <div className="mt-3 flex flex-wrap items-end justify-between gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
         <p className="font-semibold text-slate-900 tabular-nums dark:text-white">{t("Owed {amount}", { amount: money(bill.subtotal, t) })}</p>
         <div className="flex flex-wrap items-center gap-2">
-          <select value={method} onChange={(e) => setMethod(e.target.value as "CASH" | "TELEBIRR")} className={`${inputClass} w-32`} aria-label={t("Payment method")}>
+          <select value={method} onChange={(e) => setMethod(e.target.value as OfflineMethod)} className={`${inputClass} w-36`} aria-label={t("Payment method")}>
             <option value="CASH">{t("Cash")}</option>
             {/* i18n-ignore: a brand name */}
             <option value="TELEBIRR">Telebirr</option>
+            <option value="BANK_TRANSFER">{t("Bank transfer")}</option>
           </select>
-          {method === "TELEBIRR" && (
-            <input aria-label={t("Telebirr transaction number")} placeholder={t("Transaction no.")} value={reference} onChange={(e) => setReference(e.target.value)} className={`${inputClass} w-40`} />
+          {method !== "CASH" && (
+            <input
+              aria-label={t(method === "TELEBIRR" ? "Telebirr transaction number" : "Bank reference")}
+              placeholder={t("Transaction no.")}
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+              className={`${inputClass} w-40`}
+            />
           )}
           <input aria-label={t("Amount received")} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className={`${inputClass} w-32 tabular-nums`} />
           <button
             disabled={busy || !valid}
-            onClick={() => run(() => payVisit(userId, bill.id, bill.patient, Math.round(n * 100) / 100, method, method === "TELEBIRR" ? reference.trim() : undefined))}
+            onClick={() => run(() => payVisit(userId, bill.id, bill.patient, Math.round(n * 100) / 100, method, method !== "CASH" ? reference.trim() : undefined))}
             className={buttonClass}
           >
             {t("Take payment")}
@@ -130,6 +152,7 @@ function Bill({ bill, userId }: { bill: OfflineBill; userId: string }) {
       )}
       {amountOk && !tooMuch && cents(amount) < owed && <p className="mt-2 text-sm text-amber-700 dark:text-amber-300">{t("Less than is owed: the rest stays owed.")}</p>}
       {method === "TELEBIRR" && <p className="mt-2 text-sm text-slate-500">{t("Check the Telebirr message on the patient's phone and copy its transaction number.")}</p>}
+      {method === "BANK_TRANSFER" && <p className="mt-2 text-sm text-slate-500">{t("Check the bank's confirmation and copy its reference number.")}</p>}
     </section>
   );
 }

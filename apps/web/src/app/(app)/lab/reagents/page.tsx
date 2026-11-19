@@ -7,6 +7,7 @@ import { getT } from "@/lib/lang";
 import { api, ApiError, type LabReagentMovement, type LabReagentsPage } from "@/lib/api";
 import { countOf, formatTime, isPast } from "@/lib/format";
 import { Adjust, AddReagent, Receive, Settings, Uses } from "./reagent-forms";
+import { NoAccess } from "@/components/status-page";
 
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "Africa/Addis_Ababa" });
 const MOVE: Record<LabReagentMovement["type"], string> = { RECEIVE: "Received", USE: "Patient test", QC: "QC run", ADJUST: "Adjusted", EXPIRED: "Expired" };
@@ -61,7 +62,7 @@ async function Reagents({ searchParams }: { searchParams: Promise<{ history?: st
   try {
     data = await api<LabReagentsPage>("/lab/reagents");
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only lab technicians and admins keep reagent stock.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only lab technicians and admins keep reagent stock.")}</NoAccess>;
     throw e;
   }
   const shown = data.reagents.find((r) => r.id === history);

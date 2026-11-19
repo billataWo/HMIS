@@ -11,6 +11,7 @@ import { getT } from "@/lib/lang";
 import { api, ApiError, type LabWorkOrder, type QcState } from "@/lib/api";
 import { ageText, formatDuration, formatMinutes, formatTime, fullName, minutesBetween } from "@/lib/format";
 import { AmendResult, BenchRow, CollectTubes } from "./bench-row";
+import { NoAccess } from "@/components/status-page";
 
 /** Groups a flat list of orders by visit, keeping the order of first appearance. */
 function byVisit(orders: LabWorkOrder[]) {
@@ -92,7 +93,7 @@ async function Worklist() {
   try {
     [data, labs] = await Promise.all([api<typeof data>("/lab/worklist"), api<string[]>("/lab/reference-labs")]);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only lab technicians and admins work the lab bench.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only lab technicians and admins work the lab bench.")}</NoAccess>;
     throw e;
   }
   // Samples at reference labs wait apart from the bench, until their results come back.

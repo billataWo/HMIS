@@ -7,6 +7,7 @@ import { api, ApiError, type InvoiceDetail, type Me } from "@/lib/api";
 import { DISCOUNT_CATEGORIES, etb, formatDualDate, formatTime, fullName, PAYMENT_METHODS } from "@/lib/format";
 import { getT } from "@/lib/lang";
 import { PaymentForm, RemoveLineForm, ReversePaymentForm, VoidForm } from "../../billing-forms";
+import { NoAccess } from "@/components/status-page";
 
 async function InvoiceView({ params }: { params: Promise<{ id: string }> }) {
   const [{ id }, t] = await Promise.all([params, getT()]);
@@ -15,7 +16,7 @@ async function InvoiceView({ params }: { params: Promise<{ id: string }> }) {
     [inv, me] = await Promise.all([api<InvoiceDetail>(`/invoices/${id}`), api<Me>("/auth/me")]);
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) notFound();
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only cashiers and admins can view invoices.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only cashiers and admins can view invoices.")}</NoAccess>;
     throw e;
   }
   // On a payer's invoice the counter takes only the patient's co-payment; the payer settles the rest.

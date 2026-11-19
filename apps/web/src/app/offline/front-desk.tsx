@@ -5,11 +5,15 @@ import { useMemo, useState } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import { useT } from "@/components/lang-provider";
 import { Badge, buttonClass, Card, inputClass, Notice, secondaryButtonClass } from "@/components/ui";
-import type { Patient, QueuePatient, Service } from "@/lib/api";
-import { checkIn, type NewPatient, registerPatient } from "@/lib/offline/actions";
-import { fullName, PatientLine, type TabProps, useBusy } from "./shared";
+import type { QueuePatient, Service } from "@/lib/api";
+import { CANCEL_REASONS } from "@/lib/cancel-reasons";
+import { checkIn, type NewPatient, registerPatient, setStatus } from "@/lib/offline/actions";
+import type { OfflinePatient } from "@/lib/offline/types";
+import type { OfflineVisit } from "@/lib/offline/view";
+import { fullName, PatientLine, type TabProps, TriageDot, useBusy } from "./shared";
 
 const norm = (s: string) => s.trim().toLowerCase();
+const when = (iso: string) => new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Addis_Ababa" });
 const digits = (s: string) => s.replace(/\D/g, "").slice(-9);
 
 export function FrontDesk({ view, userId }: TabProps) {
@@ -26,8 +30,10 @@ export function FrontDesk({ view, userId }: TabProps) {
     if (!words.length) return [];
     return view.patients
       .filter((p) => {
-        const hay = norm(`${p.mrn} ${p.firstName} ${p.fatherName} ${p.grandfather ?? ""} ${p.phone ?? ""} ${p.firstNameAm ?? ""} ${p.fatherNameAm ?? ""}`);
-        return words.every((w) => hay.includes(w));
+        // The card numbers of records merged into this one find them too (that is the number on their card).
+        const hay = norm(`${p.mrn} ${(p.oldMrns ?? []).join(" ")} ${p.firstName} ${p.fatherName} ${p.grandfather ?? ""} ${p.phone ?? ""} ${p.firstNameAm ?? ""} ${p.fatherNameAm ?? ""}`);
+        const phone = p.phone ? digits(p.phone) : "";
+        return words.every((w) => hay.includes(w) || (digits(w).length >= 6 && phone.endsWith(digits(w))));
       })
       .slice(0, 12);
   }, [q, view.patients]);
@@ -43,7 +49,14 @@ export function FrontDesk({ view, userId }: TabProps) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
       <div className="space-y-6">
-        <Card title={t("Check in a patient")} description={t("Patients known on this PC: registered recently, seen today, or registered here offline.")}>
+        <Card
+          title={t("Check in a patient")}
+          description={
+            view.patientListAt
+              ? t("All {n} of the clinic's patients as of {time}, and those registered here offline.", { n: view.patients.length, time: when(view.patientListAt) })
+              : t("Patients known on this PC: registered recently, seen today, or registered here offline.")
+          }
+        >
           <div className="flex flex-wrap gap-3">
             <label className="relative min-w-0 flex-1 basis-64">
               <span className="sr-only">{t("Search patients")}</span>
@@ -96,18 +109,56 @@ export function FrontDesk({ view, userId }: TabProps) {
       <Card title={t("Today's queue")}>
         <ol className="-my-2 divide-y divide-slate-100 dark:divide-slate-800">
           {view.queue.map((v) => (
-            <li key={v.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-              <span className="min-w-0 truncate">
-                <span className="mr-2 inline-block w-7 font-mono text-slate-500 tabular-nums">{v.offline ? "·" : v.queueNumber}</span>
-                {fullName(v.patient)}
-              </span>
-              {v.offline ? <Badge tone="violet">{t("Offline")}</Badge> : <StatusBadge status={v.status} lang={t.lang} />}
-            </li>
+            <QueueRow key={v.id} visit={v} userId={userId} />
           ))}
           {!view.queue.length && <li className="py-3 text-sm text-slate-500">{t("Nobody yet.")}</li>}
         </ol>
       </Card>
     </div>
+  );
+}
+
+/** One visit in today's queue; a waiting one can be cancelled, with the reason (as in HMIS). */
+function QueueRow({ visit: v, userId }: { visit: OfflineVisit; userId: string }) {
+  const t = useT();
+  const [cancelling, setCancelling] = useState(false);
+  const [reason, setReason] = useState<(typeof CANCEL_REASONS)[number]["value"]>("LEFT_WITHOUT_BEING_SEEN");
+  const [busy, run] = useBusy();
+  return (
+    <li className="py-2 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="inline-block w-7 shrink-0 font-mono text-slate-500 tabular-nums">{v.offline ? "·" : v.queueNumber}</span>
+          <TriageDot level={v.triageLevel} />
+          <span className="truncate">{fullName(v.patient)}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-1.5">
+          {v.offline && v.status === "WAITING" ? <Badge tone="violet">{t("Offline")}</Badge> : <StatusBadge status={v.status} lang={t.lang} />}
+          {v.status === "WAITING" && !cancelling && (
+            <button onClick={() => setCancelling(true)} className="rounded px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200">
+              {t("Cancel")}
+            </button>
+          )}
+        </span>
+      </div>
+      {cancelling && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <select value={reason} onChange={(e) => setReason(e.target.value as typeof reason)} aria-label={t("Why the visit is cancelled")} className={`${inputClass} min-w-0 flex-1`}>
+            {CANCEL_REASONS.map((r) => (
+              <option key={r.value} value={r.value}>
+                {t(r.label)}
+              </option>
+            ))}
+          </select>
+          <button disabled={busy} onClick={() => run(async () => (await setStatus(userId, v, "CANCELLED", reason), setCancelling(false)))} className={`${secondaryButtonClass} btn-size`}>
+            {t("Cancel the visit")}
+          </button>
+          <button onClick={() => setCancelling(false)} className="text-xs text-slate-500 hover:underline">
+            {t("Keep")}
+          </button>
+        </div>
+      )}
+    </li>
   );
 }
 
@@ -129,7 +180,7 @@ function RegisterForm({
   };
 
   // The same checks the server makes, against what this PC knows.
-  const similar: Patient[] =
+  const similar: OfflinePatient[] =
     form.firstName && form.fatherName
       ? view.patients.filter(
           (p) =>

@@ -10,6 +10,7 @@ import { BackToSettings } from "../back-to-settings";
 import { PayOnline } from "./pay-online";
 import { LicenceForm } from "./licence-form";
 import { TransferForm } from "./transfer-form";
+import { NoAccess } from "@/components/status-page";
 
 const STATE: Record<SubscriptionState, { label: string; tone: BadgeTone }> = {
   trial: { label: "Free trial", tone: "info" },
@@ -204,12 +205,12 @@ function LicenceView({ s, t }: { s: Extract<ClinicSubscription, { managed: true 
 
 async function Content() {
   const [me, t] = await Promise.all([api<Me>("/auth/me"), getT()]);
-  if (me.role !== "ADMIN") return <p className="text-sm text-slate-500">{t("Only clinic admins see the subscription.")}</p>;
+  if (me.role !== "ADMIN") return <NoAccess>{t("Only clinic admins see the subscription.")}</NoAccess>;
   let s: ClinicSubscription;
   try {
     s = await api<ClinicSubscription>("/subscription");
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only clinic admins see the subscription.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only clinic admins see the subscription.")}</NoAccess>;
     throw e;
   }
   if (!s.managed) {

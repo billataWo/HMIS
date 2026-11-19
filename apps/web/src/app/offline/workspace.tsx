@@ -1,13 +1,13 @@
 "use client";
 
-import { CircleAlert, CloudOff, CloudUpload, Lock, RefreshCw, Wifi } from "lucide-react";
+import { CircleAlert, CloudOff, CloudUpload, Lock, RefreshCw, Undo2, Wifi } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { LangProvider, useT } from "@/components/lang-provider";
-import { Badge, buttonClass, EmptyState, Notice, pillClass, secondaryButtonClass } from "@/components/ui";
+import { Badge, buttonClass, EmptyState, inputClass, Notice, pillClass, secondaryButtonClass } from "@/components/ui";
 import type { Role } from "@/lib/api";
 import type { Lang, T } from "@/lib/i18n";
-import { discardOp, refreshSnapshot, replay, retryOp } from "@/lib/offline/engine";
+import { dependentsOf, discardOp, keepStorage, refreshPatients, refreshSnapshot, replay, retryOp, undoOp } from "@/lib/offline/engine";
 import type { Op } from "@/lib/offline/types";
 import { Cashier } from "./cashier";
 import { Doctor } from "./doctor";
@@ -15,11 +15,13 @@ import { FrontDesk } from "./front-desk";
 import { Lab } from "./lab";
 import { Pharmacy } from "./pharmacy";
 import { useOfflineData } from "./shared";
+import { Triage } from "./triage";
 
-type Tab = "desk" | "doctor" | "cashier" | "lab" | "pharmacy";
+type Tab = "desk" | "triage" | "doctor" | "cashier" | "lab" | "pharmacy";
 /** The same roles the API accepts for each kind of work (it refuses anything else on replay). */
 const TABS: { id: Tab; label: string; roles: Role[] }[] = [
   { id: "desk", label: "Front desk", roles: ["ADMIN", "RECEPTIONIST", "NURSE"] },
+  { id: "triage", label: "Triage", roles: ["NURSE"] },
   { id: "doctor", label: "Consultation", roles: ["DOCTOR"] },
   { id: "cashier", label: "Cashier", roles: ["ADMIN", "CASHIER"] },
   { id: "lab", label: "Lab", roles: ["ADMIN", "LAB_TECH"] },
@@ -51,12 +53,14 @@ export function OfflineWorkspace() {
   );
 }
 
+const LINE = "\n";
+
 /** A queued operation's label in the reader's language (older ones kept only the English). */
 const opText = (op: Op, t: T) => (op.labelKey ? t(op.labelKey, op.labelVars) : op.label);
 
 function Workspace() {
   const t = useT();
-  const { snap, view, loaded, ops, expired: expiredMarker } = useOfflineData();
+  const { snap, view, loaded, ops, expired: expiredMarker, off } = useOfflineData();
   const browserOnline = useSyncExternalStore(subscribeOnline, () => navigator.onLine, () => true);
   const [reachable, setReachable] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -71,7 +75,11 @@ function Workspace() {
       const r = await replay(userId);
       setReachable(r.stopped !== "offline" && r.stopped !== "server");
       setSignedOut(r.stopped === "signed-out");
-      if (r.stopped === null) setReachable((await refreshSnapshot()) !== null);
+      if (r.stopped === null) {
+        const fresh = await refreshSnapshot();
+        setReachable(fresh !== null);
+        if (fresh && fresh !== "off") await refreshPatients(fresh);
+      }
     } finally {
       setSyncing(false);
     }
@@ -79,6 +87,7 @@ function Workspace() {
 
   useEffect(() => {
     if (!userId) return;
+    void keepStorage();
     const first = window.setTimeout(() => void sync(), 0);
     const every = window.setInterval(() => void sync(), 60_000);
     window.addEventListener("online", sync);
@@ -117,6 +126,25 @@ function Workspace() {
                 {t("Sign in")}
               </Link>
             </>
+          )}
+        </EmptyState>
+      </div>
+    );
+  }
+  // The clinic turned offline mode off: this PC keeps no patient data (work recorded earlier is still sent).
+  if (!snap && off) {
+    const waiting = ops.filter((o) => o.status !== "done").length;
+    return (
+      <div className="mx-auto max-w-xl p-8">
+        <EmptyState icon={CloudOff} title={t("Offline mode is turned off for this clinic")}>
+          {t("This PC keeps no patient data, so there is nothing to work on without a connection. An admin can turn it on in Settings.")}
+          {waiting
+            ? ` ${t(waiting === 1 ? "The {n} offline item waiting on this PC will be sent once HMIS is open." : "The {n} offline items waiting on this PC will be sent once HMIS is open.", { n: waiting })}`
+            : ""}{" "}
+          {online && (
+            <Link className="underline" href="/">
+              {t("Open HMIS")}
+            </Link>
           )}
         </EmptyState>
       </div>
@@ -197,7 +225,7 @@ function Workspace() {
           )}
         </Notice>
       )}
-      <Outbox pending={view.pending} failed={view.failed} />
+      <Outbox pending={view.pending} failed={view.failed} all={ops} />
 
       {snap.readOnly ? (
         <EmptyState icon={Lock} title={t("This is the cloud's read-only copy of the clinic")}>
@@ -236,6 +264,7 @@ function Areas({
         </nav>
       )}
       {current === "desk" && <FrontDesk view={view} userId={userId} />}
+      {current === "triage" && <Triage view={view} userId={userId} />}
       {current === "doctor" && <Doctor view={view} userId={userId} />}
       {current === "cashier" && <Cashier view={view} userId={userId} />}
       {current === "lab" && <Lab view={view} userId={userId} />}
@@ -246,7 +275,7 @@ function Areas({
 }
 
 /** Work waiting to be sent, and work the server refused (with what to do about it). */
-function Outbox({ pending, failed }: { pending: Op[]; failed: Op[] }) {
+function Outbox({ pending, failed, all }: { pending: Op[]; failed: Op[]; all: Op[] }) {
   const t = useT();
   if (!pending.length && !failed.length) return null;
   return (
@@ -269,14 +298,34 @@ function Outbox({ pending, failed }: { pending: Op[]; failed: Op[] }) {
           <h2 className="flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
             <CloudUpload aria-hidden className="size-4" /> {t("Waiting to be sent ({n})", { n: pending.length })}
           </h2>
-          <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-sm text-slate-600 dark:text-slate-400">
+          <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto text-sm text-slate-600 dark:text-slate-400">
             {pending.map((op) => (
-              <li key={op.id}>
-                <span className="mr-2 font-mono text-xs text-slate-500">{time(op.at)}</span>
-                {opText(op, t)}
+              <li key={op.id} className="group flex items-start justify-between gap-3">
+                <span className="min-w-0">
+                  <span className="mr-2 font-mono text-xs text-slate-500">{time(op.at)}</span>
+                  {opText(op, t)}
+                </span>
+                <button
+                  onClick={() => {
+                    const also = dependentsOf(op, all);
+                    const what = opText(op, t);
+                    const ask = also.length
+                      ? t('Take back "{what}"? It is not sent, and neither are the {n} later items that depend on it:', { what, n: also.length }) + LINE + also.map((o) => `– ${opText(o, t)}`).join(LINE)
+                      : t('Take back "{what}"? It will not be sent.', { what });
+                    if (window.confirm(ask)) {
+                      void undoOp(op.id).then((ok) => {
+                        if (!ok) window.alert(t("It was sent meanwhile: correct it in HMIS instead."));
+                      });
+                    }
+                  }}
+                  className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                >
+                  <Undo2 aria-hidden className="size-3.5" /> {t("Take back")}
+                </button>
               </li>
             ))}
           </ul>
+          <p className="mt-2 text-xs text-slate-500">{t("Recorded by mistake? Take it back before it is sent. Once sent, correct it in HMIS.")}</p>
         </section>
       )}
     </div>
@@ -286,7 +335,7 @@ function Outbox({ pending, failed }: { pending: Op[]; failed: Op[] }) {
 /** What to do about the refusals that happen when two PCs worked on the same patient offline. */
 function hint(op: Op): string | null {
   const e = op.error ?? "";
-  if (op.errorCode === "IDEMPOTENCY_UNKNOWN") return "Look for it in HMIS first. Only if it is not there, send it again.";
+  if (op.errorCode === "IDEMPOTENCY_UNKNOWN" || op.errorCode === "SERVER_ERROR") return "Look for it in HMIS first. Only if it is not there, send it again.";
   if (op.kind === "pay" && op.errorCode === "NOTHING_OWED") {
     return "This visit was already settled, probably on another PC. The money taken here is extra: give it back to the patient.";
   }
@@ -296,12 +345,16 @@ function hint(op: Op): string | null {
   if (op.kind === "pay") return "Check the visit's invoices in HMIS before taking any more money; give back anything paid twice.";
   if (op.kind === "collect" && /already been taken/i.test(e)) return "Another PC recorded this sample already: nothing more to do.";
   if (op.kind === "dispense") return "Check the prescription in HMIS before handing over anything else.";
+  if (op.kind === "verify" && op.errorCode === "CRITICAL_NOT_NOTIFIED") return "Phone the doctor, write who was told, and send it again.";
+  if (op.kind === "reject" && /no sample/i.test(e)) return "The sample was already dealt with on another PC: nothing more to do.";
   if (op.kind === "prescribe" && /alert|allerg|interact/i.test(e)) return "Open the visit in HMIS, review the alert and prescribe again there.";
   return null;
 }
 
 function Failed({ op }: { op: Op }) {
   const t = useT();
+  const [notified, setNotified] = useState("");
+  const critical = op.kind === "verify" && op.errorCode === "CRITICAL_NOT_NOTIFIED";
   const details = op.errorBody as { duplicates?: { mrn: string; firstName: string; fatherName: string }[]; alerts?: { message: string }[] } | undefined;
   const duplicates = details?.duplicates;
   const advice = hint(op);
@@ -325,6 +378,30 @@ function Failed({ op }: { op: Op }) {
           {t("Possibly the same person as: {list}", { list: duplicates.map((d) => `${d.firstName} ${d.fatherName} (${d.mrn})`).join(", ") })}
         </p>
       ) : null}
+      {critical && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          <input
+            value={notified}
+            onChange={(e) => setNotified(e.target.value)}
+            placeholder={t("Who was told, and how (e.g. Dr. Dawit, by phone)")}
+            aria-label={t("Who was told of the critical result")}
+            className={`${inputClass} min-w-56 flex-1`}
+          />
+          <button
+            disabled={notified.trim().length < 2}
+            onClick={() =>
+              void retryOp(op, (o) => ({
+                ...o,
+                steps: o.steps.map((s) => ({ ...s, body: { ...(s.body as object), notified: notified.trim() } })),
+                data: { ...o.data, notified: notified.trim() },
+              }))
+            }
+            className={`${secondaryButtonClass} btn-size`}
+          >
+            {t("Verify and send")}
+          </button>
+        </div>
+      )}
       <div className="mt-2 flex flex-wrap gap-2">
         {op.kind === "register" && duplicates?.length ? (
           <button
@@ -336,9 +413,9 @@ function Failed({ op }: { op: Op }) {
             {t("Different person: register anyway")}
           </button>
         ) : null}
-        {!op.error?.startsWith("Depends on") && (
+        {!op.error?.startsWith("Depends on") && !critical && (
           <button onClick={() => void retryOp(op)} className={`${secondaryButtonClass} btn-size`}>
-            {t(op.errorCode === "IDEMPOTENCY_UNKNOWN" ? "Not in HMIS: send again" : "Send again")}
+            {t(op.errorCode === "IDEMPOTENCY_UNKNOWN" || op.errorCode === "SERVER_ERROR" ? "Not in HMIS: send again" : "Send again")}
           </button>
         )}
         <button

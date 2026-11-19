@@ -5,31 +5,18 @@ import { useMemo, useState } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import { useT } from "@/components/lang-provider";
 import { Badge, buttonClass, Card, EmptyState, inputClass, Notice, secondaryButtonClass } from "@/components/ui";
-import type { DrugOption, Frequency, IcdEntry, VisitStatus } from "@/lib/api";
+import type { DrugOption, Frequency, IcdEntry, LabOrder, VisitStatus } from "@/lib/api";
 import { addDiagnosis, orderLab, prescribe, type RxLine, saveNotes, setStatus } from "@/lib/offline/actions";
 import type { OfflineVisit } from "@/lib/offline/view";
-import { fullName, type TabProps, useBusy } from "./shared";
+import { byPriority, fullName, isEmergency, PatientLine, type TabProps, TriageDot, useBusy, VitalsForm } from "./shared";
 
-const VITALS = [
-  ["temperatureC", "Temp °C"],
-  ["pulse", "Pulse"],
-  ["systolicBp", "BP systolic"],
-  ["diastolicBp", "BP diastolic"],
-  ["respRate", "Resp. rate"],
-  ["spo2", "SpO₂ %"],
-  ["weightKg", "Weight kg"],
-] as const;
-const NOTES = [
-  ["chiefComplaint", "Chief complaint"],
-  ["history", "History"],
-  ["examination", "Examination"],
-  ["plan", "Plan"],
-] as const;
-const INTEGER = new Set(["pulse", "systolicBp", "diastolicBp", "respRate", "spo2"]);
 const FREQUENCIES: Frequency[] = ["OD", "BID", "TID", "QID", "NOCTE", "PRN", "STAT"];
+/** The API's check of a code typed by hand (consultation.controller.ts). */
+const ICD11_CODE = /^[0-9A-HJ-NP-Z]{4}(\.[0-9A-HJ-NP-Z]{1,2})?(&[0-9A-Z.&/]+)?$/;
+const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Africa/Addis_Ababa" });
 
 export function Doctor({ view, userId }: TabProps) {
-  const open = view.queue.filter((v) => v.status !== "COMPLETED" && v.status !== "CANCELLED");
+  const open = view.queue.filter((v) => v.status !== "COMPLETED" && v.status !== "CANCELLED").sort(byPriority);
   const [selected, setSelected] = useState<string | null>(null);
   const visit = open.find((v) => v.id === selected) ?? null;
   const t = useT();
@@ -42,11 +29,13 @@ export function Doctor({ view, userId }: TabProps) {
             <li key={v.id}>
               <button
                 onClick={() => setSelected(v.id)}
+                aria-current={v.id === selected ? "true" : undefined}
                 className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm ${v.id === selected ? "bg-brand-50 dark:bg-brand-950/60" : "hover:bg-slate-50 dark:hover:bg-slate-800/60"}`}
               >
-                <span className="min-w-0 truncate">
-                  <span className="mr-2 font-mono text-slate-500 tabular-nums">{v.offline ? "·" : v.queueNumber}</span>
-                  {fullName(v.patient)}
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="w-6 shrink-0 font-mono text-slate-500 tabular-nums">{v.offline ? "·" : v.queueNumber}</span>
+                  <TriageDot level={v.triageLevel} />
+                  <span className="truncate">{fullName(v.patient)}</span>
                 </span>
                 <StatusBadge status={v.status} lang={t.lang} />
               </button>
@@ -62,16 +51,18 @@ export function Doctor({ view, userId }: TabProps) {
 
 function Consultation({ view, userId, visit }: TabProps & { visit: OfflineVisit }) {
   const detail = view.snap.visits[visit.id];
-  const local = view.notes[visit.id] ?? {};
   const [busy, run] = useBusy();
   const t = useT();
   const waiting = visit.status === "WAITING";
   const diagnoses = [...(detail?.diagnoses.map((d) => ({ code: d.icd11Code, label: d.label })) ?? []), ...(view.diagnoses[visit.id] ?? [])];
   const diagnosed = diagnoses.length > 0 || Boolean(visit.diagnosed);
+  // Pay first, except emergencies (triaged red), as on the server.
   const unpaid = view.snap.prepayment && visit.consultationPaid === false;
+  const blocked = unpaid && !isEmergency(visit);
   // Ordered before this PC went offline (from the snapshot): shown, and not ordered twice.
   const earlierTests = new Set((detail?.labOrders ?? []).filter((o) => o.status !== "CANCELLED").map((o) => o.labTest.id));
   const earlierDrugs = (detail?.prescriptions ?? []).filter((p) => p.status !== "CANCELLED").flatMap((p) => p.items.map((i) => i.drug));
+  const tests: LabOrder[] = [...(detail?.labOrders ?? []), ...view.lab.filter((o) => o.visit.id === visit.id)].filter((o) => o.status !== "CANCELLED");
 
   const move = (status: VisitStatus) => run(() => setStatus(userId, visit, status));
 
@@ -79,17 +70,14 @@ function Consultation({ view, userId, visit }: TabProps & { visit: OfflineVisit 
     <div className="space-y-6">
       <section className="surface flex flex-wrap items-center justify-between gap-3 p-5">
         <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{fullName(visit.patient)}</h2>
-          <p className="text-sm text-slate-500">
-            {t(visit.patient.sex === "FEMALE" ? "Female" : "Male")}
-            {visit.patient.allergies?.length ? (
-              <span className="ml-2 font-medium text-red-700 dark:text-red-300">{t("Allergies: {list}", { list: visit.patient.allergies.join(", ") })}</span>
-            ) : null}
-          </p>
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-white">
+            <TriageDot level={visit.triageLevel} /> {fullName(visit.patient)}
+          </h2>
+          <PatientLine p={visit.patient} nameless />
         </div>
         <div className="flex flex-wrap gap-2">
           {waiting && (
-            <button disabled={busy || unpaid} onClick={() => move("IN_CONSULTATION")} className={buttonClass} title={unpaid ? t("The consultation fee is not paid yet") : undefined}>
+            <button disabled={busy || blocked} onClick={() => move("IN_CONSULTATION")} className={buttonClass} title={blocked ? t("The consultation fee is not paid yet") : undefined}>
               {t("Call in")}
             </button>
           )}
@@ -114,18 +102,32 @@ function Consultation({ view, userId, visit }: TabProps & { visit: OfflineVisit 
         </div>
       </section>
       {waiting && (
-        <Notice tone="info">{t(unpaid ? "The consultation fee has not been paid yet (as far as this PC knows)." : "Call the patient in to record notes and orders.")}</Notice>
+        <Notice tone={blocked ? "warning" : "info"}>
+          {t(
+            blocked
+              ? "The consultation fee has not been paid yet (as far as this PC knows)."
+              : unpaid
+                ? "An emergency: seen before payment. The fee stays owed."
+                : "Call the patient in to record notes and orders.",
+          )}
+        </Notice>
       )}
 
       {!waiting && (
         <>
-          <NotesCard
-            initial={Object.fromEntries([...VITALS, ...NOTES].map(([k]) => [k, String(local[k] ?? detail?.[k as keyof typeof detail] ?? "")]))}
-            busy={busy}
-            onSave={(fields) => run(() => saveNotes(userId, visit, fields))}
-          />
+          <Card title={t("Vitals and notes")}>
+            <VitalsForm
+              visit={visit}
+              detail={detail}
+              local={view.notes[visit.id] ?? {}}
+              mode="doctor"
+              busy={busy}
+              onSave={(fields) => run(() => saveNotes(userId, visit, fields))}
+            />
+          </Card>
           <DiagnosisCard icd={view.snap.icd} diagnoses={diagnoses} busy={busy} onAdd={(icd, primary) => run(() => addDiagnosis(userId, visit, icd, primary))} />
-          <LabCard view={view} visit={visit} earlier={earlierTests} busy={busy} onOrder={(tests) => run(() => orderLab(userId, visit, tests))} />
+          {tests.length > 0 && <ResultsCard tests={tests} />}
+          <LabCard view={view} visit={visit} earlier={earlierTests} busy={busy} onOrder={(chosen) => run(() => orderLab(userId, visit, chosen))} />
           <RxCard
             drugs={view.snap.drugs}
             earlier={[...earlierDrugs, ...view.pharmacy.filter((rx) => rx.visit.id === visit.id).flatMap((rx) => rx.items.map((i) => i.drug))]}
@@ -134,65 +136,113 @@ function Consultation({ view, userId, visit }: TabProps & { visit: OfflineVisit 
           />
         </>
       )}
+      {detail?.previous?.length ? <HistoryCard previous={detail.previous} /> : null}
     </div>
   );
 }
 
-function NotesCard({ initial, busy, onSave }: { initial: Record<string, string>; busy: boolean; onSave: (fields: Record<string, string | number>) => void }) {
-  const [values, setValues] = useState(initial);
-  const [saved, setSaved] = useState(false);
+/** The patient's earlier visits here (from the snapshot), for context. */
+function HistoryCard({ previous }: { previous: NonNullable<TabProps["view"]["snap"]["visits"][string]["previous"]> }) {
   const t = useT();
-  const changed = Object.fromEntries(
-    Object.entries(values)
-      .filter(([k, v]) => v.trim() !== "" && v !== initial[k])
-      .map(([k, v]) => [k, NOTES.some(([n]) => n === k) ? v.trim() : INTEGER.has(k) ? Math.round(Number(v)) : Number(v)]),
-  );
-  const invalid = Object.entries(changed).some(([, v]) => typeof v === "number" && !Number.isFinite(v));
   return (
-    <Card title={t("Vitals and notes")}>
-      <div className="grid gap-3 sm:grid-cols-4">
-        {VITALS.map(([k, label]) => (
-          <label key={k} className="space-y-1 text-sm">
-            <span className="block text-xs font-medium text-slate-500">{t(label)}</span>
-            <input inputMode="decimal" value={values[k]} onChange={(e) => (setValues({ ...values, [k]: e.target.value }), setSaved(false))} className={inputClass} />
-          </label>
+    <Card title={t("Previous visits")}>
+      <ul className="-my-2 divide-y divide-slate-100 text-sm dark:divide-slate-800">
+        {previous.map((p) => (
+          <li key={p.id} className="py-2.5">
+            <p className="font-medium text-slate-900 dark:text-white">
+              {day(p.checkedInAt)}
+              {p.doctor && <span className="ml-2 font-normal text-slate-500">{p.doctor.fullName}</span>}
+            </p>
+            {p.diagnoses.length > 0 && <p className="text-slate-700 dark:text-slate-300">{p.diagnoses.map((d) => `${d.icd11Code} ${d.label}`).join("; ")}</p>}
+            {p.chiefComplaint && <p className="text-slate-600 dark:text-slate-400">{p.chiefComplaint}</p>}
+            {(p.systolicBp || p.weightKg) && (
+              <p className="text-xs text-slate-500">
+                {p.systolicBp ? `BP ${p.systolicBp}/${p.diastolicBp ?? "?"}` : ""}
+                {p.systolicBp && p.weightKg ? " · " : ""}
+                {p.weightKg ? `${p.weightKg} kg` : ""}
+              </p>
+            )}
+            {p.prescriptions.some((rx) => rx.items.length) && (
+              <p className="text-xs text-slate-500">
+                {p.prescriptions
+                  .flatMap((rx) => rx.items)
+                  .map((i) => `${i.drug.genericName} ${i.drug.strength ?? ""} ${i.dose} ${i.frequency}`.replace(/\s+/g, " ").trim())
+                  .join(", ")}
+              </p>
+            )}
+          </li>
         ))}
-      </div>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        {NOTES.map(([k, label]) => (
-          <label key={k} className="space-y-1 text-sm">
-            <span className="block text-xs font-medium text-slate-500">{t(label)}</span>
-            <textarea rows={3} value={values[k]} onChange={(e) => (setValues({ ...values, [k]: e.target.value }), setSaved(false))} className={inputClass} />
-          </label>
+      </ul>
+    </Card>
+  );
+}
+
+const FLAG_TONE: Record<string, string> = { HH: "text-red-700 dark:text-red-300", LL: "text-red-700 dark:text-red-300", H: "text-amber-700 dark:text-amber-300", L: "text-amber-700 dark:text-amber-300" };
+
+/** Tests of this visit and their released results (as of the last snapshot, or released on this PC). */
+function ResultsCard({ tests }: { tests: LabOrder[] }) {
+  const t = useT();
+  return (
+    <Card title={t("Lab results")} description={t("As this PC last had them; results released on the lab's PC show here after it has sent them.")}>
+      <ul className="-my-2 divide-y divide-slate-100 text-sm dark:divide-slate-800">
+        {tests.map((o) => (
+          <li key={o.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2">
+            <span className="font-medium text-slate-900 dark:text-white">{o.labTest.name}</span>
+            {o.status === "VERIFIED" ? (
+              o.values?.length && o.labTest.components?.length ? (
+                <span className="text-slate-700 dark:text-slate-300">
+                  {o.values.map((v, i) => {
+                    const c = o.labTest.components!.find((x) => x.id === v.componentId);
+                    return (
+                      <span key={v.componentId} className={v.flag ? FLAG_TONE[v.flag] : undefined}>
+                        {i > 0 && "; "}
+                        {c?.name} {v.value}
+                        {c?.unit ? ` ${c.unit}` : ""}
+                        {v.flag && v.flag !== "N" ? ` ${v.flag}` : ""}
+                      </span>
+                    );
+                  })}
+                </span>
+              ) : (
+                <span className={`tabular-nums ${o.resultFlag ? (FLAG_TONE[o.resultFlag] ?? "") : ""}`}>
+                  {o.resultValue} {o.labTest.unit ?? ""}
+                  {o.resultFlag && o.resultFlag !== "N" ? ` ${o.resultFlag}` : ""}
+                  {o.critical && <Badge tone="danger">{t("Critical")}</Badge>}
+                </span>
+              )
+            ) : (
+              <span className="text-slate-500">{t(o.status === "ORDERED" ? "Sample to take" : "In the lab")}</span>
+            )}
+          </li>
         ))}
-      </div>
-      <div className="mt-4 flex items-center justify-end gap-3">
-        {saved && <span className="text-sm text-emerald-700 dark:text-emerald-400">{t("Saved on this PC")}</span>}
-        <button
-          disabled={busy || invalid || !Object.keys(changed).length}
-          onClick={() => {
-            onSave(changed);
-            setSaved(true);
-          }}
-          className={buttonClass}
-        >
-          {t("Save notes")}
-        </button>
-      </div>
+      </ul>
     </Card>
   );
 }
 
 function DiagnosisCard({ icd, diagnoses, busy, onAdd }: { icd: IcdEntry[]; diagnoses: { code: string; label: string }[]; busy: boolean; onAdd: (icd: IcdEntry, primary: boolean) => void }) {
   const [q, setQ] = useState("");
+  const [manual, setManual] = useState(false);
+  const [code, setCode] = useState("");
+  const [label, setLabel] = useState("");
   const t = useT();
+  const has = new Set(diagnoses.map((d) => d.code));
   const matches = useMemo(() => {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     if (!words.length) return [];
     return icd.filter((d) => words.every((w) => `${d.code} ${d.label} ${d.labelAm ?? ""}`.toLowerCase().includes(w))).slice(0, 8);
   }, [q, icd]);
+  const typed = code.trim().toUpperCase();
+  const codeOk = ICD11_CODE.test(typed);
+  const add = (d: IcdEntry) => {
+    onAdd(d, diagnoses.length === 0);
+    setQ("");
+    setCode("");
+    setLabel("");
+    setManual(false);
+  };
   return (
-    <Card title={t("Diagnosis")} description={t("Common ICD-11 diagnoses kept on this PC. For others, add them when the connection is back.")}>
+    <Card title={t("Diagnosis")} description={t("Common ICD-11 diagnoses kept on this PC; any other by its ICD-11 code.")}>
       {diagnoses.length > 0 && (
         <ul className="mb-3 flex flex-wrap gap-2">
           {diagnoses.map((d, i) => (
@@ -209,21 +259,46 @@ function DiagnosisCard({ icd, diagnoses, busy, onAdd }: { icd: IcdEntry[]; diagn
         {matches.map((d) => (
           <li key={d.code} className="flex items-center justify-between gap-3 py-2 text-sm">
             <span>
-              <span className="font-mono text-slate-500">{d.code}</span> {d.label}
+              <span className="font-mono text-slate-500">{d.code}</span> {t.lang === "am" && d.labelAm ? d.labelAm : d.label}
             </span>
-            <button
-              disabled={busy}
-              onClick={() => {
-                onAdd(d, diagnoses.length === 0);
-                setQ("");
-              }}
-              className={`${secondaryButtonClass} btn-size`}
-            >
-              {t("Add")}
-            </button>
+            {has.has(d.code) ? (
+              <Badge tone="neutral">{t("Added")}</Badge>
+            ) : (
+              <button disabled={busy} onClick={() => add(d)} className={`${secondaryButtonClass} btn-size`}>
+                {t("Add")}
+              </button>
+            )}
           </li>
         ))}
       </ul>
+      {q.trim().length >= 2 && matches.length === 0 && <p className="mt-2 text-xs text-slate-500">{t("Not in the common list.")}</p>}
+      {manual ? (
+        <form
+          className="mt-3 flex flex-wrap items-start gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (codeOk && label.trim().length >= 2 && !has.has(typed)) add({ code: typed, label: label.trim() });
+          }}
+        >
+          <label className="w-36">
+            <span className="sr-only">{t("ICD-11 code")}</span>
+            <input value={code} onChange={(e) => setCode(e.target.value)} placeholder={t("ICD-11 code")} className={`${inputClass} font-mono`} aria-invalid={code && !codeOk ? true : undefined} />
+          </label>
+          <label className="min-w-48 flex-1">
+            <span className="sr-only">{t("Diagnosis")}</span>
+            <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t("Diagnosis")} className={inputClass} />
+          </label>
+          <button className={secondaryButtonClass} disabled={busy || !codeOk || label.trim().length < 2 || has.has(typed)}>
+            {t("Add")}
+          </button>
+          {code.trim() && !codeOk && <p className="w-full text-xs text-red-700 dark:text-red-300">{t("Not a valid ICD-11 code (for example CA40 or ME84.2)")}</p>}
+          {has.has(typed) && <p className="w-full text-xs text-amber-700 dark:text-amber-300">{t("This diagnosis is already recorded for the visit")}</p>}
+        </form>
+      ) : (
+        <button type="button" onClick={() => setManual(true)} className="mt-3 text-xs text-brand-700 hover:underline dark:text-brand-400">
+          {t("Enter an ICD-11 code by hand")}
+        </button>
+      )}
     </Card>
   );
 }

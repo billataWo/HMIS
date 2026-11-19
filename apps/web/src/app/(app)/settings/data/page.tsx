@@ -5,6 +5,7 @@ import { buttonClass, Card, Field, Input, Notice, Skeleton } from "@/components/
 import { api, type Me } from "@/lib/api";
 import { getT } from "@/lib/lang";
 import { BackToSettings } from "../back-to-settings";
+import { NoAccess } from "@/components/status-page";
 
 const ERRORS: Record<string, string> = {
   password: "That password is not right.",
@@ -15,7 +16,7 @@ const ERRORS: Record<string, string> = {
 
 async function Content({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const [me, { error }, t] = await Promise.all([api<Me>("/auth/me"), searchParams, getT()]);
-  if (me.role !== "ADMIN") return <p className="text-sm text-slate-500">{t("Only clinic admins export the clinic's data.")}</p>;
+  if (me.role !== "ADMIN") return <NoAccess>{t("Only clinic admins export the clinic's data.")}</NoAccess>;
   return (
     <div className="grid items-start gap-6 lg:grid-cols-2">
       <Card title={t("All of the clinic's records")} description={t("Patients, visits, results, prescriptions, bills, stock, staff and the audit log")}>

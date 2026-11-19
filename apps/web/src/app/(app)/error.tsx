@@ -1,30 +1,16 @@
 "use client";
 
-import { RotateCw, ServerCrash } from "lucide-react";
 import { useEffect } from "react";
-import { useT } from "@/components/lang-provider";
-import { buttonClass } from "@/components/ui";
+import { StatusPage } from "@/components/status-page";
+import { errorReference, pageStatus } from "@/lib/http-status";
 
-/** Shown inside the app shell when a page fails to load, usually because the API is restarting or offline. */
+/**
+ * Shown inside the app's frame when a page fails to load, with the status the API gave: no access
+ * (403), not found (404), the server can't be reached (503, usually restarting or the network is
+ * down), or anything else (500).
+ */
 export default function AppError({ error, retry }: { error: unknown; retry: () => void }) {
   useEffect(() => console.error(error), [error]);
-  const digest = error instanceof Error && "digest" in error ? String(error.digest) : undefined;
-  const t = useT();
-
-  return (
-    <div className="mx-auto flex max-w-md flex-col items-center py-20 text-center">
-      <span className="mb-4 grid size-12 place-items-center rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-600/20 dark:bg-amber-950 dark:text-amber-300">
-        <ServerCrash aria-hidden className="size-6" />
-      </span>
-      <h1 className="text-lg font-semibold text-slate-900 dark:text-white">{t("This page couldn't load")}</h1>
-      <p className="mt-1 text-sm text-slate-500">
-        {t("The clinic server may be restarting or the network is down. Nothing you saved is lost. Try again in a moment.")}
-      </p>
-      <button onClick={() => retry()} className={`${buttonClass} mt-6`}>
-        <RotateCw aria-hidden />
-        {t("Try again")}
-      </button>
-      {digest && <p className="mt-4 font-mono text-xs text-slate-500">{t("Error reference {ref}", { ref: digest })}</p>}
-    </div>
-  );
+  const status = pageStatus(error);
+  return <StatusPage status={status} reference={status === 500 ? errorReference(error) : undefined} onRetry={() => retry()} />;
 }

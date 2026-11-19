@@ -11,6 +11,7 @@ import { getT } from "@/lib/lang";
 import { api, ApiError, type DrugReturnRow, type Me, type PharmacyPrescription } from "@/lib/api";
 import { ageText, clinicToday, formatDualDate, formatDuration, formatTime, fullName } from "@/lib/format";
 import { ClosePrescriptionForm, DispenseForm } from "./dispense-form";
+import { NoAccess } from "@/components/status-page";
 
 function PatientLine({ p, t }: { p: PharmacyPrescription; t: T }) {
   const pt = p.visit.patient;
@@ -56,7 +57,7 @@ async function Worklist() {
     ]);
     data = { ...queue, admin: me.role === "ADMIN" };
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only pharmacists and admins can dispense.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only pharmacists and admins can dispense.")}</NoAccess>;
     throw e;
   }
 

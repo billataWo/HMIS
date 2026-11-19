@@ -5,10 +5,11 @@ import { secondaryButtonClass, Skeleton } from "@/components/ui";
 import { api, type ClinicSettings, type Me } from "@/lib/api";
 import { getT } from "@/lib/lang";
 import { SettingsForm } from "./settings-form";
+import { NoAccess } from "@/components/status-page";
 
 async function Settings() {
   const [me, settings, t] = await Promise.all([api<Me>("/auth/me"), api<ClinicSettings>("/settings"), getT()]);
-  if (me.role !== "ADMIN") return <p className="text-sm text-slate-500">{t("Only clinic admins can change settings.")}</p>;
+  if (me.role !== "ADMIN") return <NoAccess>{t("Only clinic admins can change settings.")}</NoAccess>;
   return <SettingsForm settings={settings} />;
 }
 

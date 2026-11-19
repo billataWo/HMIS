@@ -10,6 +10,7 @@ import { secondaryButtonClass, Skeleton } from "@/components/ui";
 import { api, ApiError, type MohReport } from "@/lib/api";
 import { formatDualDate, shiftDay, toEthiopian } from "@/lib/format";
 import { getT } from "@/lib/lang";
+import { NoAccess } from "@/components/status-page";
 
 type Search = { y?: string; m?: string };
 
@@ -28,7 +29,7 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
   try {
     r = await api<MohReport>(`/reports/moh-monthly${qs}`);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only clinic admins can see reports.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only clinic admins can see reports.")}</NoAccess>;
     throw e;
   }
   const { ecYear: y, ecMonth: m } = r.period;

@@ -8,6 +8,7 @@ import { api, ApiError, type InventoryResponse, type Me, type StockTransfer, typ
 import { formatDualDate, formatTime } from "@/lib/format";
 import { StoresPanel } from "./stores-panel";
 import { TransferForm } from "./transfer-form";
+import { NoAccess } from "@/components/status-page";
 
 /** What the page shows; null when this person may not manage stock. */
 async function load() {
@@ -24,7 +25,7 @@ async function load() {
 
 async function Transfers() {
   const [data, t] = await Promise.all([load(), getT()]);
-  if (!data) return <p className="text-sm text-slate-500">{t("Only pharmacists and admins move stock between stores.")}</p>;
+  if (!data) return <NoAccess>{t("Only pharmacists and admins move stock between stores.")}</NoAccess>;
   const { me, stores, inventory, transfers } = data;
   if (!inventory) {
     return (

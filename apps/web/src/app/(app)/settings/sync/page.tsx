@@ -6,12 +6,13 @@ import { api, type Me, type SyncStatus } from "@/lib/api";
 import { formatAgo, formatDualDate, formatTime, minutesAgo } from "@/lib/format";
 import { getT } from "@/lib/lang";
 import { BackToSettings } from "../back-to-settings";
+import { NoAccess } from "@/components/status-page";
 
 const when = (iso: string) => `${formatDualDate(iso)}, ${formatTime(iso)}`;
 
 async function Status() {
   const [me, s, t] = await Promise.all([api<Me>("/auth/me"), api<SyncStatus>("/sync/status"), getT()]);
-  if (me.role !== "ADMIN") return <p className="text-sm text-slate-500">{t("Only clinic admins can see the sync details.")}</p>;
+  if (me.role !== "ADMIN") return <NoAccess>{t("Only clinic admins can see the sync details.")}</NoAccess>;
 
   if (s.mode === "off") {
     return (

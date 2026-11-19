@@ -5,13 +5,14 @@ import { linkClass, Skeleton } from "@/components/ui";
 import { getT } from "@/lib/lang";
 import { api, ApiError, type FormularyDrug } from "@/lib/api";
 import { StarterPicker } from "./starter-picker";
+import { NoAccess } from "@/components/status-page";
 
 async function Starter() {
   let drugs: FormularyDrug[];
   try {
     drugs = await api<FormularyDrug[]>("/drugs/starter");
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{(await getT())("Only pharmacists and admins manage the drug list.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{(await getT())("Only pharmacists and admins manage the drug list.")}</NoAccess>;
     throw e;
   }
   return <StarterPicker drugs={drugs} />;

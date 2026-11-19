@@ -7,6 +7,7 @@ import { getT } from "@/lib/lang";
 import { BackToSettings } from "../back-to-settings";
 import { LabTestRow, ServiceRow } from "./price-forms";
 import { RangesEditor, RecommendedRanges } from "./ranges-editor";
+import { NoAccess } from "@/components/status-page";
 
 async function Prices() {
   const t = await getT();
@@ -14,7 +15,7 @@ async function Prices() {
   try {
     [services, tests] = await Promise.all([api<CatalogService[]>("/catalog/services"), api<CatalogLabTest[]>("/catalog/lab-tests")]);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only clinic admins can change prices.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only clinic admins can change prices.")}</NoAccess>;
     throw e;
   }
   return (

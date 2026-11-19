@@ -156,4 +156,51 @@ export const OFFLINE: Record<string, string> = {
   "Verify {test} ({name})": "{test}ን አረጋግጥ ({name})",
   "Bill drugs for {name}": "ለ{name} የመድኃኒት ሂሳብ ሥራ",
   "Hand over drugs to {name}": "መድኃኒቶቹን ለ{name} አስረክብ",
+  "Triage for {name}": "የ{name} ቅድመ ምርመራ",
+  "Sample rejected: {test} ({name})": "ናሙናው ውድቅ ተደርጓል፦ {test} ({name})",
+  "Bank transfer ({reference}) of {amount} ETB from {name}": "ከ{name} የ{amount} ብር የባንክ ዝውውር ({reference})",
+
+  // Taking back work not yet sent
+  "Take back": "ሳይላክ መልስ",
+  'Take back "{what}"? It will not be sent.': '"{what}" ይመለስ? አይላክም።',
+  'Take back "{what}"? It is not sent, and neither are the {n} later items that depend on it:':
+    '"{what}" ይመለስ? አይላክም፤ በእሱ ላይ የተመሠረቱት {n} ተከታይ ሥራዎችም አይላኩም፦',
+  "It was sent meanwhile: correct it in HMIS instead.": "እስከዚያው ተልኳል፦ በምትኩ በHMIS ውስጥ ያርሙት።",
+  "Recorded by mistake? Take it back before it is sent. Once sent, correct it in HMIS.":
+    "በስህተት ተመዝግቧል? ከመላኩ በፊት ይመልሱት። ከተላከ በኋላ በHMIS ውስጥ ያርሙት።",
+  "Verify and send": "አረጋግጥና ላክ",
+
+  // Turned off in Settings
+  "Offline mode is turned off for this clinic": "ለዚህ ክሊኒክ ከመስመር ውጭ ሥራ ጠፍቷል",
+  "This PC keeps no patient data, so there is nothing to work on without a connection. An admin can turn it on in Settings.":
+    "ይህ ኮምፒውተር የታካሚ መረጃ አይዝም፤ ስለዚህ ያለ ግንኙነት የሚሠራ ነገር የለም። አስተዳዳሪ በቅንብሮች ውስጥ ሊያበራው ይችላል።",
+  "The {n} offline item waiting on this PC will be sent once HMIS is open.": "በዚህ ኮምፒውተር ላይ የሚጠብቀው {n} የከመስመር ውጭ ሥራ HMIS ሲከፈት ይላካል።",
+  "The {n} offline items waiting on this PC will be sent once HMIS is open.": "በዚህ ኮምፒውተር ላይ የሚጠብቁት {n} የከመስመር ውጭ ሥራዎች HMIS ሲከፈት ይላካሉ።",
+  "The server had an error with this, so it may not have been saved.": "ሰርቨሩ በዚህ ላይ ስህተት ስላጋጠመው ተቀምጦ ላይሆን ይችላል።",
+
+  // Front desk
+  "All {n} of the clinic's patients as of {time}, and those registered here offline.":
+    "የክሊኒኩ {n} ታካሚዎች በሙሉ እስከ {time} ድረስ፣ እና እዚህ ከመስመር ውጭ የተመዘገቡት።",
+  "Why the visit is cancelled": "ጉብኝቱ የተሰረዘበት ምክንያት",
+  "Cancel the visit": "ጉብኝቱን ሰርዝ",
+
+  // Triage and consultation
+  "To triage": "ቅድመ ምርመራ ይጠብቃል",
+  "Between {min} and {max}": "ከ{min} እስከ {max}",
+  "The last period must be within the last 10 months": "የመጨረሻው የወር አበባ ባለፉት 10 ወራት ውስጥ መሆን አለበት",
+  "An emergency: seen before payment. The fee stays owed.": "ድንገተኛ ሕመምተኛ፦ ከክፍያ በፊት ይታያል። ክፍያው እንደ ዕዳ ይቆያል።",
+  "As this PC last had them; results released on the lab's PC show here after it has sent them.":
+    "ይህ ኮምፒውተር በመጨረሻ እንደያዛቸው፤ በላብራቶሪው ኮምፒውተር የተለቀቁ ውጤቶች እዚህ የሚታዩት ያ ኮምፒውተር ከላካቸው በኋላ ነው።",
+  "In the lab": "ላብራቶሪ ውስጥ",
+  "Common ICD-11 diagnoses kept on this PC; any other by its ICD-11 code.": "በዚህ ኮምፒውተር ላይ የተያዙ የተለመዱ የICD-11 ዲያግኖሲሶች፤ ሌላ ማንኛውም በICD-11 ኮዱ።",
+
+  // Lab
+  "The last sample was rejected ({reason}): take a new one.": "የመጨረሻው ናሙና ውድቅ ተደርጓል ({reason})፦ አዲስ ናሙና ይውሰዱ።",
+  "Not run": "አልተካሄደም",
+  "A number": "ቁጥር ያስገቡ",
+  "What was wrong": "ችግሩ ምን ነበር",
+  "Reject: take a new sample": "ውድቅ አድርግ፦ አዲስ ናሙና ውሰድ",
+
+  // Cashier
+  "Check the bank's confirmation and copy its reference number.": "የባንኩን ማረጋገጫ ይመልከቱና የማጣቀሻ ቁጥሩን ይቅዱ።",
 };

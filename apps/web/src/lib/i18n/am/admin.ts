@@ -138,6 +138,10 @@ export const ADMIN: Record<string, string> = {
     "እንግዳ ተቀባዮች፣ ነርሶችና አስተዳዳሪዎች ሁልጊዜ ይችላሉ። ክሊኒካችሁ እንግዳ ተቀባይ ከሌለው ሐኪሙ የታካሚውን ካርድ እንዲከፍት ይህን ያብሩት። መግቢያው (እና የምክክር ክፍያው) አሁንም በእንግዳ መቀበያ ይከናወናል። ገንዘብ ተቀባዮች፣ ላብራቶሪና ፋርማሲ በፍጹም ታካሚ አይመዘግቡም።",
   "Pharmacy stock": "የፋርማሲ ክምችት",
   "Several stores (main store and dispensary)": "በርካታ መጋዘኖች (ዋና መጋዘንና ማደያ)",
+  "Offline mode": "ከመስመር ውጭ ሥራ",
+  "Keep working when the internet drops": "ኢንተርኔት ሲቋረጥ ሥራ ይቀጥል",
+  "Each PC keeps the signed-in person's working day (today's patients, queue and worklists; for the front desk, the clinic's patient list) so staff can carry on in the offline workspace, and sends the work when the connection is back. Turn off if staff PCs must not keep patient data: what they keep is deleted the next time they connect, and work already recorded offline is still sent.":
+    "እያንዳንዱ ኮምፒውተር የገባውን ሰው የዕለት ሥራ (የዛሬ ታካሚዎች፣ ወረፋና የሥራ ዝርዝሮች፤ ለእንግዳ መቀበያ ደግሞ የክሊኒኩ የታካሚዎች ዝርዝር) ይይዛል፤ ስለዚህ ሠራተኞች በከመስመር ውጭ የሥራ ቦታ መሥራት ይቀጥላሉ፣ ግንኙነቱ ሲመለስም ሥራው ይላካል። የሠራተኞች ኮምፒውተሮች የታካሚ መረጃ መያዝ ከሌለባቸው ያጥፉት፦ የያዙት በሚቀጥለው ጊዜ ሲገናኙ ይሰረዛል፣ ከመስመር ውጭ የተመዘገበ ሥራ ግን አሁንም ይላካል።",
   "For clinics that keep stock in a main store and issue it to the pharmacy. Deliveries go into the main store, the pharmacy dispenses only from the dispensary, and stock moves between them by transfer (Inventory → Transfers). Turning it on creates a Main store and a Dispensary and puts today's stock in the dispensary, so nothing changes at the counter. Turning it off goes back to one stock; nothing is deleted.":
     "ክምችትን በዋና መጋዘን አስቀምጠው ለፋርማሲ ለሚያወጡ ክሊኒኮች። ገቢዎች ወደ ዋናው መጋዘን ይገባሉ፣ ፋርማሲው የሚያድለው ከማደያው ብቻ ነው፣ ክምችትም በዝውውር ይንቀሳቀሳል (ክምችት → ዝውውሮች)። ማብራቱ ዋና መጋዘንና ማደያ ፈጥሮ የዛሬውን ክምችት በማደያው ያስቀምጣል፤ ስለዚህ በመስኮቱ ላይ ምንም አይለወጥም። ማጥፋቱ ወደ አንድ ክምችት ይመልሳል፤ ምንም አይሰረዝም።",
   "Target for urgent tests (minutes)": "ለአስቸኳይ ምርመራዎች ዒላማ (ደቂቃ)",

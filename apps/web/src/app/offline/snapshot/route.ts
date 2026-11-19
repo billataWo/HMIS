@@ -7,6 +7,8 @@ const LAB_ROLES = new Set(["ADMIN", "LAB_TECH"]);
 const PHARMACY_ROLES = new Set(["ADMIN", "PHARMACIST"]);
 const CASH_ROLES = new Set(["ADMIN", "CASHIER"]);
 const ORDERING = new Set(["ADMIN", "DOCTOR", "NURSE", "LAB_TECH"]);
+/** Open visits kept in full (doctors and nurses): those in consultation first, then the waiting. */
+const MAX_VISITS = 40;
 
 /** When the sign-in token expires (its `exp` claim), so the offline workspace can lock then. */
 function tokenExpiry(token: string): string | null {
@@ -34,6 +36,8 @@ export async function GET() {
   if (!meRes) return Response.json({ message: "The HMIS server cannot be reached" }, { status: 503 });
   if (!meRes.ok) return Response.json({ message: "Signed out" }, { status: 401 });
   const me = (await meRes.json()) as Me;
+  // Turned off in Settings: this PC keeps no patient data (the browser deletes what it has).
+  if (me.tenant.offlineMode === false) return Response.json({ message: "Offline mode is turned off for this clinic", code: "OFFLINE_MODE_OFF" }, { status: 409 });
   const role = me.role;
   // The API's clock just before any data is read: work it applied before this is in the data.
   // (The same clock stamps applied offline work; this server's clock is only a fallback.)
@@ -52,16 +56,22 @@ export async function GET() {
     get<SyncStatus | null>("/sync/status", null),
   ]);
 
-  // Doctors carry on with their open visits: their notes, tests and prescriptions so far.
+  // Doctors and nurses carry on with today's open visits: triage, notes, tests and prescriptions
+  // so far, and the patient's earlier visits (the doctor's). Waiting patients too: they are the
+  // ones triaged and called in next. Emergencies first, then in arrival order, as on the queue.
   const visits: Snapshot["visits"] = {};
-  if (role === "DOCTOR") {
-    const open = queue.visits.filter((v) => v.status !== "WAITING" && v.status !== "COMPLETED" && v.status !== "CANCELLED").slice(0, 25);
+  if (role === "DOCTOR" || role === "NURSE") {
+    const rank = (l?: string | null) => (l === "RED" ? 0 : l === "ORANGE" ? 1 : l === "YELLOW" ? 2 : 3);
+    const open = queue.visits
+      .filter((v) => v.status !== "COMPLETED" && v.status !== "CANCELLED")
+      .sort((a, b) => Number(b.status !== "WAITING") - Number(a.status !== "WAITING") || rank(a.triageLevel) - rank(b.triageLevel))
+      .slice(0, MAX_VISITS);
     const details = await Promise.all(
       open.map(async (v) => {
         const [detail, labOrders, prescriptions] = await Promise.all([
           get<VisitDetail | null>(`/visits/${v.id}`, null),
-          get<LabOrder[]>(`/visits/${v.id}/lab-orders`, []),
-          get<Prescription[]>(`/visits/${v.id}/prescriptions`, []),
+          role === "DOCTOR" ? get<LabOrder[]>(`/visits/${v.id}/lab-orders`, []) : Promise.resolve([]),
+          role === "DOCTOR" ? get<Prescription[]>(`/visits/${v.id}/prescriptions`, []) : Promise.resolve([]),
         ]);
         return detail && { ...detail, labOrders, prescriptions };
       }),

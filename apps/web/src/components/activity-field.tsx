@@ -36,6 +36,42 @@ function beat(x: number) {
 
 const TRACE = `M0 ${BASE} ${Array.from({ length: BEATS }, (_, i) => beat(i * BEAT)).join(" ")}`;
 
+/** A P wave the ventricles don't follow (a blocked beat): the P, then the baseline. */
+function blocked(x: number, width = BEAT) {
+  return [`L${x + 40} ${BASE}`, `C${x + 46} ${BASE} ${x + 50} ${BASE - 9} ${x + 57} ${BASE - 9}`, `C${x + 64} ${BASE - 9} ${x + 68} ${BASE} ${x + 74} ${BASE}`, `L${x + width} ${BASE}`].join(" ");
+}
+
+/** An early, wide beat with no P wave and its T the other way (a ventricular ectopic). */
+function ectopic(x: number, width: number) {
+  return [
+    `L${x + 40} ${BASE}`,
+    `L${x + 62} ${BASE - 44}`,
+    `L${x + 90} ${BASE + 30}`,
+    `L${x + 106} ${BASE}`,
+    `C${x + 122} ${BASE} ${x + 132} ${BASE + 16} ${x + 150} ${BASE + 16}`,
+    `C${x + 168} ${BASE + 16} ${x + 176} ${BASE} ${x + 188} ${BASE}`,
+    `L${x + width} ${BASE}`,
+  ].join(" ");
+}
+
+/** A normal beat in a slot of any width (the beat itself, then the baseline). */
+const beatIn = (x: number, width: number) => beat(x).replace(new RegExp(`L${x + BEAT} ${BASE}$`), `L${x + width} ${BASE}`);
+
+/** Which rhythm the monitor draws: the sign-in's normal one, or one for an error page (components/status-page.tsx). */
+export type Rhythm = "sinus" | "pause" | "block" | "irregular" | "lead-off";
+
+const RHYTHMS: Record<Rhythm, string> = {
+  sinus: TRACE,
+  // A missed beat: nothing where the third should be (page not found).
+  pause: `M0 ${BASE} ${beat(0)} ${beat(BEAT)} L${3 * BEAT} ${BASE} ${beat(3 * BEAT)}`,
+  // Every third P wave is not followed by a beat (no access: the signal is stopped).
+  block: `M0 ${BASE} ${beat(0)} ${beat(BEAT)} ${blocked(2 * BEAT)} ${beat(3 * BEAT)}`,
+  // Uneven spacing and an early wide beat (something went wrong).
+  irregular: `M0 ${BASE} ${beatIn(0, 220)} ${beatIn(220, 330)} ${ectopic(550, 200)} ${beatIn(750, 250)} ${beatIn(1000, 200)}`,
+  // An electrode is off: only a slightly noisy line (the server can't be reached).
+  "lead-off": `M0 ${BASE} ${Array.from({ length: 60 }, (_, i) => `L${(i + 1) * 20} ${BASE + [0, 1.5, -1, 2, -0.5, -2, 1, 0, -1.5, 0.5][i % 10]}`).join(" ")}`,
+};
+
 /** The sweeping pen: a long dim tail, a brighter stretch behind the pen, and the pen itself, glowing. */
 const LAYERS: { tail: number; opacity: number; width: number; glow?: boolean }[] = [
   { tail: 520, opacity: 0.35, width: 1.75 },
@@ -50,16 +86,28 @@ const LAYERS: { tail: number; opacity: number; width: number; glow?: boolean }[]
  * it stays easy to read. Decoration only: hidden from screen readers; with reduced motion, only the
  * still trace shows. `style` places the band.
  */
-export function HeartbeatBackground({ className = "", style = { top: "calc(50% - 10rem)" } }: { className?: string; style?: CSSProperties }) {
+export function HeartbeatBackground({
+  className = "",
+  style = { top: "calc(50% - 10rem)" },
+  rhythm = "sinus",
+  color = "text-emerald-300",
+}: {
+  className?: string;
+  /** The trace's colour (a text-* class). */
+  color?: string;
+  style?: CSSProperties;
+  rhythm?: Rhythm;
+}) {
+  const trace = RHYTHMS[rhythm];
   return (
-    <div aria-hidden className={`pointer-events-none absolute inset-x-0 h-28 text-emerald-300 ${className}`} style={style}>
+    <div aria-hidden className={`pointer-events-none absolute inset-x-0 h-28 ${color} ${className}`} style={style}>
       <svg viewBox={`0 0 ${WIDTH} 120`} preserveAspectRatio="none" className="h-full w-full [mask-image:linear-gradient(90deg,transparent,black_8%,black_92%,transparent)]">
         {/* The sweep before, still on the screen. */}
-        <path d={TRACE} fill="none" stroke="currentColor" strokeOpacity={0.12} strokeWidth={1.5} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        <path d={trace} fill="none" stroke="currentColor" strokeOpacity={0.12} strokeWidth={1.5} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         {LAYERS.map((l) => (
           <path
             key={l.tail}
-            d={TRACE}
+            d={trace}
             pathLength={1000}
             fill="none"
             stroke="currentColor"

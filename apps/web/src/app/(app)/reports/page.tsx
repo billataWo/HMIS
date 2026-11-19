@@ -11,6 +11,7 @@ import { api, ApiError, type Dashboard, type LabTurnaround, type TatSummary } fr
 import { clinicToday, DISCOUNT_CATEGORIES, etb, formatDualDate, formatMinutes, PAYMENT_METHODS, shiftDay } from "@/lib/format";
 import type { T } from "@/lib/i18n";
 import { getT } from "@/lib/lang";
+import { NoAccess } from "@/components/status-page";
 
 type Search = { from?: string; to?: string };
 
@@ -62,7 +63,7 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
   try {
     d = await api<Dashboard>(`/reports/dashboard?from=${from}&to=${to}`);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only clinic admins can see reports.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only clinic admins can see reports.")}</NoAccess>;
     if (e instanceof ApiError && e.status === 400) return <p className="text-sm text-red-700">{t(e.message)}</p>;
     throw e;
   }

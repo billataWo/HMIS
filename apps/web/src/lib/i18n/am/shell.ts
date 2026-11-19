@@ -152,6 +152,24 @@ export const SHELL: Record<string, string> = {
   "This page couldn't load": "ገጹ ሊጫን አልቻለም",
   "The clinic server may be restarting or the network is down. Nothing you saved is lost. Try again in a moment.": "የክሊኒኩ ሰርቨር እንደገና እየተነሳ ሊሆን ወይም ኔትወርኩ ተቋርጦ ሊሆን ይችላል። ያስቀመጡት ምንም ነገር አልጠፋም። ትንሽ ቆይተው እንደገና ይሞክሩ።",
   "Error reference {ref}": "የስህተት መለያ {ref}",
+
+  // Error pages (components/status-page.tsx)
+  "Error {code}": "ስህተት {code}",
+  "Go to the home page": "ወደ መነሻ ገጽ ሂድ",
+  "Go back": "ተመለስ",
+  "If you need it for your work, ask the clinic's admin.": "ለሥራዎ ካስፈለገዎት የክሊኒኩን አስተዳዳሪ ይጠይቁ።",
+  "Page not found": "ገጹ አልተገኘም",
+  "There's nothing at this address. The page or record may have been removed or merged, or the link has a mistake in it.":
+    "በዚህ አድራሻ ምንም ነገር የለም። ገጹ ወይም መዝገቡ ተሰርዞ ወይም ተቀላቅሎ ሊሆን ይችላል፣ ወይም ሊንኩ ስህተት አለበት።",
+  "You don't have access to this page": "ይህን ገጽ የማየት ፈቃድ የለዎትም",
+  "Your role in HMIS doesn't include this page. If you need it for your work, ask the clinic's admin.":
+    "በHMIS ያለዎት ሚና ይህን ገጽ አያካትትም። ለሥራዎ ካስፈለገዎት የክሊኒኩን አስተዳዳሪ ይጠይቁ።",
+  "Something went wrong": "የሆነ ችግር ተፈጥሯል",
+  "HMIS had a problem showing this page. Nothing you saved is lost. Try again; if it keeps happening, give the admin the reference below.":
+    "HMIS ይህን ገጽ ለማሳየት ችግር ገጥሞታል። ያስቀመጡት ምንም ነገር አልጠፋም። እንደገና ይሞክሩ፤ መደጋገሙን ከቀጠለ ከታች ያለውን መለያ ለአስተዳዳሪው ይስጡ።",
+  "Can't reach the HMIS server": "ከHMIS ሰርቨር ጋር መገናኘት አልተቻለም",
+  "The clinic server may be restarting, or the network is down. Nothing you saved is lost. Try again in a moment, or keep working in the offline workspace.":
+    "የክሊኒኩ ሰርቨር እንደገና እየጀመረ ሊሆን ይችላል፣ ወይም ኔትወርኩ ተቋርጧል። ያስቀመጡት ምንም ነገር አልጠፋም። ትንሽ ቆይተው እንደገና ይሞክሩ፣ ወይም በከመስመር ውጭ የሥራ ቦታ መሥራትዎን ይቀጥሉ።",
   "Clinic management": "የክሊኒክ አስተዳደር",
   "Main menu": "ዋና ማውጫ",
   "Open menu": "ማውጫ ክፈት",

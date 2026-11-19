@@ -3,11 +3,14 @@
  * request the normal screens make, so every rule (pay-first, stock, safety checks) is applied
  * by the server when it is sent; nothing here bypasses them.
  */
-import type { DrugOption, Frequency, IcdEntry, LabWorkOrder, Patient, PharmacyPrescription, QueuePatient, Service, VisitStatus } from "@/lib/api";
+import type { DrugOption, Frequency, IcdEntry, LabFlag, LabWorkOrder, Patient, PharmacyPrescription, QueuePatient, Service, VisitStatus } from "@/lib/api";
+import type { CANCEL_REASONS } from "@/lib/cancel-reasons";
 import { EN } from "@/lib/format";
 import { enqueue } from "./engine";
 import { type OfflineLabTest, tmpId } from "./types";
 import type { OfflineVisit } from "./view";
+
+type CancelReason = (typeof CANCEL_REASONS)[number]["value"];
 
 const who = (p: Pick<QueuePatient, "firstName" | "fatherName">) => `${p.firstName} ${p.fatherName}`;
 /** An operation's list label: the English text, and the key and values the workspace translates. */
@@ -80,20 +83,25 @@ const STATUS_LABEL: Record<VisitStatus, string> = {
   CANCELLED: "Cancel the visit of {name}",
 };
 
-export const setStatus = (userId: string, visit: OfflineVisit, status: VisitStatus) =>
+/** Moves a visit along (or cancels it, with the reason the front desk gives). */
+export const setStatus = (userId: string, visit: OfflineVisit, status: VisitStatus, reason?: CancelReason) =>
   enqueue({
     userId,
     kind: "status",
     ...opLabel(STATUS_LABEL[status], { name: who(visit.patient) }),
-    steps: [{ method: "PATCH", path: `/visits/${visit.id}/status`, body: { status } }],
+    steps: [{ method: "PATCH", path: `/visits/${visit.id}/status`, body: { status, ...(reason && { reason }) } }],
     data: { visitId: visit.id, status },
   });
 
-export const saveNotes = (userId: string, visit: OfflineVisit, fields: Record<string, string | number>) =>
+/** What PATCH /visits/:id takes: numbers for vitals, text for notes, null to clear a field. */
+export type VisitFields = Record<string, string | number | boolean | null>;
+
+/** Vitals, triage and notes. Nurses send only what triage records (the server refuses the rest). */
+export const saveNotes = (userId: string, visit: OfflineVisit, fields: VisitFields, triage = false) =>
   enqueue({
     userId,
     kind: "notes",
-    ...opLabel("Notes and vitals for {name}", { name: who(visit.patient) }),
+    ...opLabel(triage ? "Triage for {name}" : "Notes and vitals for {name}", { name: who(visit.patient) }),
     steps: [{ method: "PATCH", path: `/visits/${visit.id}`, body: fields }],
     data: { visitId: visit.id, fields },
   });
@@ -160,13 +168,19 @@ export async function prescribe(userId: string, visit: OfflineVisit, lines: RxLi
  * and pays the visit's open invoices, so instalments work and a bill already settled on another
  * PC is refused ("Nothing is owed") instead of being taken twice.
  */
-export const payVisit = (userId: string, visitId: string, patient: QueuePatient, amount: number, method: "CASH" | "TELEBIRR", reference?: string) =>
+/** How money can be taken offline (online payments through Chapa need the connection). */
+export type OfflineMethod = "CASH" | "TELEBIRR" | "BANK_TRANSFER";
+const PAY_LABEL: Record<OfflineMethod, string> = {
+  CASH: "Cash payment of {amount} ETB from {name}",
+  TELEBIRR: "Telebirr payment ({reference}) of {amount} ETB from {name}",
+  BANK_TRANSFER: "Bank transfer ({reference}) of {amount} ETB from {name}",
+};
+
+export const payVisit = (userId: string, visitId: string, patient: QueuePatient, amount: number, method: OfflineMethod, reference?: string) =>
   enqueue({
     userId,
     kind: "pay",
-    ...(method === "CASH"
-      ? opLabel("Cash payment of {amount} ETB from {name}", { amount: amount.toFixed(2), name: who(patient) })
-      : opLabel("Telebirr payment ({reference}) of {amount} ETB from {name}", { reference: reference ?? "", amount: amount.toFixed(2), name: who(patient) })),
+    ...opLabel(PAY_LABEL[method], { amount: amount.toFixed(2), name: who(patient), ...(method !== "CASH" && { reference: reference ?? "" }) }),
     steps: [{ method: "POST", path: `/visits/${visitId}/payments`, body: { method, amount, ...(reference && { reference }) } }],
     data: { visitId, amount, method, patient },
   });
@@ -180,22 +194,46 @@ export const collectSample = (userId: string, order: LabWorkOrder, sampleId?: st
     data: { orderId: order.id, sampleId },
   });
 
-export const enterResult = (userId: string, order: LabWorkOrder, value: string, note?: string) =>
+/** The sample can't be used: the order goes back to "sample to take" (with every test in the same tube, on the server). */
+export const rejectSample = (userId: string, order: LabWorkOrder, reason: string, label: string, note?: string) =>
+  enqueue({
+    userId,
+    kind: "reject",
+    ...opLabel("Sample rejected: {test} ({name})", { test: order.labTest.name, name: who(order.visit.patient) }),
+    steps: [{ method: "POST", path: `/lab-orders/${order.id}/reject`, body: { reason, ...(note && { note }) } }],
+    data: { orderId: order.id, sampleId: order.sampleId, reason, label, note },
+  });
+
+/**
+ * A result: one value, or a panel's values by component (blank ones are not run). The flag is
+ * worked out here as the server will (lib/offline/ranges.ts), so a critical result is seen at once;
+ * the server judges it again when this is sent.
+ */
+export type OfflineResult = { value?: string; values?: { componentId: string; value: string; flag: LabFlag | null; rangeText: string | null }[]; note?: string; summary: string; flag: LabFlag | null; rangeText?: string | null; critical: boolean };
+
+export const enterResult = (userId: string, order: LabWorkOrder, r: OfflineResult) =>
   enqueue({
     userId,
     kind: "result",
-    ...opLabel("Result {test}: {value} ({name})", { test: order.labTest.name, value, name: who(order.visit.patient) }),
-    steps: [{ method: "POST", path: `/lab-orders/${order.id}/result`, body: { value, ...(note && { note }) } }],
-    data: { orderId: order.id, value, note },
+    ...opLabel("Result {test}: {value} ({name})", { test: order.labTest.name, value: r.summary, name: who(order.visit.patient) }),
+    steps: [
+      {
+        method: "POST",
+        path: `/lab-orders/${order.id}/result`,
+        body: r.values ? { values: r.values.map(({ componentId, value }) => ({ componentId, value })), ...(r.note && { note: r.note }) } : { value: r.value, ...(r.note && { note: r.note }) },
+      },
+    ],
+    data: { orderId: order.id, ...r },
   });
 
-export const verifyResult = (userId: string, order: LabWorkOrder) =>
+/** Releases a result; a critical one says who was told ("Dr. Dawit, by phone"), as the server requires. */
+export const verifyResult = (userId: string, order: LabWorkOrder, notified?: string) =>
   enqueue({
     userId,
     kind: "verify",
     ...opLabel("Verify {test} ({name})", { test: order.labTest.name, name: who(order.visit.patient) }),
-    steps: [{ method: "POST", path: `/lab-orders/${order.id}/verify` }],
-    data: { orderId: order.id },
+    steps: [{ method: "POST", path: `/lab-orders/${order.id}/verify`, body: notified ? { notified } : {} }],
+    data: { orderId: order.id, notified },
   });
 
 export const billDrugs = (userId: string, rx: PharmacyPrescription, items: { itemId: string; quantity: number; name: string; price: string }[]) =>

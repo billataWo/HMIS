@@ -4,6 +4,7 @@ import { Skeleton } from "@/components/ui";
 import { getT } from "@/lib/lang";
 import { api, ApiError, type LabTest, type Patient, type PatientCoverage } from "@/lib/api";
 import { RequestForm } from "./request-form";
+import { NoAccess } from "@/components/status-page";
 
 type Search = { patientId?: string; from?: string };
 
@@ -27,7 +28,7 @@ async function Request({ searchParams }: { searchParams: Promise<Search> }) {
   const q = await searchParams;
   const data = await load(q.patientId);
   const t = await getT();
-  if (!data) return <p className="text-sm text-slate-500">{t("Only the front desk, the lab and admins add lab-only requests.")}</p>;
+  if (!data) return <NoAccess>{t("Only the front desk, the lab and admins add lab-only requests.")}</NoAccess>;
   return <RequestForm tests={data.tests} patient={data.patient} returnTo={q.from === "lab" ? "lab" : "patient"} />;
 }
 

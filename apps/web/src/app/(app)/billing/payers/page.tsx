@@ -7,6 +7,7 @@ import { getT } from "@/lib/lang";
 import { api, ApiError, type Me, type Payer } from "@/lib/api";
 import { etb } from "@/lib/format";
 import { PayerForm } from "./payer-forms";
+import { NoAccess } from "@/components/status-page";
 
 async function Payers() {
   let payers: Payer[];
@@ -15,7 +16,7 @@ async function Payers() {
   try {
     [payers, me] = await Promise.all([api<Payer[]>("/payers"), api<Me>("/auth/me")]);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only cashiers and admins can see payer accounts.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only cashiers and admins can see payer accounts.")}</NoAccess>;
     throw e;
   }
   const owed = payers.reduce((s, p) => s + Number(p.balance ?? 0), 0);

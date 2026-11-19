@@ -270,7 +270,7 @@ export class AuthController {
         mustChangePassword: true,
         totpEnabledAt: true,
         // The screens use this to show or hide "Register patient" for doctors.
-        tenant: { select: { id: true, name: true, nameAm: true, doctorsCanRegister: true } },
+        tenant: { select: { id: true, name: true, nameAm: true, doctorsCanRegister: true, offlineMode: true } },
       },
     });
     if (!user) throw new UnauthorizedException();

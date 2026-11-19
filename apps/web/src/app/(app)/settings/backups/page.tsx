@@ -7,6 +7,7 @@ import { formatAgo, formatDualDate, formatTime } from "@/lib/format";
 import type { T } from "@/lib/i18n";
 import { getT } from "@/lib/lang";
 import { BackToSettings } from "../back-to-settings";
+import { NoAccess } from "@/components/status-page";
 
 const STATUS: Record<BackupCheckStatus, { label: string; tone: BadgeTone; icon: typeof CircleCheck; color: string }> = {
   ok: { label: "OK", tone: "success", icon: CircleCheck, color: "text-emerald-600 dark:text-emerald-400" },
@@ -58,7 +59,7 @@ async function Status() {
   try {
     s = await api<BackupStatus>("/backups/status");
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only clinic admins can see the backup status.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only clinic admins can see the backup status.")}</NoAccess>;
     throw e;
   }
 

@@ -5,15 +5,16 @@ import { api, ApiError, type Me } from "@/lib/api";
 import { getT } from "@/lib/lang";
 import { BackToSettings } from "../back-to-settings";
 import { AddScreen, type Screen, ScreenRow } from "./screens";
+import { NoAccess } from "@/components/status-page";
 
 async function Content() {
   const [me, t] = await Promise.all([api<Me>("/auth/me"), getT()]);
-  if (me.role !== "ADMIN") return <p className="text-sm text-slate-500">{t("Only clinic admins manage screens.")}</p>;
+  if (me.role !== "ADMIN") return <NoAccess>{t("Only clinic admins manage screens.")}</NoAccess>;
   let screens: Screen[];
   try {
     screens = await api<Screen[]>("/displays");
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only clinic admins manage screens.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only clinic admins manage screens.")}</NoAccess>;
     throw e;
   }
   return (

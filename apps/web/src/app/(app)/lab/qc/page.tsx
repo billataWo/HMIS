@@ -9,6 +9,7 @@ import { getT } from "@/lib/lang";
 import { api, ApiError, type LabQcControl, type LabQcPage, type QcState } from "@/lib/api";
 import { formatDualDate, formatTime } from "@/lib/format";
 import { ActionForm, AddControl, RetireControl, RunForm } from "./qc-forms";
+import { NoAccess } from "@/components/status-page";
 
 const STATE: Record<QcState["status"], [BadgeTone, string]> = {
   OK: ["success", "QC passed today"],
@@ -108,7 +109,7 @@ async function Qc() {
   try {
     data = await api<LabQcPage>("/lab/qc");
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only lab technicians and admins keep the QC log.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only lab technicians and admins keep the QC log.")}</NoAccess>;
     throw e;
   }
   return (

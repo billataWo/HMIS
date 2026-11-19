@@ -4,11 +4,12 @@ import { CircleAlert, CloudCheck, CloudOff, CloudUpload } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
 import type { Me } from "@/lib/api";
 import { useT } from "./lang-provider";
-import { cacheShell, refreshSnapshot, replay } from "@/lib/offline/engine";
-import { clearSnapshot, getOps, getSnapshot, purgeIfExpired } from "@/lib/offline/idb";
+import { cacheShell, keepStorage, refreshPatients, refreshSnapshot, replay } from "@/lib/offline/engine";
+import { clearSnapshot, getOps, getSnapshot, purgeIfExpired, turnedOff } from "@/lib/offline/idb";
 
-type State = { online: boolean; snapshotAt: string | null; pending: number; failed: number };
-let state: State = { online: true, snapshotAt: null, pending: 0, failed: 0 };
+/** off: the clinic turned offline mode off (Settings), so this PC keeps no patient data. */
+type State = { online: boolean; snapshotAt: string | null; pending: number; failed: number; off: boolean };
+let state: State = { online: true, snapshotAt: null, pending: 0, failed: 0, off: false };
 const listeners = new Set<() => void>();
 const set = (next: Partial<State>) => {
   state = { ...state, ...next };
@@ -18,7 +19,7 @@ const subscribe = (l: () => void) => {
   listeners.add(l);
   return () => listeners.delete(l);
 };
-const SERVER_STATE: State = { online: true, snapshotAt: null, pending: 0, failed: 0 };
+const SERVER_STATE: State = { online: true, snapshotAt: null, pending: 0, failed: 0, off: false };
 
 async function recount(userId: string) {
   const [ops, snap] = await Promise.all([getOps(), getSnapshot()]);
@@ -35,19 +36,28 @@ async function recount(userId: string) {
  * when the connection is back. Renders nothing.
  */
 export function OfflineAgent({ me }: { me: Me }) {
+  const off = me.tenant.offlineMode === false;
   useEffect(() => {
     let stopped = false;
+    set({ off });
     const sync = async () => {
       if (stopped) return;
       if (!navigator.onLine) {
         set({ online: false });
         return;
       }
+      // Work recorded offline is sent even when the clinic has since turned offline mode off.
       const sent = await replay(me.id);
       set({ online: sent.stopped !== "offline" && sent.stopped !== "server" });
-      if (sent.stopped === null) {
+      if (off) {
+        await turnedOff(me.tenant.name).catch(() => undefined);
+      } else if (sent.stopped === null) {
         const snap = await refreshSnapshot();
-        if (snap) set({ online: true });
+        if (snap === "off") set({ off: true });
+        else if (snap) {
+          set({ online: true });
+          await refreshPatients(snap);
+        }
       }
       await recount(me.id);
     };
@@ -68,7 +78,10 @@ export function OfflineAgent({ me }: { me: Me }) {
       const snap = await getSnapshot().catch(() => undefined);
       if (snap && snap.me.id !== me.id) await clearSnapshot();
       await sync();
-      if (process.env.NODE_ENV === "production") await cacheShell();
+      if (process.env.NODE_ENV === "production") {
+        await cacheShell();
+        await keepStorage();
+      }
     })();
 
     const every = window.setInterval(() => void sync(), 3 * 60_000);
@@ -91,7 +104,8 @@ export function OfflineAgent({ me }: { me: Me }) {
       window.removeEventListener("hmis-offline-changed", onChanged);
       channel?.close();
     };
-  }, [me.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- me.tenant.name only labels the "off" marker
+  }, [me.id, off]);
   return null;
 }
 
@@ -100,6 +114,8 @@ export function OfflineChip() {
   const s = useSyncExternalStore(subscribe, () => state, () => SERVER_STATE);
   const t = useT();
   const base = "mb-2 flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors";
+  // Turned off: nothing to show unless work recorded offline earlier is still on its way.
+  if (s.off && !s.failed && !s.pending) return null;
   // A plain link (full page load): offline, the service worker answers with the cached workspace.
   if (s.failed) {
     return (

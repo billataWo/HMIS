@@ -4,13 +4,14 @@ import { Skeleton } from "@/components/ui";
 import { getT } from "@/lib/lang";
 import { api, ApiError } from "@/lib/api";
 import { CountForm, type CountBatch } from "./count-form";
+import { NoAccess } from "@/components/status-page";
 
 async function Sheet() {
   let batches: CountBatch[];
   try {
     batches = await api<CountBatch[]>("/inventory/batches");
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{(await getT())("Only pharmacists and admins count stock.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{(await getT())("Only pharmacists and admins count stock.")}</NoAccess>;
     throw e;
   }
   return <CountForm batches={batches} />;

@@ -9,6 +9,7 @@ import { inPlan } from "@/lib/plan";
 import { api, ApiError, type Me, type PurchaseOrder } from "@/lib/api";
 import { PO_STATUS } from "./po-status";
 import { etb, formatDualDate } from "@/lib/format";
+import { NoAccess } from "@/components/status-page";
 
 
 async function Orders() {
@@ -17,7 +18,7 @@ async function Orders() {
   try {
     [orders, me] = await Promise.all([api<PurchaseOrder[]>("/purchase-orders"), api<Me>("/auth/me")]);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only pharmacists and admins manage purchase orders.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only pharmacists and admins manage purchase orders.")}</NoAccess>;
     throw e;
   }
   const notice = !inPlan(me, "PURCHASE_ORDERS") && (

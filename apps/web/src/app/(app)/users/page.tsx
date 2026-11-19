@@ -7,18 +7,19 @@ import { getT } from "@/lib/lang";
 import { resetUserTwoStep } from "../../two-step-actions";
 import { setUserActive, setUserRoom } from "../../actions";
 import { UserForm } from "./user-form";
+import { NoAccess } from "@/components/status-page";
 
 async function Staff() {
   const [me, t] = await Promise.all([api<Me>("/auth/me"), getT()]);
   if (me.role !== "ADMIN") {
-    return <p className="text-sm text-slate-500">{t("Only clinic admins can manage staff accounts.")}</p>;
+    return <NoAccess>{t("Only clinic admins can manage staff accounts.")}</NoAccess>;
   }
 
   let users: StaffUser[];
   try {
     users = await api<StaffUser[]>("/users");
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only clinic admins can manage staff accounts.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only clinic admins can manage staff accounts.")}</NoAccess>;
     throw e;
   }
 

@@ -10,7 +10,7 @@ const ALLOWED: [string, RegExp][] = [
   ["PATCH", new RegExp(`^/visits/${ID}$`)],
   ["PATCH", new RegExp(`^/visits/${ID}/status$`)],
   ["POST", new RegExp(`^/visits/${ID}/(diagnoses|lab-orders|prescriptions|payments)$`)],
-  ["POST", new RegExp(`^/lab-orders/${ID}/(collect|result|verify)$`)],
+  ["POST", new RegExp(`^/lab-orders/${ID}/(collect|reject|result|verify)$`)],
   ["POST", new RegExp(`^/prescriptions/${ID}/(bill|dispense)$`)],
 ];
 

@@ -8,6 +8,7 @@ import { getT } from "@/lib/lang";
 import { api, ApiError, type CashShift, type DailySummary, type Me } from "@/lib/api";
 import { clinicToday, etb, formatDualDate, formatTime, PAYMENT_METHODS, shiftDay } from "@/lib/format";
 import { CloseCashForm } from "../billing-forms";
+import { NoAccess } from "@/components/status-page";
 
 function Tile({ label, value, tone }: { label: string; value: string; tone?: "warn" }) {
   return (
@@ -28,7 +29,7 @@ async function Daily({ searchParams }: { searchParams: Promise<{ day?: string }>
   try {
     [s, me] = await Promise.all([api<DailySummary>(`/billing/daily?day=${day}`), api<Me>("/auth/me")]);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only cashiers and admins can see takings.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only cashiers and admins can see takings.")}</NoAccess>;
     throw e;
   }
   const mine = s.closings.filter((c) => c.cashier.id === me.id);

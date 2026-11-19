@@ -41,6 +41,8 @@ model Tenant {
   labUrgentMinutes   Int          @default(60)
   /// The clinic's taxpayer identification number, printed on receipts.
   tin                String?
+  /// Staff PCs keep the day's work in the browser to carry on without a connection (the offline workspace).
+  offlineMode        Boolean      @default(true)
   createdAt          DateTime     @default(now())
 
   users         User[]

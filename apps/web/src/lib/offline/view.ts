@@ -4,7 +4,7 @@
  * snapshot was taken) is not applied twice; refused work is not applied at all.
  */
 import type { Charge, IcdEntry, LabWorkOrder, Patient, PendingBill, PharmacyPrescription, QueuePatient, QueueVisit, VisitStatus } from "@/lib/api";
-import type { Op, Snapshot } from "./types";
+import type { OfflinePatient, Op, PatientIndex, Snapshot } from "./types";
 
 export type OfflineVisit = QueueVisit & { offline?: boolean };
 /** subtotal: what the visit still owes; paid: what has been paid toward it so far. */
@@ -14,12 +14,15 @@ export type OfflinePayment = { opId: string; visitId: string; patient: QueuePati
 export interface View {
   snap: Snapshot;
   queue: OfflineVisit[];
-  patients: Patient[];
+  /** Everyone this PC can find: registered here offline, today's patients, recent ones, then the clinic's list. */
+  patients: OfflinePatient[];
+  /** When the clinic's patient list was downloaded (front desk), or null when this PC has none. */
+  patientListAt: string | null;
   lab: LabWorkOrder[];
   pharmacy: PharmacyPrescription[];
   bills: OfflineBill[];
   payments: OfflinePayment[];
-  notes: Record<string, Record<string, string | number>>;
+  notes: Record<string, Record<string, string | number | boolean | null>>;
   diagnoses: Record<string, IcdEntry[]>;
   pending: Op[];
   failed: Op[];
@@ -27,11 +30,12 @@ export interface View {
 
 const clone = <T>(v: T): T => structuredClone(v);
 
-export function buildView(snap: Snapshot, ops: Op[]): View {
+export function buildView(snap: Snapshot, ops: Op[], index?: PatientIndex | null): View {
   const v: View = {
     snap,
     queue: clone(snap.queue),
-    patients: clone(snap.patients),
+    patients: clone(snap.patients) as OfflinePatient[],
+    patientListAt: index?.userId === snap.me.id ? index.at : null,
     lab: clone(snap.lab),
     pharmacy: clone(snap.pharmacy),
     bills: clone(snap.bills),
@@ -73,9 +77,12 @@ export function buildView(snap: Snapshot, ops: Op[]): View {
         if (q) q.status = d.status as VisitStatus;
         break;
       }
-      case "notes":
+      case "notes": {
         v.notes[d.visitId] = { ...v.notes[d.visitId], ...d.fields };
+        const q = visit(d.visitId);
+        if (q && "triageLevel" in d.fields) q.triageLevel = d.fields.triageLevel;
         break;
+      }
       case "diagnosis": {
         (v.diagnoses[d.visitId] ??= []).push({ code: d.code, label: d.label });
         const q = visit(d.visitId);
@@ -149,14 +156,26 @@ export function buildView(snap: Snapshot, ops: Op[]): View {
         if (o) Object.assign(o, { status: "SAMPLE_COLLECTED", sampleId: d.sampleId ?? null, sampleCollectedAt: op.at });
         break;
       }
+      case "reject": {
+        const o = v.lab.find((x) => x.id === d.orderId);
+        // The whole tube goes back, as on the server: every unreleased test sharing the sample.
+        const tube = o?.sampleId ? v.lab.filter((x) => x.visit.id === o.visit.id && x.sampleId === o.sampleId && (x.status === "SAMPLE_COLLECTED" || x.status === "RESULTED")) : o ? [o] : [];
+        for (const x of tube) {
+          Object.assign(x, { status: "ORDERED", sampleId: null, sampleCollectedAt: null, resultValue: null, resultFlag: null, resultNote: null, values: [], critical: false, rejectReason: d.label ?? d.reason, rejections: (x.rejections ?? 0) + 1 });
+        }
+        break;
+      }
       case "result": {
         const o = v.lab.find((x) => x.id === d.orderId);
-        if (o) Object.assign(o, { status: "RESULTED", resultValue: d.value, resultNote: d.note ?? null, resultedAt: op.at });
+        if (o) {
+          Object.assign(o, { status: "RESULTED", resultValue: d.summary ?? d.value, resultFlag: d.flag ?? null, rangeText: d.rangeText ?? null, critical: !!d.critical, resultNote: d.note ?? null, resultedAt: op.at });
+          if (d.values) o.values = d.values;
+        }
         break;
       }
       case "verify": {
         const o = v.lab.find((x) => x.id === d.orderId);
-        if (o) Object.assign(o, { status: "VERIFIED", verifiedAt: op.at });
+        if (o) Object.assign(o, { status: "VERIFIED", verifiedAt: op.at, criticalNotified: d.notified ?? null });
         break;
       }
       case "bill-drugs": {
@@ -180,7 +199,18 @@ export function buildView(snap: Snapshot, ops: Op[]): View {
       }
     }
   }
-  // Patients seen today but missing from the recent list are still findable.
-  for (const q of v.queue) if (!v.patients.some((p) => p.id === q.patient.id)) v.patients.push(q.patient as Patient);
+  // Patients seen today but missing from the recent list are still findable, and so is everyone
+  // in the clinic's list (the front desk's). The fresher copy of each patient comes first.
+  const byId = new Map(v.patients.map((p) => [p.id, p]));
+  for (const p of [...v.queue.map((q) => q.patient), ...(index?.userId === snap.me.id ? index.patients : [])] as OfflinePatient[]) {
+    const known = byId.get(p.id);
+    if (known) {
+      // The card number of a merged record is only in the clinic's list.
+      if (p.oldMrns && !known.oldMrns) known.oldMrns = p.oldMrns;
+      continue;
+    }
+    byId.set(p.id, p);
+    v.patients.push(p);
+  }
   return v;
 }

@@ -2,13 +2,24 @@
  * Offline mode engine (browser only): keeps the snapshot fresh and sends queued work, through
  * the web server's /offline/* routes (they add the sign-in, which scripts cannot read).
  */
-import { deleteOp, getIdMap, getOps, getSnapshot, nextSeq, notifyChanged, putIdMap, putName, putOp, putSnapshot } from "./idb";
-import { isTmp, type Op, type Snapshot } from "./types";
+import { deleteOp, getIdMap, getOps, getPatientIndex, getSnapshot, nextSeq, notifyChanged, putIdMap, putName, putOp, putPatientIndex, putSnapshot, turnedOff } from "./idb";
+import { isTmp, type OfflinePatient, type Op, type Snapshot } from "./types";
 
-/** Downloads a fresh snapshot for the signed-in user. Returns null when offline or signed out. */
-export async function refreshSnapshot(): Promise<Snapshot | null> {
+/**
+ * Downloads a fresh snapshot for the signed-in user. Returns null when offline or signed out, and
+ * "off" when the clinic has turned offline mode off (the patient data kept here is then deleted).
+ */
+export async function refreshSnapshot(): Promise<Snapshot | "off" | null> {
   try {
     const res = await fetch("/offline/snapshot", { cache: "no-store", headers: { accept: "application/json" } });
+    if (res.status === 409 && res.headers.get("content-type")?.includes("json")) {
+      const body = (await res.json().catch(() => ({}))) as { code?: string };
+      if (body.code === "OFFLINE_MODE_OFF") {
+        await turnedOff((await getSnapshot())?.me.tenant.name ?? "");
+        notifyChanged();
+        return "off";
+      }
+    }
     if (!res.ok || !res.headers.get("content-type")?.includes("json")) return null;
     const snap = (await res.json()) as Snapshot;
     await putSnapshot(snap);
@@ -21,6 +32,44 @@ export async function refreshSnapshot(): Promise<Snapshot | null> {
   } catch {
     return null;
   }
+}
+
+/** Roles that find and check in patients (the API gives the patient list only to them). */
+const FRONT_DESK = new Set(["ADMIN", "RECEPTIONIST", "NURSE"]);
+/** How often the clinic's patient list is downloaded again (new registrations come with each snapshot). */
+const PATIENTS_EVERY = 6 * 60 * 60_000;
+
+/**
+ * Keeps the clinic's patient list for the front desk, so returning patients are found offline
+ * (not only the recent ones in the snapshot). A larger download, so only every few hours.
+ */
+export async function refreshPatients(snap: Pick<Snapshot, "me">, force = false) {
+  if (!FRONT_DESK.has(snap.me.role)) return;
+  try {
+    const kept = await getPatientIndex();
+    const fresh = kept?.userId === snap.me.id && Date.now() - Date.parse(kept.at) < PATIENTS_EVERY;
+    if (fresh && !force) return;
+    const res = await fetch("/offline/patients", { cache: "no-store", headers: { accept: "application/json" } });
+    if (!res.ok || !res.headers.get("content-type")?.includes("json")) return;
+    const patients = (await res.json()) as OfflinePatient[];
+    // The same person must still be signed in on this PC (it may have changed during the download).
+    if ((await getSnapshot())?.me.id !== snap.me.id) return;
+    await putPatientIndex({ userId: snap.me.id, at: res.headers.get("x-server-time") ?? new Date().toISOString(), patients });
+    notifyChanged();
+  } catch {
+    // offline right now: the list kept so far stays
+  }
+}
+
+/**
+ * Asks the browser not to clear this site's storage when the disk runs low, so work recorded
+ * offline is not lost before it is sent. Browsers may grant it without asking (an installed or
+ * often-used site) or refuse; either way nothing else changes.
+ */
+export async function keepStorage() {
+  try {
+    if (navigator.storage?.persist && !(await navigator.storage.persisted())) await navigator.storage.persist();
+  } catch {}
 }
 
 const SHELL_CACHE = "hmis-shell-v1";
@@ -215,9 +264,19 @@ async function sendPass(userId: string): Promise<ReplayResult> {
         return result;
       }
       const body = (await res.json().catch(() => ({}))) as { message?: string | string[]; code?: string };
-      if (res.status >= 500) {
+      // The server can't be reached or is restarting (the replay route answers 503 then; a proxy
+      // 502 or 504): stop and try again later.
+      if (res.status >= 502) {
         result.stopped = "server";
         return result;
+      }
+      // An error inside the server with this one request: retrying it automatically would block
+      // everything after it, so it needs attention like a refusal. The server can't tell whether
+      // the work was saved (it marks the key "outcome unknown"), so a person checks HMIS first and
+      // a resend is a new attempt (see retryOp), as for IDEMPOTENCY_UNKNOWN.
+      if (res.status >= 500) {
+        refused = { message: "The server had an error with this, so it may not have been saved.", body, code: "SERVER_ERROR" };
+        break;
       }
       // A temporary password must be replaced first: like being signed out, nothing is refused.
       if (body.code === "PASSWORD_CHANGE_REQUIRED") {
@@ -256,8 +315,8 @@ async function sendPass(userId: string): Promise<ReplayResult> {
 /** Puts a refused piece of work back in the queue, optionally with a changed request. */
 export async function retryOp(op: Op, change?: (op: Op) => Op) {
   const next = change ? change(op) : op;
-  // After "outcome unknown" the person has checked it was not saved: send it as a new attempt.
-  const attempt = (op.attempt ?? 0) + (op.errorCode === "IDEMPOTENCY_UNKNOWN" ? 1 : 0);
+  // After "outcome unknown" (or a server error) the person has checked it was not saved: send it as a new attempt.
+  const attempt = (op.attempt ?? 0) + (op.errorCode === "IDEMPOTENCY_UNKNOWN" || op.errorCode === "SERVER_ERROR" ? 1 : 0);
   await putOp({ ...next, attempt, status: "pending", error: undefined, errorBody: undefined, errorCode: undefined });
   // Work that failed only because it depended on this goes back in the queue with it.
   const created = new Set((op.creates ?? []).map((c) => c.tmp));
@@ -281,6 +340,43 @@ export async function retryOp(op: Op, change?: (op: Op) => Op) {
 export async function discardOp(id: string) {
   await deleteOp(id);
   notifyChanged();
+}
+
+/** The work that cannot be sent without this one (it uses a record this one creates), at any depth. */
+export function dependentsOf(op: Op, ops: Op[]): Op[] {
+  const created = new Set((op.creates ?? []).map((c) => c.tmp));
+  const found: Op[] = [];
+  for (let more = true; more; ) {
+    more = false;
+    for (const other of ops) {
+      if (other.id === op.id || other.status === "done" || found.includes(other)) continue;
+      if (tmpsNeeded(other).some((t) => created.has(t))) {
+        found.push(other);
+        (other.creates ?? []).forEach((c) => created.add(c.tmp));
+        more = true;
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * Takes back work recorded by mistake before it was sent (a wrong patient checked in, a typo in a
+ * registration), with the work that depends on it. Waits for a send under way to finish first, so
+ * nothing is taken back while it is reaching the server; work already sent can't be taken back
+ * here (correct it in HMIS). Returns false when it had been sent meanwhile.
+ */
+export async function undoOp(id: string): Promise<boolean> {
+  const take = async () => {
+    const ops = await getOps();
+    const op = ops.find((o) => o.id === id);
+    if (!op || op.status !== "pending") return false;
+    for (const o of [op, ...dependentsOf(op, ops)]) await deleteOp(o.id);
+    return true;
+  };
+  const undone = typeof navigator !== "undefined" && navigator.locks ? await navigator.locks.request("hmis-offline-replay", take) : await take();
+  notifyChanged();
+  return undone;
 }
 
 export { getOps, getSnapshot, isTmp };

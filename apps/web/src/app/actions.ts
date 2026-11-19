@@ -872,6 +872,7 @@ export async function saveSettings(_: FormState, form: FormData): Promise<FormSt
         requirePrepayment: form.get("requirePrepayment") === "on",
         doctorsCanRegister: form.get("doctorsCanRegister") === "on",
         multiStore: form.get("multiStore") === "on",
+        offlineMode: form.get("offlineMode") === "on",
         labUrgentMinutes: optionalNumber(form, "labUrgentMinutes"),
         tin: text(form, "tin") || null,
       }),

@@ -50,6 +50,15 @@ export function SettingsForm({ settings }: { settings: ClinicSettings }) {
       </fieldset>
 
       <fieldset className="space-y-2">
+        <legend className="mb-2 font-medium">{t("Offline mode")}</legend>
+        <Toggle name="offlineMode" defaultChecked={settings.offlineMode ?? true} label={t("Keep working when the internet drops")}>
+          {t(
+            "Each PC keeps the signed-in person's working day (today's patients, queue and worklists; for the front desk, the clinic's patient list) so staff can carry on in the offline workspace, and sends the work when the connection is back. Turn off if staff PCs must not keep patient data: what they keep is deleted the next time they connect, and work already recorded offline is still sent.",
+          )}
+        </Toggle>
+      </fieldset>
+
+      <fieldset className="space-y-2">
         <legend className="mb-2 font-medium">{t("Patient registration")}</legend>
         <Toggle name="doctorsCanRegister" defaultChecked={settings.doctorsCanRegister} label={t("Doctors can register new patients")}>
           {t(

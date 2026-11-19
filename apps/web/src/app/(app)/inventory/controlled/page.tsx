@@ -10,6 +10,7 @@ import type { T } from "@/lib/i18n";
 import { getT } from "@/lib/lang";
 import { api, ApiError, type ControlledRegister, type Me, type RegisterLine } from "@/lib/api";
 import { formatDualDate, formatTime, fullName } from "@/lib/format";
+import { NoAccess } from "@/components/status-page";
 
 type Search = { from?: string; to?: string; drug?: string };
 
@@ -70,7 +71,7 @@ async function Register({ searchParams }: { searchParams: Promise<Search> }) {
     // The drug picker lists every controlled drug, whichever one is shown.
     all = q.drug ? await api<ControlledRegister>(`/controlled-register?from=${reg.to}&to=${reg.to}`) : reg;
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only pharmacists and admins keep the controlled-drug register.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only pharmacists and admins keep the controlled-drug register.")}</NoAccess>;
     if (e instanceof ApiError && e.status === 400) return <p className="text-sm text-red-700">{t(e.message)}</p>;
     throw e;
   }

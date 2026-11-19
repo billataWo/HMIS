@@ -9,6 +9,7 @@ import { getT } from "@/lib/lang";
 import { api, ApiError, type Invoice, type Me, type Payer, type PendingBill } from "@/lib/api";
 import { etb, formatDualDate, formatTime, fullName } from "@/lib/format";
 import { InvoiceForm, VisitPayerForm } from "./billing-forms";
+import { NoAccess } from "@/components/status-page";
 
 async function Billing() {
   let me: Me, pending: PendingBill[], invoices: Invoice[], payers: Payer[];
@@ -16,7 +17,7 @@ async function Billing() {
   try {
     [me, pending, invoices, payers] = await Promise.all([api<Me>("/auth/me"), api<PendingBill[]>("/billing/pending"), api<Invoice[]>("/invoices"), api<Payer[]>("/payers")]);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only cashiers and admins can use billing.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only cashiers and admins can use billing.")}</NoAccess>;
     throw e;
   }
 

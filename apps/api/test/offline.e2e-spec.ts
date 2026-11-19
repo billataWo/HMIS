@@ -145,4 +145,40 @@ describe('offline replay support', () => {
     const forCashier = (await api.get('/offline/reference').set(bearer(cashier.token)).expect(200)).body;
     expect(forCashier.drugs).toEqual([]);
   });
+
+  it('gives the front desk the clinic’s patients for finding returning patients offline', async () => {
+    const kept = await db.patient.create({ data: { tenantId, mrn: `MRN-${Date.now()}`, firstName: 'Returning', fatherName: 'Patient', sex: 'FEMALE', phone: '0911000111', allergies: ['Penicillin'] } });
+    const dup = await db.patient.create({ data: { tenantId, mrn: `OLD-${Date.now()}`, firstName: 'Returning', fatherName: 'Patient', sex: 'FEMALE', mergedIntoId: kept.id } });
+    await db.patient.create({ data: { tenantId, mrn: 'WALK-IN', firstName: 'Walk-in', fatherName: 'customer', sex: 'MALE' } });
+    const other = await makeClinic('Another Offline Clinic');
+    const elsewhere = await db.patient.create({ data: { tenantId: other.id, mrn: 'MRN-000001', firstName: 'Not', fatherName: 'Here', sex: 'MALE' } });
+
+    const list = (await api.get('/offline/patients').set(bearer(desk.token)).expect(200)).body as { id: string; mrn: string; allergies: string[]; oldMrns?: string[] }[];
+    const found = list.find((p) => p.id === kept.id);
+    expect(found).toMatchObject({ firstName: 'Returning', phone: '0911000111', allergies: ['Penicillin'], oldMrns: [dup.mrn] });
+    // Merged records, the shared counter-sale record and other clinics' patients are left out.
+    expect(list.some((p) => p.id === dup.id || p.mrn === 'WALK-IN' || p.id === elsewhere.id)).toBe(false);
+
+    // Only the front desk finds patients this way.
+    await api.get('/offline/patients').set(bearer(cashier.token)).expect(403);
+  });
+
+  it('can be turned off by the admin: no offline downloads, but queued work is still accepted', async () => {
+    const admin = await makeStaff(tenantId, 'ADMIN');
+    expect((await api.get('/auth/me').set(bearer(desk.token)).expect(200)).body.tenant.offlineMode).toBe(true);
+    // Only the admin changes it.
+    await api.patch('/settings').set(bearer(desk.token)).send({ offlineMode: false }).expect(403);
+    expect((await api.patch('/settings').set(bearer(admin.token)).send({ offlineMode: false }).expect(200)).body.offlineMode).toBe(false);
+    try {
+      expect((await api.get('/auth/me').set(bearer(desk.token)).expect(200)).body.tenant.offlineMode).toBe(false);
+      const refused = await api.get('/offline/patients').set(bearer(desk.token)).expect(403);
+      expect(refused.body.code).toBe('OFFLINE_MODE_OFF');
+      expect((await api.get('/offline/reference').set(bearer(doctor.token)).expect(403)).body.code).toBe('OFFLINE_MODE_OFF');
+      // Work recorded on a PC before it was turned off still goes through.
+      await register(key()).expect(201);
+    } finally {
+      await api.patch('/settings').set(bearer(admin.token)).send({ offlineMode: true }).expect(200);
+    }
+    await api.get('/offline/patients').set(bearer(desk.token)).expect(200);
+  });
 });

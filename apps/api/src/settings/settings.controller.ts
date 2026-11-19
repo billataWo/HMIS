@@ -19,9 +19,11 @@ const SettingsSchema = z.object({
   labUrgentMinutes: z.number().int().min(10).max(24 * 60).optional(),
   // Taxpayer identification number, printed on receipts.
   tin: z.string().trim().max(30).nullable().optional(),
+  // Staff PCs keep the day's work for the offline workspace (on), or keep no patient data (off).
+  offlineMode: z.boolean().optional(),
 });
 
-const select = { id: true, name: true, nameAm: true, phone: true, address: true, type: true, requirePrepayment: true, doctorsCanRegister: true, multiStore: true, labUrgentMinutes: true, tin: true };
+const select = { id: true, name: true, nameAm: true, phone: true, address: true, type: true, requirePrepayment: true, doctorsCanRegister: true, multiStore: true, labUrgentMinutes: true, tin: true, offlineMode: true };
 
 @Controller('settings')
 export class SettingsController {

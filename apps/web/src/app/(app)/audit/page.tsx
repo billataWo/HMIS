@@ -9,6 +9,7 @@ import { api, ApiError, type AuditEntry, type StaffUser } from "@/lib/api";
 import { clinicToday, formatDualDate, formatTime, ROLE_LABELS } from "@/lib/format";
 import type { T } from "@/lib/i18n";
 import { getT } from "@/lib/lang";
+import { NoAccess } from "@/components/status-page";
 
 type Search = { from?: string; to?: string; userId?: string; action?: string; before?: string };
 
@@ -48,7 +49,7 @@ async function Log({ searchParams }: { searchParams: Promise<Search> }) {
   try {
     [res, staff] = await Promise.all([api<typeof res>(`/audit?${params}`), api<StaffUser[]>("/users")]);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only clinic admins can see the audit log.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only clinic admins can see the audit log.")}</NoAccess>;
     throw e;
   }
   const older = new URLSearchParams(params);

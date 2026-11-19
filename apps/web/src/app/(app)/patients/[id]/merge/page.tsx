@@ -12,6 +12,7 @@ import { ageText, formatDualDate, fullName } from "@/lib/format";
 import type { T } from "@/lib/i18n";
 import { getT } from "@/lib/lang";
 import { MergeForm } from "./merge-form";
+import { NoAccess } from "@/components/status-page";
 
 export const metadata: Metadata = { title: "Merge a duplicate" };
 
@@ -64,7 +65,7 @@ function Facts({ p, title, t }: { p: PatientDetail; title: string; t: T }) {
 async function Merge({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Search> }) {
   const [{ id }, { q = "", dup }] = await Promise.all([params, searchParams]);
   const [me, t] = await Promise.all([api<Me>("/auth/me"), getT()]);
-  if (me.role !== "ADMIN") return <Notice tone="info">{t("Only clinic admins can merge patient records.")}</Notice>;
+  if (me.role !== "ADMIN") return <NoAccess>{t("Only clinic admins can merge patient records.")}</NoAccess>;
   const keep = await load(id);
   if (keep.mergedIntoId) redirect(`/patients/${keep.mergedIntoId}`);
   const other = dup ? await load(dup) : null;

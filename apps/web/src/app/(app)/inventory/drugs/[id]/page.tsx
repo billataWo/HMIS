@@ -7,6 +7,7 @@ import { api, ApiError, type DrugStock } from "@/lib/api";
 import { etb, formatDualDate, formatTime } from "@/lib/format";
 import { inPacks, packLabel } from "@/lib/packs";
 import { AdjustForm, DrugForm } from "../../inventory-forms";
+import { NoAccess } from "@/components/status-page";
 
 const MOVE_LABEL: Record<DrugStock["movements"][number]["type"], string> = {
   RECEIPT: "Received",
@@ -26,7 +27,7 @@ async function Drug({ params }: { params: Promise<{ id: string }> }) {
     s = await api<DrugStock>(`/drugs/${id}/stock`);
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) notFound();
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only pharmacists and admins manage stock.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only pharmacists and admins manage stock.")}</NoAccess>;
     throw e;
   }
   const d = s.drug;

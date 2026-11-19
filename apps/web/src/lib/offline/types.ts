@@ -8,6 +8,7 @@ import type {
   PendingBill,
   PharmacyPrescription,
   Prescription,
+  QueuePatient,
   QueueVisit,
   Service,
   VisitDetail,
@@ -36,12 +37,26 @@ export interface Snapshot {
   labTests: OfflineLabTest[];
   drugs: DrugOption[];
   icd: IcdEntry[];
-  /** Doctors: their open visits in full (notes, tests and prescriptions so far). */
+  /** Doctors and nurses: today's open visits in full (vitals, notes, tests and prescriptions so far). */
   visits: Record<string, VisitDetail & { labOrders?: LabOrder[]; prescriptions?: Prescription[] }>;
   lab: LabWorkOrder[];
   pharmacy: PharmacyPrescription[];
   /** What each visit still owes (charges not invoiced plus open invoice balances). */
   bills: (PendingBill & { paid?: string })[];
+}
+
+/** A patient as the front desk finds them offline; `oldMrns`: card numbers of records merged into them. */
+export type OfflinePatient = QueuePatient & { oldMrns?: string[] };
+
+/**
+ * The clinic's patients, for finding returning patients offline (front desk). Downloaded every
+ * few hours, apart from the snapshot; deleted with it (sign-out, expiry, someone else signs in).
+ */
+export interface PatientIndex {
+  userId: string;
+  /** When it was downloaded, by the server's clock. */
+  at: string;
+  patients: OfflinePatient[];
 }
 
 /** One HTTP call of an operation. `$0.id` in a path is replaced by step 0's reply's id. */
@@ -61,6 +76,7 @@ export type OpKind =
   | "prescribe"
   | "pay"
   | "collect"
+  | "reject"
   | "result"
   | "verify"
   | "bill-drugs"

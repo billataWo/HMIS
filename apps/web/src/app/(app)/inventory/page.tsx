@@ -11,6 +11,7 @@ import { getT } from "@/lib/lang";
 import { api, ApiError, type InventoryResponse } from "@/lib/api";
 import { etb, formatDualDate } from "@/lib/format";
 import { inPacks } from "@/lib/packs";
+import { NoAccess } from "@/components/status-page";
 
 type Search = { q?: string; filter?: string; done?: string; error?: string };
 
@@ -49,7 +50,7 @@ async function Inventory({ searchParams }: { searchParams: Promise<Search> }) {
   try {
     data = await api<InventoryResponse>(`/inventory?filter=${filter}&q=${encodeURIComponent(q)}`);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only pharmacists and admins manage stock.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only pharmacists and admins manage stock.")}</NoAccess>;
     throw e;
   }
   const s = data.summary;

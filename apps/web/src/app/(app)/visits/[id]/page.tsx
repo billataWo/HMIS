@@ -23,6 +23,7 @@ import { LabPanel } from "./lab-panel";
 import { PrescriptionPanel } from "./prescription-panel";
 import { DocumentsPanel } from "./documents-panel";
 import { ProceduresPanel } from "./procedures-panel";
+import { NoAccess } from "@/components/status-page";
 
 const VITAL_LABELS: [keyof VisitDetail, string, string][] = [
   ["temperatureC", "Temp", "°C"],
@@ -82,7 +83,7 @@ async function Visit({ params, searchParams }: { params: Promise<{ id: string }>
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) notFound();
     if (e instanceof ApiError && e.status === 403) {
-      return <p className="text-sm text-slate-500">{t("Only doctors, nurses and admins can open consultation records.")}</p>;
+      return <NoAccess>{t("Only doctors, nurses and admins can open consultation records.")}</NoAccess>;
     }
     throw e;
   }

@@ -12,6 +12,7 @@ import { formatAddress } from "@/lib/address";
 import { api, ApiError, type IdsrReport } from "@/lib/api";
 import { ageText, formatDualDate, fullName, shiftDay } from "@/lib/format";
 import { getT } from "@/lib/lang";
+import { NoAccess } from "@/components/status-page";
 
 export const metadata: Metadata = { title: "Weekly IDSR report" };
 
@@ -30,7 +31,7 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
   try {
     r = await api<IdsrReport>(`/reports/idsr-weekly${day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? `?day=${day}` : ""}`);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only clinic admins can see reports.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only clinic admins can see reports.")}</NoAccess>;
     throw e;
   }
   const lastDay = shiftDay(r.week.end, -1);

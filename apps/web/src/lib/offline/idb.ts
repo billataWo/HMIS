@@ -2,7 +2,7 @@
  * The browser's offline store (IndexedDB): the snapshot, the queue of operations waiting to be
  * sent, and the map from temporary to real ids. Everything here works without a network.
  */
-import type { Op, Snapshot } from "./types";
+import type { Op, PatientIndex, Snapshot } from "./types";
 
 const DB = "hmis-offline";
 const VERSION = 1;
@@ -75,6 +75,16 @@ export const getSnapshot = () => run<Snapshot>("kv", "readonly", (s) => s.get("s
 export async function putSnapshot(snap: Snapshot) {
   await run("kv", "readwrite", (s) => s.put(snap, "snapshot"));
   await run("kv", "readwrite", (s) => s.delete("expired"));
+  await run("kv", "readwrite", (s) => s.delete("off"));
+}
+
+/** The clinic turned offline mode off (Settings): kept so the workspace can say so; no patient data. */
+export type OffMarker = { clinic: string; at: string };
+export const getOff = () => run<OffMarker>("kv", "readonly", (s) => s.get("off"));
+/** Deletes the patient data this browser keeps and remembers that the clinic turned offline mode off. */
+export async function turnedOff(clinic: string) {
+  await clearSnapshot();
+  await run("kv", "readwrite", (s) => s.put({ clinic, at: new Date().toISOString() } satisfies OffMarker, "off"));
 }
 
 /** Left behind when an expired snapshot is deleted: enough to explain the lock, no patient data. */
@@ -91,10 +101,18 @@ export async function purgeIfExpired(): Promise<boolean> {
   if (!snap?.validUntil || Date.now() <= Date.parse(snap.validUntil)) return false;
   const marker: ExpiredMarker = { userId: snap.me.id, name: snap.me.fullName, validUntil: snap.validUntil };
   await run("kv", "readwrite", (s) => s.put(marker, "expired"));
-  await run("kv", "readwrite", (s) => s.delete("snapshot"));
+  await clearSnapshot();
   return true;
 }
-export const clearSnapshot = () => run("kv", "readwrite", (s) => s.delete("snapshot"));
+/** Deletes the patient data this browser keeps (the day's snapshot and the patient list); queued work stays. */
+export async function clearSnapshot() {
+  await run("kv", "readwrite", (s) => s.delete("snapshot"));
+  await run("kv", "readwrite", (s) => s.delete("patients"));
+}
+
+/** The clinic's patients for the front desk (see PatientIndex). */
+export const getPatientIndex = () => run<PatientIndex>("kv", "readonly", (s) => s.get("patients"));
+export const putPatientIndex = (index: PatientIndex) => run("kv", "readwrite", (s) => s.put(index, "patients"));
 
 /** Who each user id is, kept after sign-out so waiting work can say whose it is. */
 export async function getNames(): Promise<Record<string, string>> {

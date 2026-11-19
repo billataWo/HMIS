@@ -1,4 +1,5 @@
 import "server-only";
+import { statusDigest } from "./http-status";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -26,7 +27,10 @@ export class ApiError extends Error {
     },
   ) {
     super(Array.isArray(body.message) ? body.message.join(", ") : (body.message ?? `API error ${status}`));
+    this.digest = statusDigest(status);
   }
+  /** Carries the status to the error page in the browser (lib/http-status.ts): "not found", "no access". */
+  digest: string;
 }
 
 /** Calls the HMIS API as the signed-in user. Sends the user to /login if the session has expired. */
@@ -42,7 +46,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...init.headers },
     });
   } catch (cause) {
-    throw new Error(`Can't reach the HMIS server at ${API_URL}. Is the API running?`, { cause });
+    throw Object.assign(new Error(`Can't reach the HMIS server at ${API_URL}. Is the API running?`, { cause }), { digest: statusDigest(503) });
   }
   if (res.status === 401) redirect("/login");
   const body = res.status === 204 ? null : await res.json().catch(() => ({}));
@@ -116,7 +120,7 @@ export interface Me {
   features?: string[] | null;
   /** null: the clinic is not billed as a service (no limits). */
   subscription?: { state: SubscriptionState; readOnly: boolean; daysLeft: number | null; endsAt: string | null; planName: string | null; source?: string; unlicensed?: boolean } | null;
-  tenant: { id: string; name: string; nameAm: string | null; doctorsCanRegister?: boolean };
+  tenant: { id: string; name: string; nameAm: string | null; doctorsCanRegister?: boolean; offlineMode?: boolean };
 }
 
 export interface Patient {
@@ -660,6 +664,7 @@ export interface ClinicSettings {
   multiStore: boolean; // a main store and a dispensary (or more), with transfers
   labUrgentMinutes?: number; // target for urgent lab tests, sample to release
   tin?: string | null; // taxpayer identification number, on receipts
+  offlineMode?: boolean; // staff PCs keep the day's work for the offline workspace
 }
 
 /** A condition kept on the patient's record across visits. */

@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui";
 import { getT } from "@/lib/lang";
 import { api, ApiError, type Supplier } from "@/lib/api";
 import { SupplierForm } from "../inventory-forms";
+import { NoAccess } from "@/components/status-page";
 
 async function Suppliers() {
   let suppliers: Supplier[];
@@ -12,7 +13,7 @@ async function Suppliers() {
   try {
     suppliers = await api<Supplier[]>("/suppliers");
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) return <p className="text-sm text-slate-500">{t("Only pharmacists and admins manage suppliers.")}</p>;
+    if (e instanceof ApiError && e.status === 403) return <NoAccess>{t("Only pharmacists and admins manage suppliers.")}</NoAccess>;
     throw e;
   }
   return (
