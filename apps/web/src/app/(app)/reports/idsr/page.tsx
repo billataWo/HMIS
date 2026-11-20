@@ -205,11 +205,11 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
   );
 }
 
-async function BackToDashboard() {
+async function BackToReports() {
   const t = await getT();
   return (
     <Link href="/reports" className={secondaryButtonClass}>
-      {t("Dashboard")}
+      {t("Reports")}
     </Link>
   );
 }
@@ -218,7 +218,7 @@ export default function IdsrPage({ searchParams }: PageProps<"/reports/idsr">) {
   return (
     <>
       <div className="print:hidden">
-        <PageTitle title="Weekly IDSR report" subtitle="for the woreda health office" actions={<BackToDashboard />} />
+        <PageTitle title="Weekly IDSR report" subtitle="for the woreda health office" actions={<BackToReports />} />
       </div>
       <Suspense fallback={<Skeleton className="h-96" />}>
         <Report searchParams={searchParams as Promise<Search>} />

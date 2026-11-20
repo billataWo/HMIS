@@ -7,6 +7,7 @@ import { z } from 'zod';
 import type { Request } from 'express';
 import { AuditService } from '../common/audit.service.js';
 import { clientIp } from '../common/client-ip.js';
+import { requestOrigin } from '../common/tenant-context.js';
 import { normalizePhone } from '../common/phone.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -106,7 +107,7 @@ export class AuthController {
    */
   private async auditSignIn(tenantId: string, userId: string, action: string, data: Record<string, unknown>) {
     await this.prisma.system.auditLog
-      .create({ data: { tenantId, userId, action, entity: 'User', entityId: userId, data: data as never } })
+      .create({ data: { tenantId, userId, action, entity: 'User', entityId: userId, data: data as never, ...requestOrigin() } })
       .catch((e: Error) => this.log.error(`Could not record ${action}: ${e.message}`));
   }
 

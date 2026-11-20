@@ -2,7 +2,7 @@
 
 import { refresh } from "next/cache";
 import { cookies } from "next/headers";
-import { clientAddress } from "@/lib/client-address";
+import { clientAddress, clientAgent } from "@/lib/client-address";
 import { STAFF_BROWSER_COOKIE, STAFF_BROWSER_COOKIE_OPTIONS } from "@/lib/staff-browser";
 import { redirect } from "next/navigation";
 import { LANG_COOKIE } from "@/lib/i18n";
@@ -64,11 +64,12 @@ export async function login(_: FormState, form: FormData): Promise<FormState> {
   // The API limits wrong passwords per address too: tell it the user's address (set by the
   // reverse proxy, or by Next.js from the connection), not this web server's.
   const forwarded = await clientAddress();
+  const agent = await clientAgent();
   let res: Response;
   try {
     res = await fetch(`${API_URL}/auth/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...(forwarded && { "X-Forwarded-For": forwarded }) },
+      headers: { "Content-Type": "application/json", ...(forwarded && { "X-Forwarded-For": forwarded }), ...(agent && { "User-Agent": agent }) },
       body: JSON.stringify({ phone, password: String(form.get("password") ?? "") }),
       cache: "no-store",
     });

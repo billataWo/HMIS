@@ -1,5 +1,6 @@
 import {
   Body,
+  Headers,
   ConflictException,
   Controller,
   Delete,
@@ -117,7 +118,7 @@ export class ConsultationController {
 
   /** A visit with the patient's previous visits for context. */
   @Get('visits/:id')
-  async get(@CurrentUser() me: AuthUser, @Param('id') id: string) {
+  async get(@CurrentUser() me: AuthUser, @Param('id') id: string, @Headers('x-hmis-purpose') purpose?: string) {
     const visit = await this.findVisit(me, id);
     const previous = await this.prisma.client.visit.findMany({
       where: { tenantId: me.tenantId, kind: 'OPD', patientId: visit.patientId, id: { not: id }, status: 'COMPLETED', checkedInAt: { lt: visit.checkedInAt } },
@@ -150,6 +151,7 @@ export class ConsultationController {
       prepaymentRequired(this.prisma.client, me.tenantId),
     ]);
     const unpaid = charges.filter((c) => !isSettled(c));
+    await this.audit.viewed(me, 'Visit', id, { offline: purpose === 'offline-copy' });
     // Who wrote each addendum.
     const authors = await this.prisma.client.user.findMany({ where: { id: { in: visit.addenda.map((a) => a.authorId) } }, select: { id: true, fullName: true, role: true } });
     return {

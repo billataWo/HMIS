@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { originHeaders } from "@/lib/client-address";
 import { API_URL, TOKEN_COOKIE, type LabOrder, type Me, type Prescription, type QueueResponse, type SyncStatus, type VisitDetail } from "@/lib/api";
 import type { Snapshot } from "@/lib/offline/types";
 
@@ -27,8 +28,11 @@ function tokenExpiry(token: string): string | null {
 export async function GET() {
   const token = (await cookies()).get(TOKEN_COOKIE)?.value;
   if (!token) return Response.json({ message: "Signed out" }, { status: 401 });
+  // For the audit log: who is asking, from where, and that this is a copy for offline work (not the
+  // user opening each record).
+  const origin = { "X-HMIS-Purpose": "offline-copy", ...(await originHeaders()) };
   const get = async <T>(path: string, fallback: T): Promise<T> => {
-    const res = await fetch(`${API_URL}${path}`, { cache: "no-store", headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+    const res = await fetch(`${API_URL}${path}`, { cache: "no-store", headers: { Authorization: `Bearer ${token}`, ...origin } }).catch(() => null);
     return res?.ok ? ((await res.json()) as T) : fallback;
   };
 

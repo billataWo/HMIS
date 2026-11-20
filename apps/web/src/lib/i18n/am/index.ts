@@ -12,9 +12,11 @@ import { MCH } from "./mch";
 import { MESSAGES } from "./messages";
 import { OFFLINE } from "./offline";
 import { PHARMACY } from "./pharmacy";
+import { REPORTS } from "./reports";
+import { AUDIT } from "./audit";
 import { SHELL } from "./shell";
 
-export const AM: Record<string, string> = { ...COMMON, ...SHELL, ...FRONT_DESK, ...CONSULTATION, ...LAB, ...PHARMACY, ...BILLING, ...MCH, ...ADMIN, ...OFFLINE, ...MESSAGES };
+export const AM: Record<string, string> = { ...COMMON, ...SHELL, ...FRONT_DESK, ...CONSULTATION, ...LAB, ...PHARMACY, ...BILLING, ...MCH, ...ADMIN, ...REPORTS, ...AUDIT, ...OFFLINE, ...MESSAGES };
 
 /** The server's messages on their own: lib/i18n.ts also matches the templated ones as patterns. */
 export { MESSAGES };

@@ -4,6 +4,7 @@ import {
   CalendarPlus,
   ChartColumn,
   FlaskConical,
+  LayoutDashboard,
   ListOrdered,
   Package,
   Pill,
@@ -33,7 +34,8 @@ const MODULES: { name: string; nameAm: string; desc: string; href: string; icon:
   { name: "Pharmacy", nameAm: "ፋርማሲ", desc: "Prescriptions to dispense, first-expiry-first-out", href: "/pharmacy", icon: Pill, roles: ["ADMIN", "PHARMACIST"] },
   { name: "Inventory", nameAm: "ክምችት", desc: "Stock, batches, expiry, deliveries and suppliers", href: "/inventory", icon: Package, roles: ["ADMIN", "PHARMACIST"] },
   { name: "Billing", nameAm: "ክፍያ", desc: "Invoices, Telebirr, Chapa, receipts, cash closing", href: "/billing", icon: Receipt, roles: ["ADMIN", "CASHIER"] },
-  { name: "Reports", nameAm: "ሪፖርቶች", desc: "Revenue, patient counts, stock losses, monthly MoH report", href: "/reports", icon: ChartColumn, roles: ["ADMIN"] },
+  { name: "Dashboard", nameAm: "ዳሽቦርድ", desc: "How the clinic is doing: right now, trends, and what needs attention", href: "/dashboard", icon: LayoutDashboard, roles: ["ADMIN"] },
+  { name: "Reports", nameAm: "ሪፖርቶች", desc: "Registers, money, stock and MoH reports, to print or download", href: "/reports", icon: ChartColumn, roles: ["ADMIN"] },
 ];
 
 /** The one or two things each role does most, as buttons at the top of Home. */
@@ -53,7 +55,7 @@ const QUICK: Partial<Record<Role, { label: string; href: string; icon: LucideIco
   CASHIER: [{ label: "Bills to collect", href: "/billing", icon: Receipt }],
   ADMIN: [
     { label: "Today's queue", href: "/queue", icon: ListOrdered },
-    { label: "Dashboard", href: "/reports", icon: ChartColumn },
+    { label: "Dashboard", href: "/dashboard", icon: ChartColumn },
   ],
 };
 

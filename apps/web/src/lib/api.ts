@@ -1,6 +1,8 @@
 import "server-only";
 import { statusDigest } from "./http-status";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import type { AuditCategory } from "./audit-actions";
+import { addressFrom } from "./client-address";
 import { redirect } from "next/navigation";
 
 // Read at runtime on the server (NEXT_PUBLIC_* values are fixed at build time).
@@ -37,13 +39,23 @@ export class ApiError extends Error {
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = (await cookies()).get(TOKEN_COOKIE)?.value;
   if (!token) redirect("/login");
+  // Who is really asking, for the audit log: the user's address and browser, not this web server's.
+  const incoming = await headers();
+  const forwarded = addressFrom(incoming.get("x-forwarded-for"));
+  const agent = incoming.get("user-agent");
 
   let res: Response;
   try {
     res = await fetch(`${API_URL}${path}`, {
       ...init,
       cache: "no-store",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...init.headers },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        ...(forwarded && { "X-Forwarded-For": forwarded }),
+        ...(agent && { "User-Agent": agent.slice(0, 300) }),
+        ...init.headers,
+      },
     });
   } catch (cause) {
     throw Object.assign(new Error(`Can't reach the HMIS server at ${API_URL}. Is the API running?`, { cause }), { digest: statusDigest(503) });
@@ -564,14 +576,53 @@ export interface LabTurnaround extends TatSummary {
   tests: (TatSummary & { name: string; targetMinutes: number | null })[];
 }
 
+/** The headline numbers of the period before the one shown, for the comparison. */
+export interface PeriodTotals {
+  from: string;
+  to: string;
+  visits: number;
+  completed: number;
+  newPatients: number;
+  collected: string;
+  billed: string;
+  avgWaitMinutes: number | null;
+  unbilled: string;
+  /** Per day of that period, oldest first: lines up day for day with the period shown. */
+  daily: { visits: number[]; collected: string[] };
+}
+
+/** Today, right now (only when the period runs to today). */
+export interface RightNow {
+  at: string;
+  waiting: number;
+  inConsultation: number;
+  awaitingLab: number;
+  awaitingPharmacy: number;
+  longestWaitMinutes: number | null;
+  samplesToTake: number;
+  resultsToVerify: number;
+  prescriptionsToDispense: number;
+  visitsToBill: number;
+}
+
 export interface Dashboard {
   from: string;
   to: string;
+  previous?: PeriodTotals;
+  now?: RightNow | null;
   patients: {
     visits: number;
     completed: number;
+    seen?: number;
     newPatients: number;
     avgWaitMinutes: number | null;
+    medianWaitMinutes?: number | null;
+    p90WaitMinutes?: number | null;
+    /** Waits under 15 min, 15–30, 30–60, 1–2 h, over 2 h. */
+    waitBands?: number[];
+    /** Check-ins by weekday (Monday first) and hour of the day. */
+    arrivals?: number[][];
+    bySexAge?: { ageGroup: string; male: number; female: number }[];
     byDoctor: { name: string; count: number }[];
     cancelled?: number;
     cancelledByReason?: Record<string, number>;
@@ -583,6 +634,8 @@ export interface Dashboard {
     discounts: string;
     unbilled: string;
     unbilledCount: number;
+    /** What each department delivered in the period, at the price charged. */
+    bySource?: { source: "CONSULTATION" | "LAB" | "PHARMACY" | "PROCEDURE" | "OTHER"; amount: string }[];
     patientsOwe: string;
     receivables: { payer: string; due: string }[];
     /** What is owed by age (0–30, 31–60, 61–90, over 90 days), by patients and by payers. */
@@ -602,7 +655,7 @@ export interface Dashboard {
   };
   pharmacy: { sales: string; unitsDispensed: number; topDrugs: { name: string; units: number }[] };
   stock: { value: string; low: number; expiring: number; expiredOnShelf: number; expiredLoss: string; adjustmentLoss: string };
-  daily: { day: string; visits: number; collected: string }[];
+  daily: { day: string; visits: number; collected: string; newPatients?: number; billed?: string; avgWaitMinutes?: number | null }[];
 }
 
 export interface MohReport {
@@ -1314,6 +1367,48 @@ export interface AuditEntry {
   data: Record<string, unknown> | null;
   createdAt: string;
   user: { id: string; fullName: string; role: Role } | null;
+  /** Where it came from: the computer's address and browser (none on entries from before they were kept). */
+  ip?: string | null;
+  userAgent?: string | null;
+  category?: AuditCategory;
+  /** An action a reviewer should see first (voids, reversals, failed sign-ins, exports…). */
+  sensitive?: boolean;
+  /** What it is about, in words, with a link. */
+  target?: { label: string; href?: string } | null;
+  /** The start of the entry's seal (none on entries from before the log was sealed). */
+  seal?: string | null;
+}
+
+/** One page of the audit log, with the period at a glance. */
+export interface AuditPage {
+  from: string;
+  to: string;
+  patient: { id: string; name: string; mrn: string } | null;
+  entries: AuditEntry[];
+  next: string | null;
+  matching: number;
+  summary: {
+    total: number;
+    byCategory: Record<string, number>;
+    sensitive: number;
+    failedSignIns: number;
+    recordViews: number;
+    exports: number;
+    people: number;
+  };
+  seal: string | null;
+}
+
+/** The result of checking the audit log's seal. */
+export interface AuditIntegrity {
+  checkedAt: string;
+  sealed: number;
+  unsealed: number;
+  altered: number;
+  missing: number;
+  intact: boolean;
+  alteredEntries: { id: string; action: string; createdAt: string }[];
+  seal: string | null;
 }
 
 export interface ClinicalDocument {
@@ -1476,4 +1571,15 @@ export interface SyncStatus {
   lastErrorAt?: string | null;
   waiting?: number;
   oldestWaitingAt?: string | null;
+}
+
+/** One report from the library (lib/reports.ts names its columns). */
+export type ReportCell = string | number | null;
+export interface ReportResult {
+  rows: Record<string, ReportCell>[];
+  totals?: Record<string, ReportCell>;
+  /** More rows than a report returns: narrow the period. */
+  truncated?: boolean;
+  /** As of now (stock, money owed), not for a period. */
+  asOfNow?: boolean;
 }

@@ -101,7 +101,40 @@ describe('dashboard and MoH report', () => {
     expect(d.pharmacy).toEqual(expect.objectContaining({ sales: '216.00', unitsDispensed: 24 }));
     expect(d.pharmacy.topDrugs).toEqual([{ name: 'Artemether/Lumefantrine', units: 24 }]);
     expect(d.stock).toEqual(expect.objectContaining({ value: '370.00', adjustmentLoss: '10.00' })); // 74 left × 5.00
-    expect(d.daily).toEqual([{ day: today, visits: 2, collected: '426.00' }]);
+    expect(d.daily).toEqual([{ day: today, visits: 2, newPatients: 2, collected: '426.00', billed: '426.00', avgWaitMinutes: expect.any(Number) }]);
+  });
+
+  it('adds the comparison, the spread of waits, arrivals, who came and what each department delivered', async () => {
+    const d = (await api.get('/reports/dashboard').set(bearer(admin.token)).expect(200)).body;
+    const yesterday = new Date(`${today}T12:00:00Z`);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    expect(d.previous).toEqual(expect.objectContaining({ from: yesterday.toISOString().slice(0, 10), to: yesterday.toISOString().slice(0, 10), visits: 0, collected: '0.00' }));
+    expect(d.patients.seen).toBe(2);
+    expect(d.patients.waitBands.reduce((a: number, b: number) => a + b, 0)).toBe(2);
+    expect(d.patients.arrivals.flat().reduce((a: number, b: number) => a + b, 0)).toBe(2);
+    const row = (g: string) => d.patients.bySexAge.find((x: { ageGroup: string }) => x.ageGroup === g);
+    expect(row('1-4')).toEqual({ ageGroup: '1-4', male: 1, female: 0 });
+    expect(row('30-64')).toEqual({ ageGroup: '30-64', male: 0, female: 1 });
+    const source = (s: string) => d.revenue.bySource.find((x: { source: string }) => x.source === s)?.amount;
+    expect([source('CONSULTATION'), source('LAB'), source('PHARMACY')]).toEqual(['300.00', '60.00', '216.00']);
+    // Right now: the adult is with the doctor and not billed yet.
+    expect(d.now).toEqual(expect.objectContaining({ waiting: 0, inConsultation: 1, visitsToBill: 1, longestWaitMinutes: null }));
+  });
+
+  it('compares with the period before, and leaves out "right now" for a past period', async () => {
+    const back = (n: number) => {
+      const x = new Date(`${today}T12:00:00Z`);
+      x.setUTCDate(x.getUTCDate() - n);
+      return x.toISOString().slice(0, 10);
+    };
+    // 30 days ending yesterday: the period before holds the visit 40 days ago.
+    const d = (await api.get('/reports/dashboard').query({ from: back(30), to: back(1) }).set(bearer(admin.token)).expect(200)).body;
+    expect(d.now).toBeNull();
+    expect(d.patients.visits).toBe(0);
+    expect(d.previous).toEqual(expect.objectContaining({ from: back(60), to: back(31), visits: 1, completed: 1 }));
+    expect(d.daily).toHaveLength(30);
+    expect(d.previous.daily.visits).toHaveLength(30);
+    expect(d.previous.daily.visits.reduce((a: number, b: number) => a + b, 0)).toBe(1);
   });
 
   it('validates the range and is admin-only', async () => {
@@ -109,6 +142,45 @@ describe('dashboard and MoH report', () => {
     await api.get('/reports/dashboard').query({ from: '2024-01-01', to: '2026-01-01' }).set(bearer(admin.token)).expect(400);
     await api.get('/reports/dashboard').set(bearer(cashier.token)).expect(403);
     await api.get('/reports/moh-monthly').set(bearer(doctor.token)).expect(403);
+  });
+
+  it('runs every report in the library for the period', async () => {
+    const keys = ['payments', 'revenue-by-service', 'invoices', 'discounts', 'debtors', 'opd-register', 'morbidity', 'lab-register', 'referrals', 'stock-on-hand', 'expiry', 'dispensing', 'stock-losses', 'staff-activity', 'appointments', 'cancelled-visits'];
+    const run = async (key: string, extra: object = {}) => (await api.get(`/reports/library/${key}`).query({ from: today, to: today, ...extra }).set(bearer(admin.token)).expect(200)).body;
+    for (const key of keys) expect(Array.isArray((await run(key)).rows)).toBe(true);
+
+    const pay = await run('payments');
+    expect(pay.rows).toEqual([expect.objectContaining({ kind: 'PAYMENT', method: 'TELEBIRR', amount: '426.00', mrn: expect.any(String) })]);
+    expect(pay.totals).toEqual({ amount: '426.00' });
+    expect((await run('payments', { method: 'CASH' })).rows).toEqual([]);
+
+    const opd = await run('opd-register');
+    expect(opd.rows.map((r: { visitType: string }) => r.visitType).sort()).toEqual(['NEW', 'REPEAT']);
+    const rev = await run('revenue-by-service');
+    expect(rev.totals).toEqual(expect.objectContaining({ amount: '576.00', billed: '426.00', notBilled: '150.00' }));
+    const lab = await run('lab-register');
+    expect(lab.rows).toEqual([expect.objectContaining({ test: 'Malaria blood film', result: 'P. falciparum', status: 'VERIFIED' })]);
+    const stock = await run('stock-on-hand');
+    expect(stock.asOfNow).toBe(true);
+    expect(stock.rows).toEqual([expect.objectContaining({ onHand: 74, status: 'OK', value: '370.00' })]);
+    expect((await run('dispensing')).rows).toEqual([expect.objectContaining({ units: 24, cost: '120.00', value: '216.00', margin: '96.00' })]);
+    expect((await run('stock-losses')).rows).toEqual([expect.objectContaining({ type: 'ADJUSTMENT', quantity: 2, value: '10.00' })]);
+    const morbidity = await run('morbidity');
+    expect(morbidity.totals).toEqual(expect.objectContaining({ male: 1, female: 1, total: 2 }));
+    const debtors = await run('debtors');
+    expect(debtors.rows).toEqual([]); // the adult's visit is not invoiced yet: nothing owed on an invoice
+    const staffRows = (await run('staff-activity')).rows;
+    expect(staffRows).toEqual(expect.arrayContaining([expect.objectContaining({ role: 'CASHIER', paymentsTaken: 1, collected: '426.00' }), expect.objectContaining({ role: 'DOCTOR', patientsSeen: 2 })]));
+  });
+
+  it('records exports in the audit log, and guards the library', async () => {
+    await api.get('/reports/library/opd-register/export').query({ from: today, to: today }).set(bearer(admin.token)).expect(200);
+    const entry = await db.auditLog.findFirst({ where: { tenantId, action: 'report.exported' }, orderBy: { createdAt: 'desc' } });
+    expect(entry).toEqual(expect.objectContaining({ entity: 'Report', entityId: 'opd-register', data: expect.objectContaining({ rows: 2 }) }));
+    await api.get('/reports/library/payments').query({ from: today, to: today }).set(bearer(cashier.token)).expect(403);
+    await api.get('/reports/library/nope').query({ from: today, to: today }).set(bearer(admin.token)).expect(404);
+    await api.get('/reports/library/payments').query({ from: '2026-02-30', to: today }).set(bearer(admin.token)).expect(400);
+    await api.get('/reports/library/payments').query({ from: '2024-01-01', to: today }).set(bearer(admin.token)).expect(400);
   });
 
   it('builds the monthly MoH report for the current Ethiopian month', async () => {

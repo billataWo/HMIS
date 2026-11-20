@@ -30,6 +30,7 @@ import { SettingsController } from './settings/settings.controller.js';
 import { InventoryController } from './inventory/inventory.controller.js';
 import { CatalogController } from './catalog/catalog.controller.js';
 import { ReportsController } from './reports/reports.controller.js';
+import { ReportLibraryController } from './reports/library.controller.js';
 import { ProceduresController } from './procedures/procedures.controller.js';
 import { AuditController } from './audit/audit.controller.js';
 import { BackupsController } from './backups/backups.controller.js';
@@ -98,6 +99,7 @@ if (process.env.NODE_ENV === 'production' && (jwtSecret.length < 32 || WEAK_SECR
     InventoryController,
     CatalogController,
     ReportsController,
+    ReportLibraryController,
     ProceduresController,
     AuditController,
     BackupsController,

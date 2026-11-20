@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { originHeaders } from "@/lib/client-address";
 import { API_URL, TOKEN_COOKIE } from "@/lib/api";
 
 /**
@@ -8,7 +9,8 @@ import { API_URL, TOKEN_COOKIE } from "@/lib/api";
 export async function GET() {
   const token = (await cookies()).get(TOKEN_COOKIE)?.value;
   if (!token) return Response.json({ message: "Signed out" }, { status: 401 });
-  const res = await fetch(`${API_URL}/offline/patients`, { cache: "no-store", headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+  // A copy of the patient list leaving for this PC: the audit log records whose and from where.
+  const res = await fetch(`${API_URL}/offline/patients`, { cache: "no-store", headers: { Authorization: `Bearer ${token}`, ...(await originHeaders()) } }).catch(() => null);
   if (!res) return Response.json({ message: "The HMIS server cannot be reached" }, { status: 503 });
   const headers: Record<string, string> = { "content-type": "application/json", "cache-control": "no-store" };
   const serverTime = res.headers.get("x-server-time");

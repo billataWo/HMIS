@@ -5,6 +5,7 @@ import {
   HeartHandshake,
   CalendarDays,
   ChartColumn,
+  LayoutDashboard,
   FlaskConical,
   HeartPulse,
   House,
@@ -45,7 +46,13 @@ import { canRegister, FRONT_DESK } from "@/lib/roles";
 type Item = { href: string; label: string; labelAm: string; icon: LucideIcon; roles?: Role[]; feature?: string };
 
 const GROUPS: { title?: string; items: Item[] }[] = [
-  { items: [{ href: "/", label: "Home", labelAm: "መነሻ", icon: House }] },
+  {
+    items: [
+      { href: "/", label: "Home", labelAm: "መነሻ", icon: House },
+      { href: "/dashboard", label: "Dashboard", labelAm: "ዳሽቦርድ", icon: LayoutDashboard, roles: ["ADMIN"] },
+      { href: "/reports", label: "Reports", labelAm: "ሪፖርቶች", icon: ChartColumn, roles: ["ADMIN"] },
+    ],
+  },
   {
     title: "Front desk",
     items: [
@@ -72,7 +79,6 @@ const GROUPS: { title?: string; items: Item[] }[] = [
     items: [
       { href: "/billing", label: "Billing", labelAm: "ክፍያ", icon: Receipt, roles: ["ADMIN", "CASHIER"] },
       { href: "/billing/payers", label: "Credit & insurance", labelAm: "ዱቤና መድን", icon: Landmark, roles: ["ADMIN", "CASHIER"], feature: "CREDIT" },
-      { href: "/reports", label: "Reports", labelAm: "ሪፖርቶች", icon: ChartColumn, roles: ["ADMIN"] },
     ],
   },
   {

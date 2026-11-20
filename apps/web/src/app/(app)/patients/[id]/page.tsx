@@ -131,6 +131,12 @@ async function Patient({
                 {t("Export record")}
               </a>
             )}
+            {me.role === "ADMIN" && (
+              // Who opened or changed this record, since it was registered.
+              <Link href={`/audit?patientId=${p.id}&from=${clinicToday(new Date(p.createdAt))}&to=${clinicToday()}`} className={secondaryButtonClass}>
+                {t("Access history")}
+              </Link>
+            )}
           </div>
         }
       />

@@ -48,7 +48,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const res = ctx.switchToHttp().getResponse();
     const k: Key = { tenantId: user.tenantId, key, userId: user.sub, method: req.method, path: req.originalUrl.split('?')[0] };
     const db = this.prisma.client;
-    const inTenant = <T>(fn: () => Promise<T>) => tenantContext.run({ tenantId: k.tenantId }, fn);
+    const inTenant = <T>(fn: () => Promise<T>) => tenantContext.run({ ...tenantContext.getStore(), tenantId: k.tenantId }, fn);
     const where = { tenantId_key: { tenantId: k.tenantId, key: k.key } };
 
     return from(inTenant(() => this.claim(db, k))).pipe(

@@ -126,9 +126,25 @@ model AuditLog {
   entityId  String?
   data      Json?
   createdAt DateTime @default(now())
+  /// The computer and browser the action came from.
+  ip        String?
+  userAgent String?
+  /// The seal (set by the database): this entry's hash, over its content and the previous entry's hash.
+  prevHash  String?
+  hash      String?
 
   @@index([tenantId, createdAt])
   @@index([tenantId, entity, entityId])
+  @@index([tenantId, hash])
+  @@index([tenantId, userId, createdAt])
+}
+
+/// The latest link of each clinic's audit chain (see AuditLog.hash). Kept by the database
+/// trigger, per copy; not synced.
+model AuditChainHead {
+  tenantId  String   @id
+  hash      String
+  updatedAt DateTime @default(now())
 }
 
 // ───────────────────────────── Patients ─────────────────────────────

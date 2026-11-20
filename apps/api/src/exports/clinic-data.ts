@@ -251,5 +251,8 @@ export async function deleteClinicData(
   counts.IdempotentRequest = (
     await owner.idempotentRequest.deleteMany({ where: { tenantId } })
   ).count;
+  counts.AuditChainHead = (
+    await owner.auditChainHead.deleteMany({ where: { tenantId } })
+  ).count;
   return counts;
 }

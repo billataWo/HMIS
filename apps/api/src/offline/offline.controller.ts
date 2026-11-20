@@ -1,5 +1,6 @@
 import { Controller, ForbiddenException, Get } from '@nestjs/common';
 import { type AuthUser, CurrentUser, AllStaff, Roles } from '../auth/auth.decorators.js';
+import { AuditService } from '../common/audit.service.js';
 import { clinicDay, dayRange } from '../common/clinic-day.js';
 import { ICD11_COMMON } from '../consultation/icd11-common.js';
 import { WALK_IN_MRN } from '../patients/patients.controller.js';
@@ -17,7 +18,10 @@ export const OFFLINE_PATIENTS = 10_000;
  */
 @Controller('offline')
 export class OfflineController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   /** Turned off in Settings: browsers keep no patient data, so the offline downloads are refused. */
   private async assertOn(me: AuthUser) {
@@ -64,6 +68,8 @@ export class OfflineController {
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: OFFLINE_PATIENTS,
     });
+    // The clinic's patient list leaves the server for a PC: recorded (every 6 hours per PC).
+    await this.audit.log(me, 'offline.patients_copied', 'Tenant', me.tenantId, { patients: patients.length });
     return patients.map(({ mergedFrom, ...p }) => ({ ...p, ...(mergedFrom.length && { oldMrns: mergedFrom.map((m) => m.mrn) }) }));
   }
 }

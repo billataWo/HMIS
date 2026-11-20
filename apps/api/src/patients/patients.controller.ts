@@ -228,6 +228,7 @@ export class PatientsController {
           select: { id: true, mrn: true, firstName: true, fatherName: true, sex: true, dateOfBirth: true },
         })
       : [];
+    await this.audit.viewed(me, 'Patient', id);
     return { ...patient, family };
   }
 

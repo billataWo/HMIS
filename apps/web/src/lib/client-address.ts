@@ -19,3 +19,19 @@ export function addressFrom(forwardedFor: string | null | undefined): string | u
 export async function clientAddress() {
   return addressFrom((await headers()).get("x-forwarded-for"));
 }
+
+/** The visitor's browser line, for the audit log ("Chrome on Windows"). */
+export async function clientAgent() {
+  return (await headers()).get("user-agent")?.slice(0, 300) ?? undefined;
+}
+
+/**
+ * Who is really asking, for a call this web server makes to the API on the visitor's behalf: their
+ * address and browser (recorded in the audit log), not this server's.
+ */
+export async function originHeaders(): Promise<Record<string, string>> {
+  const incoming = await headers();
+  const forwarded = addressFrom(incoming.get("x-forwarded-for"));
+  const agent = incoming.get("user-agent")?.slice(0, 300);
+  return { ...(forwarded && { "X-Forwarded-For": forwarded }), ...(agent && { "User-Agent": agent }) };
+}

@@ -12,6 +12,9 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { immunizationTally } from '../immunization/immunization.controller.js';
 import { ancTally } from '../anc/anc.controller.js';
 import { fpTally } from '../family-planning/fp.controller.js';
+import { AGE_GROUPS, ageAt, ageGroup } from './age.js';
+
+export { AGE_GROUPS, ageAt, ageGroup };
 
 const RangeSchema = z.object({
   from: z.string().regex(DAY_PATTERN).optional(),
@@ -22,28 +25,6 @@ const MonthSchema = z.object({
   ecMonth: z.coerce.number().int().min(1).max(13).optional(),
 });
 
-/** Age bands used for the OPD tables; review against the Regional Health Bureau's current form. */
-export const AGE_GROUPS = [
-  { key: '<1', min: 0, max: 0 },
-  { key: '1-4', min: 1, max: 4 },
-  { key: '5-14', min: 5, max: 14 },
-  { key: '15-29', min: 15, max: 29 },
-  { key: '30-64', min: 30, max: 64 },
-  { key: '65+', min: 65, max: 200 },
-] as const;
-
-export function ageAt(dob: Date | null, at: Date): number | null {
-  if (!dob) return null;
-  let age = at.getUTCFullYear() - dob.getUTCFullYear();
-  const beforeBirthday = at.getUTCMonth() < dob.getUTCMonth() || (at.getUTCMonth() === dob.getUTCMonth() && at.getUTCDate() < dob.getUTCDate());
-  if (beforeBirthday) age--;
-  return Math.max(0, age);
-}
-
-export function ageGroup(age: number | null) {
-  if (age === null) return 'unknown';
-  return AGE_GROUPS.find((g) => age >= g.min && age <= g.max)?.key ?? 'unknown';
-}
 
 /** Counts items by key, most frequent first. */
 function tally<T>(items: T[], key: (t: T) => string, take = 10) {
@@ -116,6 +97,35 @@ function daysBetween(from: string, to: string) {
   return out;
 }
 
+const shiftDay = (day: string, by: number) => {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + by);
+  return d.toISOString().slice(0, 10);
+};
+
+/** Hour (0–23) and weekday (0 = Monday) on a clock in Addis Ababa: UTC+3 all year. */
+export function clinicClock(at: Date) {
+  const local = new Date(at.getTime() + 3 * 3_600_000);
+  return { hour: local.getUTCHours(), weekday: (local.getUTCDay() + 6) % 7 };
+}
+
+/** The value below which `p` (0–1) of the numbers fall (nearest rank), rounded to whole minutes. */
+function percentile(xs: number[], p: number) {
+  if (!xs.length) return null;
+  const a = [...xs].sort((x, y) => x - y);
+  return Math.round(a[Math.min(a.length - 1, Math.ceil(p * a.length) - 1)]);
+}
+
+const average = (xs: number[]) => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
+
+/** Minutes from check-in to the doctor calling the patient in. */
+const waitOf = (v: { checkedInAt: Date; calledAt: Date | null }) => (v.calledAt ? (v.calledAt.getTime() - v.checkedInAt.getTime()) / 60000 : null);
+
+/** Wait-time bands for the spread of waits: under 15 min, 15–30, 30–60, 1–2 h, over 2 h. */
+export const WAIT_BANDS = [15, 30, 60, 120] as const;
+
+const SOURCES = ['CONSULTATION', 'LAB', 'PHARMACY', 'PROCEDURE', 'OTHER'] as const;
+
 @Controller('reports')
 @Roles('ADMIN')
 export class ReportsController {
@@ -139,20 +149,38 @@ export class ReportsController {
     const todayStart = dayRange(today).start;
     const soon = new Date(todayStart.getTime() + EXPIRY_WARNING_DAYS * 86_400_000);
 
-    const [visits, newPatients, payments, invoices, outstanding, unbilled, diagnoses, labOrders, pharmacyCharges, dispensed, drugs, losses] =
+    // The period just before, of the same length, for "up 12% on the previous 7 days".
+    const prevFrom = shiftDay(from, -days.length);
+    const prevRange = { gte: dayRange(prevFrom).start, lt: start };
+
+    const [visits, registered, payments, invoices, outstanding, charges, diagnoses, labOrders, dispensed, drugs, losses] =
       await Promise.all([
         db.visit.findMany({
           where: { tenantId: t, kind: 'OPD', checkedInAt: range, status: { not: 'CANCELLED' } },
-          select: { checkedInAt: true, calledAt: true, status: true, doctor: { select: { fullName: true } } },
+          select: {
+            checkedInAt: true,
+            calledAt: true,
+            status: true,
+            doctor: { select: { fullName: true } },
+            patient: { select: { sex: true, dateOfBirth: true } },
+          },
         }),
-        db.patient.count({ where: { tenantId: t, createdAt: range } }),
+        db.patient.findMany({ where: { tenantId: t, createdAt: range }, select: { createdAt: true } }),
         db.payment.findMany({ where: { tenantId: t, receivedAt: range }, select: { amount: true, method: true, receivedAt: true } }),
-        db.invoice.findMany({ where: { tenantId: t, createdAt: range, status: { not: 'VOID' } }, select: { total: true, discount: true, discountCategory: true } }),
+        db.invoice.findMany({
+          where: { tenantId: t, createdAt: range, status: { not: 'VOID' } },
+          select: { total: true, discount: true, discountCategory: true, createdAt: true },
+        }),
         db.invoice.findMany({
           where: { tenantId: t, status: { in: ['OPEN', 'PARTIALLY_PAID'] } },
           select: { total: true, paid: true, payerType: true, payerName: true, patientShare: true, patientPaid: true, createdAt: true },
         }),
-        db.charge.findMany({ where: { visit: { tenantId: t }, invoiceId: null, createdAt: range }, select: { unitPrice: true, quantity: true } }),
+        // Every service delivered in the period (not removed from a bill): by department, what
+        // pharmacy sold, and what nobody has invoiced yet.
+        db.charge.findMany({
+          where: { visit: { tenantId: t }, voidedAt: null, createdAt: range },
+          select: { source: true, unitPrice: true, quantity: true, invoiceId: true },
+        }),
         db.diagnosis.findMany({
           where: { visit: { tenantId: t, checkedInAt: range, status: { not: 'CANCELLED' } } },
           select: { icd11Code: true, label: true },
@@ -170,7 +198,6 @@ export class ReportsController {
             labTest: { select: { name: true, tatMinutes: true } },
           },
         }),
-        db.charge.findMany({ where: { visit: { tenantId: t }, source: 'PHARMACY', voidedAt: null, createdAt: range }, select: { unitPrice: true, quantity: true } }),
         db.stockMovement.findMany({
           where: { type: 'DISPENSE', createdAt: range, batch: { drug: { tenantId: t } } },
           select: { quantity: true, batch: { select: { drug: { select: { genericName: true } } } } },
@@ -185,10 +212,15 @@ export class ReportsController {
         }),
       ]);
 
-    const { labUrgentMinutes } = await db.tenant.findUniqueOrThrow({ where: { id: t }, select: { labUrgentMinutes: true } });
-    // Visits cancelled, by why: patients who left without being seen are the front desk's warning sign.
-    const cancelled = await db.visit.groupBy({ by: ['cancelReason'], where: { tenantId: t, kind: 'OPD', checkedInAt: range, status: 'CANCELLED' }, _count: { _all: true } });
-    const waits = visits.filter((v) => v.calledAt).map((v) => (v.calledAt!.getTime() - v.checkedInAt.getTime()) / 60000);
+    const [{ labUrgentMinutes }, cancelled, previous, now] = await Promise.all([
+      db.tenant.findUniqueOrThrow({ where: { id: t }, select: { labUrgentMinutes: true } }),
+      // Visits cancelled, by why: patients who left without being seen are the front desk's warning sign.
+      db.visit.groupBy({ by: ['cancelReason'], where: { tenantId: t, kind: 'OPD', checkedInAt: range, status: 'CANCELLED' }, _count: { _all: true } }),
+      this.periodTotals(t, prevRange),
+      // What is happening right now, when the period runs to today.
+      to === today ? this.rightNow(t, todayStart) : null,
+    ]);
+    const waits = visits.map(waitOf).filter((w): w is number => w !== null);
     const byMethod: Record<string, number> = {};
     for (const p of payments) byMethod[p.method] = (byMethod[p.method] ?? 0) + toCents(p.amount);
     const collected = payments.reduce((s, p) => s + toCents(p.amount), 0);
@@ -241,19 +273,61 @@ export class ReportsController {
     }
     const lossOf = (type: string) => losses.filter((l) => l.type === type).reduce((s, l) => s - l.quantity * toCents(l.batch.costPrice), 0);
 
-    const visitsByDay = new Map<string, number>();
-    for (const v of visits) visitsByDay.set(clinicDay(v.checkedInAt), (visitsByDay.get(clinicDay(v.checkedInAt)) ?? 0) + 1);
-    const cashByDay = new Map<string, number>();
-    for (const p of payments) cashByDay.set(clinicDay(p.receivedAt), (cashByDay.get(clinicDay(p.receivedAt)) ?? 0) + toCents(p.amount));
+    // Day by day: visits, new patients, money in, money billed and the average wait.
+    const perDay = new Map(days.map((day) => [day, { visits: 0, newPatients: 0, collected: 0, billed: 0, waits: [] as number[] }]));
+    const on = (at: Date) => perDay.get(clinicDay(at));
+    for (const v of visits) {
+      const d = on(v.checkedInAt);
+      if (!d) continue;
+      d.visits++;
+      const w = waitOf(v);
+      if (w !== null) d.waits.push(w);
+    }
+    for (const p of registered) {
+      const d = on(p.createdAt);
+      if (d) d.newPatients++;
+    }
+    for (const p of payments) {
+      const d = on(p.receivedAt);
+      if (d) d.collected += toCents(p.amount);
+    }
+    for (const i of invoices) {
+      const d = on(i.createdAt);
+      if (d) d.billed += toCents(i.total);
+    }
+
+    // When patients arrive: check-ins by weekday (Monday first) and hour of the day.
+    const arrivals = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
+    for (const v of visits) {
+      const c = clinicClock(v.checkedInAt);
+      arrivals[c.weekday][c.hour]++;
+    }
+
+    // Who came: by age group and sex, at the visit.
+    const groups = [...AGE_GROUPS.map((g) => g.key), 'unknown'];
+    const bySexAge = new Map(groups.map((g) => [g, { male: 0, female: 0 }]));
+    for (const v of visits) bySexAge.get(ageGroup(ageAt(v.patient.dateOfBirth, v.checkedInAt)))![v.patient.sex === 'MALE' ? 'male' : 'female']++;
+
+    const amountOf = (xs: { unitPrice: { toString(): string }; quantity: number }[]) => xs.reduce((s, c) => s + toCents(c.unitPrice) * c.quantity, 0);
+    const unbilled = charges.filter((c) => c.invoiceId === null);
 
     return {
       from,
       to,
+      previous,
+      now,
       patients: {
         visits: visits.length,
         completed: visits.filter((v) => v.status === 'COMPLETED').length,
-        newPatients,
-        avgWaitMinutes: waits.length ? Math.round(waits.reduce((a, b) => a + b, 0) / waits.length) : null,
+        seen: waits.length,
+        newPatients: registered.length,
+        avgWaitMinutes: average(waits),
+        medianWaitMinutes: median(waits),
+        p90WaitMinutes: percentile(waits, 0.9),
+        // Under 15 min, 15–30, 30–60, 1–2 h, over 2 h.
+        waitBands: [...WAIT_BANDS, Infinity].map((top, i) => waits.filter((w) => w < top && w >= (WAIT_BANDS[i - 1] ?? 0)).length),
+        arrivals,
+        bySexAge: groups.map((g) => ({ ageGroup: g, ...bySexAge.get(g)! })),
         byDoctor: tally(visits.filter((v) => v.doctor), (v) => v.doctor!.fullName).map(([name, count]) => ({ name, count })),
         cancelled: cancelled.reduce((n, c) => n + c._count._all, 0),
         cancelledByReason: Object.fromEntries(cancelled.map((c) => [c.cancelReason ?? 'NOT_GIVEN', c._count._all])),
@@ -264,8 +338,10 @@ export class ReportsController {
         billed: fromCents(invoices.reduce((s, i) => s + toCents(i.total), 0)),
         discounts: fromCents(invoices.reduce((s, i) => s + toCents(i.discount), 0)),
         // Services delivered in the range that nobody has invoiced yet: the leakage indicator.
-        unbilled: fromCents(unbilled.reduce((s, c) => s + toCents(c.unitPrice) * c.quantity, 0)),
+        unbilled: fromCents(amountOf(unbilled)),
         unbilledCount: unbilled.length,
+        // What each department delivered (at the price charged), billed or not.
+        bySource: SOURCES.map((source) => ({ source, amount: fromCents(amountOf(charges.filter((c) => c.source === source))) })),
         patientsOwe: fromCents(patientsOwe),
         receivables: [...receivables.entries()].sort((a, b) => b[1] - a[1]).map(([payer, due]) => ({ payer, due: fromCents(due) })),
         ageing: { patients: ageing.patients.map(fromCents), payers: ageing.payers.map(fromCents) },
@@ -282,7 +358,7 @@ export class ReportsController {
         turnaround: labTurnaround(labOrders.filter((o) => o.status === 'VERIFIED'), labUrgentMinutes),
       },
       pharmacy: {
-        sales: fromCents(pharmacyCharges.reduce((s, c) => s + toCents(c.unitPrice) * c.quantity, 0)),
+        sales: fromCents(amountOf(charges.filter((c) => c.source === 'PHARMACY'))),
         unitsDispensed: [...dispensedByDrug.values()].reduce((a, b) => a + b, 0),
         topDrugs: [...dispensedByDrug.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, units]) => ({ name, units })),
       },
@@ -294,7 +370,80 @@ export class ReportsController {
         expiredLoss: fromCents(lossOf('EXPIRED')),
         adjustmentLoss: fromCents(lossOf('ADJUSTMENT')),
       },
-      daily: days.map((day) => ({ day, visits: visitsByDay.get(day) ?? 0, collected: fromCents(cashByDay.get(day) ?? 0) })),
+      daily: days.map((day) => {
+        const d = perDay.get(day)!;
+        return { day, visits: d.visits, newPatients: d.newPatients, collected: fromCents(d.collected), billed: fromCents(d.billed), avgWaitMinutes: average(d.waits) };
+      }),
+    };
+  }
+
+  /** The headline numbers of an earlier period, to compare against. */
+  private async periodTotals(t: string, range: { gte: Date; lt: Date }) {
+    const db = this.prisma.client;
+    const [visits, newPatients, payments, billed, unbilled] = await Promise.all([
+      db.visit.findMany({ where: { tenantId: t, kind: 'OPD', checkedInAt: range, status: { not: 'CANCELLED' } }, select: { checkedInAt: true, calledAt: true, status: true } }),
+      db.patient.count({ where: { tenantId: t, createdAt: range } }),
+      db.payment.findMany({ where: { tenantId: t, receivedAt: range }, select: { amount: true, receivedAt: true } }),
+      db.invoice.aggregate({ where: { tenantId: t, createdAt: range, status: { not: 'VOID' } }, _sum: { total: true } }),
+      db.charge.findMany({ where: { visit: { tenantId: t }, voidedAt: null, invoiceId: null, createdAt: range }, select: { unitPrice: true, quantity: true } }),
+    ]);
+    const waits = visits.map(waitOf).filter((w): w is number => w !== null);
+    const from = clinicDay(range.gte);
+    const to = clinicDay(new Date(range.lt.getTime() - 1));
+    // Day by day too, so a chart can lay this period under the one shown.
+    const index = new Map(daysBetween(from, to).map((day, i) => [day, i]));
+    const visitsByDay = Array<number>(index.size).fill(0);
+    const cashByDay = Array<number>(index.size).fill(0);
+    for (const v of visits) {
+      const i = index.get(clinicDay(v.checkedInAt));
+      if (i !== undefined) visitsByDay[i]++;
+    }
+    for (const p of payments) {
+      const i = index.get(clinicDay(p.receivedAt));
+      if (i !== undefined) cashByDay[i] += toCents(p.amount);
+    }
+    return {
+      from,
+      to,
+      visits: visits.length,
+      completed: visits.filter((v) => v.status === 'COMPLETED').length,
+      newPatients,
+      collected: fromCents(cashByDay.reduce((a, b) => a + b, 0)),
+      daily: { visits: visitsByDay, collected: cashByDay.map(fromCents) },
+      billed: fromCents(toCents(billed._sum.total ?? 0)),
+      avgWaitMinutes: average(waits),
+      unbilled: fromCents(unbilled.reduce((s, c) => s + toCents(c.unitPrice) * c.quantity, 0)),
+    };
+  }
+
+  /** Today, right now: who is where in the clinic, and the work waiting in each department. */
+  private async rightNow(t: string, todayStart: Date) {
+    const db = this.prisma.client;
+    const today = { gte: todayStart };
+    const [byStatus, longest, toCollect, toVerify, toDispense, toPay] = await Promise.all([
+      db.visit.groupBy({
+        by: ['status'],
+        where: { tenantId: t, kind: 'OPD', checkedInAt: today, status: { in: ['WAITING', 'IN_CONSULTATION', 'AWAITING_LAB', 'AWAITING_PHARMACY'] } },
+        _count: { _all: true },
+      }),
+      db.visit.findFirst({ where: { tenantId: t, kind: 'OPD', checkedInAt: today, status: 'WAITING' }, orderBy: { checkedInAt: 'asc' }, select: { checkedInAt: true } }),
+      db.labOrder.count({ where: { tenantId: t, status: 'ORDERED', orderedAt: today } }),
+      db.labOrder.count({ where: { tenantId: t, status: 'RESULTED' } }),
+      db.prescription.count({ where: { tenantId: t, status: { in: ['PENDING', 'PARTIALLY_DISPENSED'] }, createdAt: today } }),
+      db.visit.count({ where: { tenantId: t, checkedInAt: today, status: { not: 'CANCELLED' }, charges: { some: { invoiceId: null, voidedAt: null } } } }),
+    ]);
+    const count = (s: string) => byStatus.find((x) => x.status === s)?._count._all ?? 0;
+    return {
+      at: new Date().toISOString(),
+      waiting: count('WAITING'),
+      inConsultation: count('IN_CONSULTATION'),
+      awaitingLab: count('AWAITING_LAB'),
+      awaitingPharmacy: count('AWAITING_PHARMACY'),
+      longestWaitMinutes: longest ? Math.floor((Date.now() - longest.checkedInAt.getTime()) / 60000) : null,
+      samplesToTake: toCollect,
+      resultsToVerify: toVerify,
+      prescriptionsToDispense: toDispense,
+      visitsToBill: toPay,
     };
   }
 

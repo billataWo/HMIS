@@ -266,11 +266,11 @@ async function Report({ searchParams }: { searchParams: Promise<Search> }) {
   );
 }
 
-async function BackToDashboard() {
+async function BackToReports() {
   const t = await getT();
   return (
     <Link href="/reports" className={secondaryButtonClass}>
-      {t("Dashboard")}
+      {t("Reports")}
     </Link>
   );
 }
@@ -279,7 +279,7 @@ export default function MohPage({ searchParams }: PageProps<"/reports/moh">) {
   return (
     <>
       <div className="print:hidden">
-        <PageTitle title="Monthly MoH report" subtitle="by Ethiopian calendar month" actions={<BackToDashboard />} />
+        <PageTitle title="Monthly MoH report" subtitle="by Ethiopian calendar month" actions={<BackToReports />} />
       </div>
       <Suspense fallback={<Skeleton className="h-96" />}>
         <Report searchParams={searchParams as Promise<Search>} />
