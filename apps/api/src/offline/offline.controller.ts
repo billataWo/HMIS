@@ -57,7 +57,7 @@ export class OfflineController {
    * same details the queue shows), newest first. Downloaded every few hours, not with each
    * snapshot; the snapshot's recent registrations fill the gap in between. The card numbers of
    * records merged into a patient are included, since that is the number on the patient's card.
-  uhyuighdhks iji 
+  h
   */
   @Roles('ADMIN', 'RECEPTIONIST', 'NURSE')
   @Get('patients')
